@@ -1,9 +1,5 @@
 @import "tailwindcss";
 
-/* Hide default cursor */
-* {
-  cursor: none !important;
-}
 
 /* Custom Scrollbar with Theme Support */
 .dark-mode ::-webkit-scrollbar {
@@ -113,10 +109,6 @@ html {
   animation: moonGlow 3s ease-in-out infinite;
 }
 
-/* Hide cursor on interactive elements */
-button, a, input, textarea, select {
-  cursor: none !important;
-}
 
 /* DM Serif Text Font Classes */
 .dm-serif-text-regular {
