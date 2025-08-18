@@ -39,7 +39,7 @@ func NewConnection(databaseURL string) (*gorm.DB, error) {
 
 	// Configure PostgreSQL connection to disable prepared statement caching
 	config := postgres.Config{
-		DSN: databaseURL,
+		DSN:                  databaseURL,
 		PreferSimpleProtocol: true, // Disable prepared statements
 	}
 
@@ -50,7 +50,7 @@ func NewConnection(databaseURL string) (*gorm.DB, error) {
 			return time.Now().UTC()
 		},
 	})
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %v", err)
 	}
@@ -81,7 +81,7 @@ func AutoMigrate(db *gorm.DB) error {
 
 	// Enable UUID extension
 	db.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";")
-	
+
 	// Core user and auth models
 	err := db.AutoMigrate(
 		&models.User{},
@@ -144,27 +144,27 @@ func createIndexes(db *gorm.DB) error {
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_email_lower ON users (LOWER(email));",
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_created_at_desc ON users (created_at DESC);",
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_plan_active ON users (plan, is_active);",
-		
+
 		// Link indexes
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_links_user_active_order ON links (user_id, is_active, \"order\");",
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_links_clicks_desc ON links (clicks DESC);",
-		
+
 		// Profile view indexes
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_profile_views_user_created ON profile_views (user_id, created_at DESC);",
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_profile_views_viewer_created ON profile_views (viewer_user_id, created_at DESC);",
-		
+
 		// Link click indexes
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_link_clicks_link_created ON link_clicks (link_id, created_at DESC);",
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_link_clicks_session ON link_clicks (session_id);",
-		
+
 		// Analytics indexes
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_analytics_events_user_type_created ON analytics_events (user_id, event_type, created_at DESC);",
-		
+
 		// Template indexes
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_templates_status_featured_created ON templates (status, is_featured, created_at DESC);",
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_templates_category_status ON templates (category, status);",
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_templates_downloads_desc ON templates (downloads DESC);",
-		
+
 		// Badge indexes
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_badges_user_earned ON user_badges (user_id, is_earned);",
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_badges_earned_at_desc ON user_badges (earned_at DESC);",

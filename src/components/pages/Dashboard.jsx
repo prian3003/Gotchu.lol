@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import styled from 'styled-components'
 import ParticleBackground from '../effects/ParticleBackground'
+import CustomizationPage from './CustomizationPage'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useAuth } from '../../contexts/AuthContext'
+import logger from '../../utils/logger'
 import { 
   HiUser, 
   HiCog, 
@@ -29,15 +32,22 @@ import {
   HiCommandLine,
   HiFingerPrint,
   HiUserPlus,
-  HiGem,
+  HiSparkles,
   HiChatBubbleLeftRight,
   HiShare,
   HiSpeakerWave,
   HiCursorArrowRays,
   HiShieldExclamation,
   HiTv,
-  HiSparkles,
-  HiMapPin
+  HiMapPin,
+  HiClock,
+  HiCheck,
+  HiCheckCircle,
+  HiXCircle,
+  HiPlus,
+  HiTrash,
+  HiViewfinderCircle,
+  HiExclamationTriangle as HiWarning
 } from 'react-icons/hi2'
 import { 
   RiDashboardLine,
@@ -48,23 +58,120 @@ import {
   RiFocusLine
 } from 'react-icons/ri'
 
-const Dashboard = () => {
+const Dashboard = ({ defaultSection = 'overview' }) => {
   const [user, setUser] = useState(null)
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [activeSection, setActiveSection] = useState('overview')
+  const [activeSection, setActiveSection] = useState(defaultSection)
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [showNewCustomization, setShowNewCustomization] = useState(false)
   const { colors, isDarkMode } = useTheme()
+  const { logout } = useAuth()
+
+  // Customization state
+  const [settings, setSettings] = useState({
+    // Appearance
+    theme: 'dark',
+    accentColor: '#c96c01',
+    textColor: '#eb0000',
+    backgroundColor: '#c96c01',
+    iconColor: '#b50000',
+    backgroundUrl: '',
+    avatarUrl: '',
+    // Effects
+    backgroundEffect: 'particles',
+    usernameEffect: 'glow',
+    enableAnimations: true,
+    // Audio
+    audioUrl: '',
+    volumeLevel: 50,
+    autoPlay: false,
+    // Advanced
+    customCursor: '',
+    profileOpacity: 90,
+    profileBlur: 0,
+    showBadges: true,
+    description: '',
+    location: '',
+    discordPresence: false,
+    glowUsername: true,
+    glowSocials: false,
+    glowBadges: true
+  })
+  
+  const [loading2, setLoading2] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false)
+  const [showSaveError, setShowSaveError] = useState(false)
+  const [saveErrorMessage, setSaveErrorMessage] = useState('')
+  const [originalSettings, setOriginalSettings] = useState(null)
+  const [uploading, setUploading] = useState({})
+  
+  // Links management state
+  const [userLinks, setUserLinks] = useState([])
+  const [showLinkModal, setShowLinkModal] = useState(false)
+  const [editingLink, setEditingLink] = useState(null)
+  const [currentLink, setCurrentLink] = useState({
+    title: '',
+    url: '',
+    description: '',
+    type: 'DEFAULT',
+    color: '#58A4B0',
+    icon: '',
+    isActive: true
+  })
+  
+  const fileInputRefs = useRef({
+    backgroundImage: null,
+    avatar: null,
+    audio: null,
+    cursor: null
+  })
 
   useEffect(() => {
     fetchDashboardData()
   }, [])
 
+  // Update active section when defaultSection prop changes (for direct route navigation)
+  useEffect(() => {
+    setActiveSection(defaultSection)
+  }, [defaultSection])
+
+  // Fetch links when links section is active
+  useEffect(() => {
+    if (activeSection === 'links') {
+      fetchLinks()
+    }
+  }, [activeSection])
+
+  const fetchLinks = async () => {
+    try {
+      const sessionId = localStorage.getItem('sessionId')
+      const response = await fetch('/api/links', {
+        headers: {
+          'X-Session-ID': sessionId
+        }
+      })
+      
+      const data = await response.json()
+      if (data.success) {
+        setUserLinks(data.data.links || [])
+      } else {
+        logger.error('Failed to fetch links', new Error(data.message))
+      }
+    } catch (error) {
+      logger.error('Failed to fetch links', error)
+    }
+  }
+
   const fetchDashboardData = async () => {
     try {
       setLoading(true)
+      setError(null)
       
       const token = localStorage.getItem('authToken')
       const sessionId = localStorage.getItem('sessionId')
@@ -73,36 +180,288 @@ const Dashboard = () => {
         throw new Error('No authentication found')
       }
 
-      // For now, let's use mock data that matches the example
+      // Fetch real dashboard data from backend API
+      const response = await fetch('/api/dashboard', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '',
+          'X-Session-ID': sessionId || '',
+        },
+      })
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Clear auth tokens and redirect to login
+          localStorage.removeItem('authToken')
+          localStorage.removeItem('sessionId')
+          window.location.href = '/signin'
+          return
+        }
+        throw new Error('Failed to load dashboard data')
+      }
+
+      const data = await response.json()
+      
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to load dashboard data')
+      }
+
+      const { user: userData, stats: statsData } = data.data
+
+      // Map API response to expected format
       setUser({
-        id: 1,
-        username: 'testuser',
-        displayName: 'Test User',
-        email: 'test@example.com',
-        is_verified: true,
-        plan: 'free',
-        avatar_url: null,
-        uid: '772,558',
-        alias: 'Unavailable',
-        profileViews: 7,
-        profileCompletion: 40
+        id: userData.id,
+        username: userData.username,
+        displayName: userData.display_name || userData.username,
+        email: userData.email,
+        is_verified: userData.is_verified,
+        plan: userData.plan || 'free',
+        avatar_url: userData.avatar_url,
+        uid: userData.id.toString(),
+        alias: userData.alias || 'Unavailable',
+        profileViews: statsData.profile_views || 0,
+        theme: userData.theme || 'dark',
+        profileCompletion: calculateProfileCompletion(userData)
       })
       
       setStats({
-        profileViews: 7,
-        totalClicks: 156,
-        joinDate: new Date().toISOString(),
-        lastActive: new Date().toISOString(),
-        uid: '772,558',
-        profileCompletion: 40
+        profileViews: statsData.profile_views || 0,
+        totalClicks: statsData.total_clicks || 0,
+        linksCount: statsData.links_count || 0,
+        filesCount: statsData.files_count || 0,
+        joinDate: userData.created_at,
+        lastActive: statsData.last_active,
+        uid: userData.id.toString(),
+        profileCompletion: calculateProfileCompletion(userData)
       })
       
       setLoading(false)
     } catch (err) {
-      console.error('Dashboard error:', err)
+      logger.error('Dashboard data fetch failed', err)
       setError(err.message)
       setLoading(false)
     }
+  }
+
+  // Load customization settings
+  const loadSettings = async () => {
+    try {
+      const sessionId = localStorage.getItem('sessionId')
+      if (!sessionId) {
+        setLoading2(false)
+        return
+      }
+
+      const response = await fetch('/api/customization/settings', {
+        headers: {
+          'X-Session-ID': sessionId
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.data.settings) {
+          const loadedSettings = { ...settings, ...data.data.settings }
+          setSettings(loadedSettings)
+          setOriginalSettings(JSON.parse(JSON.stringify(loadedSettings)))
+          setHasUnsavedChanges(false)
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to load customization settings', error)
+      setSaveErrorMessage('Failed to load settings from server')
+      setShowSaveError(true)
+    } finally {
+      setLoading2(false)
+    }
+  }
+
+  // Save settings
+  const saveSettings = async (showNotification = true) => {
+    try {
+      setSaving(true)
+      const sessionId = localStorage.getItem('sessionId')
+      if (!sessionId) {
+        setSaveErrorMessage('No session found. Please log in again.')
+        setShowSaveError(true)
+        return false
+      }
+
+      const response = await fetch('/api/customization/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-ID': sessionId
+        },
+        body: JSON.stringify({
+          theme: settings.theme,
+          accent_color: settings.accentColor,
+          text_color: settings.textColor,
+          background_color: settings.backgroundColor,
+          primary_color: settings.accentColor,
+          secondary_color: '#EC4899',
+          icon_color: settings.iconColor,
+          background_effect: settings.backgroundEffect,
+          username_effect: settings.usernameEffect,
+          show_badges: settings.showBadges,
+          profile_blur: settings.profileBlur,
+          profile_opacity: settings.profileOpacity,
+          profile_gradient: true,
+          glow_username: settings.glowUsername,
+          glow_socials: settings.glowSocials,
+          glow_badges: settings.glowBadges,
+          animated_title: settings.enableAnimations,
+          monochrome_icons: false,
+          swap_box_colors: false,
+          volume_level: settings.volumeLevel,
+          volume_control: true,
+          discord_presence: settings.discordPresence,
+          use_discord_avatar: false,
+          discord_avatar_decoration: false,
+          background_url: settings.backgroundUrl || '',
+          audio_url: settings.audioUrl || '',
+          cursor_url: settings.customCursor || ''
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          setOriginalSettings(JSON.parse(JSON.stringify(settings)))
+          setHasUnsavedChanges(false)
+          if (showNotification) {
+            setShowSaveSuccess(true)
+            setTimeout(() => setShowSaveSuccess(false), 3000)
+          }
+          return true
+        } else {
+          throw new Error(data.message || 'Failed to save settings')
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }))
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+      }
+    } catch (error) {
+      logger.error('Failed to save customization settings', error)
+      setSaveErrorMessage(error.message || 'Failed to save settings. Please try again.')
+      setShowSaveError(true)
+      setTimeout(() => setShowSaveError(false), 5000)
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const resetSettings = () => {
+    if (originalSettings) {
+      setSettings(JSON.parse(JSON.stringify(originalSettings)))
+      setHasUnsavedChanges(false)
+    }
+  }
+
+  // File upload handler
+  const handleFileUpload = async (file, type) => {
+    if (!file) return
+
+    const maxSize = type === 'audio' ? 10 * 1024 * 1024 : 5 * 1024 * 1024
+    if (file.size > maxSize) {
+      setSaveErrorMessage(`File too large. Maximum size is ${type === 'audio' ? '10MB' : '5MB'}`)
+      setShowSaveError(true)
+      setTimeout(() => setShowSaveError(false), 5000)
+      return
+    }
+
+    try {
+      setUploading(prev => ({ ...prev, [type]: true }))
+
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('type', type)
+
+      const sessionId = localStorage.getItem('sessionId')
+      const response = await fetch('/api/upload/asset', {
+        method: 'POST',
+        headers: {
+          'X-Session-ID': sessionId
+        },
+        body: formData
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          const settingKey = {
+            backgroundImage: 'backgroundUrl',
+            avatar: 'avatarUrl',
+            audio: 'audioUrl',
+            cursor: 'customCursor'
+          }[type]
+
+          // Update settings locally without triggering side effects
+          setSettings(prev => ({ ...prev, [settingKey]: data.data.url }))
+          setShowSaveSuccess(true)
+          setTimeout(() => setShowSaveSuccess(false), 3000)
+        }
+      }
+    } catch (error) {
+      setSaveErrorMessage('Failed to upload file. Please try again.')
+      setShowSaveError(true)
+      setTimeout(() => setShowSaveError(false), 5000)
+    } finally {
+      setUploading(prev => ({ ...prev, [type]: false }))
+    }
+  }
+
+  const triggerFileUpload = (type) => {
+    fileInputRefs.current[type]?.click()
+  }
+
+  const handleFileChange = (event, type) => {
+    const file = event.target.files[0]
+    if (file) {
+      handleFileUpload(file, type)
+    }
+    event.target.value = ''
+  }
+
+  const updateSetting = useCallback((key, value) => {
+    setSettings(prev => ({ ...prev, [key]: value }))
+  }, [])
+
+  // Load settings on mount (but not for customize section which handles its own)
+  useEffect(() => {
+    if (activeSection !== 'customize') {
+      loadSettings()
+    }
+  }, [activeSection])
+
+  // Detect changes (only when not in customize mode)
+  useEffect(() => {
+    if (!loading2 && originalSettings && activeSection !== 'customize') {
+      const currentSettingsStr = JSON.stringify(settings)
+      const originalSettingsStr = JSON.stringify(originalSettings)
+      const hasChanges = currentSettingsStr !== originalSettingsStr
+      
+      setHasUnsavedChanges(hasChanges)
+    } else if (activeSection === 'customize') {
+      // Reset unsaved changes when entering customize mode (CustomizationPage handles its own)
+      setHasUnsavedChanges(false)
+    }
+  }, [settings, loading2, originalSettings, activeSection])
+
+  // Calculate profile completion percentage
+  const calculateProfileCompletion = (userData) => {
+    let completedFields = 0
+    const totalFields = 5
+    
+    if (userData.display_name) completedFields++
+    if (userData.bio) completedFields++
+    if (userData.avatar_url) completedFields++
+    if (userData.email) completedFields++
+    if (userData.is_verified) completedFields++
+    
+    return Math.round((completedFields / totalFields) * 100)
   }
 
   const handleLogout = async () => {
@@ -110,7 +469,7 @@ const Dashboard = () => {
       const sessionId = localStorage.getItem('sessionId')
       
       if (sessionId) {
-        await fetch('http://localhost:8080/api/auth/logout', {
+        await fetch('/api/auth/logout', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -119,17 +478,197 @@ const Dashboard = () => {
         })
       }
       
-      localStorage.removeItem('authToken')
-      localStorage.removeItem('sessionId')
+      // Use auth context to handle logout
+      logout()
       window.location.href = '/signin'
       
     } catch (err) {
-      console.error('Logout error:', err)
+      logger.auth('logout', false, err)
       // Force logout even if API call fails
-      localStorage.removeItem('authToken')
-      localStorage.removeItem('sessionId')
+      logout()
       window.location.href = '/signin'
     }
+  }
+
+  // Link management handlers
+  const handleAddLink = () => {
+    setCurrentLink({
+      title: '',
+      url: '',
+      description: '',
+      type: 'DEFAULT',
+      color: '#58A4B0',
+      icon: '',
+      isActive: true
+    })
+    setEditingLink(null)
+    setShowLinkModal(true)
+  }
+
+  const handleEditLink = (link) => {
+    setCurrentLink({ ...link })
+    setEditingLink(link)
+    setShowLinkModal(true)
+  }
+
+  const handleDeleteLink = async (linkId) => {
+    if (!window.confirm('Are you sure you want to delete this link?')) return
+    
+    try {
+      const sessionId = localStorage.getItem('sessionId')
+      const response = await fetch(`/api/links/${linkId}`, { 
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-ID': sessionId
+        }
+      })
+      
+      const data = await response.json()
+      if (data.success) {
+        setUserLinks(prev => prev.filter(link => link.id !== linkId))
+        logger.userAction('link_deleted', { linkId })
+      } else {
+        throw new Error(data.message || 'Failed to delete link')
+      }
+    } catch (error) {
+      logger.error('Failed to delete link', error)
+      alert('Failed to delete link. Please try again.')
+    }
+  }
+
+  const handleToggleLink = async (linkId) => {
+    try {
+      const currentLink = userLinks.find(link => link.id === linkId)
+      if (!currentLink) return
+
+      const sessionId = localStorage.getItem('sessionId')
+      const response = await fetch(`/api/links/${linkId}`, { 
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-ID': sessionId
+        },
+        body: JSON.stringify({ is_active: !currentLink.isActive })
+      })
+      
+      const data = await response.json()
+      if (data.success) {
+        setUserLinks(prev => prev.map(link => 
+          link.id === linkId 
+            ? { ...link, isActive: !link.isActive }
+            : link
+        ))
+      } else {
+        throw new Error(data.message || 'Failed to toggle link')
+      }
+    } catch (error) {
+      logger.error('Failed to toggle link', error)
+      alert('Failed to toggle link. Please try again.')
+    }
+  }
+
+  const handlePreviewLink = (link) => {
+    if (link.url) {
+      window.open(link.url, '_blank')
+    }
+  }
+
+  const handleSaveLink = async () => {
+    if (!currentLink.title || !currentLink.url) {
+      alert('Please fill in the title and URL fields')
+      return
+    }
+
+    try {
+      const sessionId = localStorage.getItem('sessionId')
+      
+      if (editingLink) {
+        // Update existing link
+        const response = await fetch(`/api/links/${editingLink.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Session-ID': sessionId
+          },
+          body: JSON.stringify({
+            title: currentLink.title,
+            url: currentLink.url,
+            description: currentLink.description || null,
+            type: currentLink.type || 'DEFAULT',
+            color: currentLink.color || '#58A4B0',
+            icon: currentLink.icon || null,
+            is_active: currentLink.isActive !== false
+          })
+        })
+        
+        const data = await response.json()
+        if (data.success) {
+          setUserLinks(prev => prev.map(link => 
+            link.id === editingLink.id 
+              ? data.data.link
+              : link
+          ))
+        } else {
+          throw new Error(data.message || 'Failed to update link')
+        }
+      } else {
+        // Create new link
+        const response = await fetch('/api/links', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Session-ID': sessionId
+          },
+          body: JSON.stringify({
+            title: currentLink.title,
+            url: currentLink.url,
+            description: currentLink.description || null,
+            type: currentLink.type || 'DEFAULT',
+            color: currentLink.color || '#58A4B0',
+            icon: currentLink.icon || null,
+            is_active: currentLink.isActive !== false
+          })
+        })
+        
+        const data = await response.json()
+        if (data.success) {
+          setUserLinks(prev => [...prev, data.data.link])
+        } else {
+          throw new Error(data.message || 'Failed to create link')
+        }
+      }
+      
+      setShowLinkModal(false)
+      setCurrentLink({
+        title: '',
+        url: '',
+        description: '',
+        type: 'DEFAULT',
+        color: '#58A4B0',
+        icon: '',
+        isActive: true
+      })
+      setEditingLink(null)
+      
+    } catch (error) {
+      logger.error('Failed to save link', error)
+      alert('Failed to save link. Please try again.')
+    }
+  }
+
+  const handleCloseModal = () => {
+    setShowLinkModal(false)
+    setEditingLink(null)
+    setCurrentLink({
+      title: '',
+      url: '',
+      description: '',
+      type: 'DEFAULT',
+      color: '#58A4B0',
+      icon: '',
+      isActive: true
+    })
   }
 
   const sidebarItems = [
@@ -181,16 +720,29 @@ const Dashboard = () => {
     )
   }
 
+  // Show new customization page if enabled
+  if (showNewCustomization) {
+    return <CustomizationPage onBack={() => setShowNewCustomization(false)} />
+  }
+
   return (
     <DashboardWrapper style={{ background: colors.background }}>
       <ParticleBackground />
       
+      {/* Mobile Overlay */}
+      {mobileMenuOpen && (
+        <div 
+          className="mobile-overlay"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <Sidebar className={sidebarCollapsed ? 'collapsed' : ''}>
+      <Sidebar className={`${sidebarCollapsed ? 'collapsed' : ''} ${mobileMenuOpen ? 'mobile-open' : ''}`}>
         {/* Header */}
         <div className="sidebar-header">
           <div className="logo">
-            <RiFocusLine className="logo-icon" />
+            <img src="/favicon.ico" alt="gotchu.lol" className="logo-icon" />
             {!sidebarCollapsed && <span className="logo-text">gotchu.lol</span>}
           </div>
           <button 
@@ -305,7 +857,15 @@ const Dashboard = () => {
       </Sidebar>
 
       {/* Main Content */}
-      <MainContent>
+      <MainContent className={sidebarCollapsed ? 'sidebar-collapsed' : ''}>
+        {/* Mobile Menu Button */}
+        <button 
+          className="mobile-menu-toggle"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        >
+          <HiBars3 />
+        </button>
+        
         {activeSection === 'overview' && (
           <>
             {/* Header */}
@@ -439,7 +999,7 @@ const Dashboard = () => {
                     Change Display Name
                   </button>
                   <button className="action-button premium">
-                    <HiGem className="action-icon" />
+                    <HiSparkles className="action-icon" />
                     Want more? Unlock with Premium
                   </button>
                   <button className="action-button">
@@ -462,43 +1022,111 @@ const Dashboard = () => {
         )}
 
         {activeSection === 'customize' && (
+          <div className="section-content">
+            <CustomizationPage />
+          </div>
+        )}
+
+        {/* REMOVED LARGE CUSTOMIZATION SECTION - NOW HANDLED BY /customize ROUTE */}
+        {false && (
           <>
             {/* Header */}
             <div className="content-header">
-              <h1>Customize</h1>
+              <div className="header-content">
+                <h1>Customize</h1>
+                <button 
+                  className="new-customization-btn"
+                  onClick={() => setShowNewCustomization(true)}
+                >
+                  <HiSparkles className="btn-icon" />
+                  New Experience
+                </button>
+              </div>
             </div>
 
             {/* Assets Uploader */}
             <div className="customize-section">
               <h2>Assets Uploader</h2>
               <div className="upload-grid">
-                <div className="upload-card">
+                <div className="upload-card" onClick={() => triggerFileUpload('backgroundImage')}>
                   <div className="upload-area">
                     <HiCamera className="upload-icon" />
-                    <span className="upload-text">Click to upload a file</span>
+                    <span className="upload-text">
+                      {uploading.backgroundImage ? 'Uploading...' : 'Click to upload a file'}
+                    </span>
+                    {uploading.backgroundImage && <HiClock className="upload-spinner" />}
                   </div>
                   <h3>Background</h3>
+                  {settings.backgroundUrl && (
+                    <div className="upload-preview">Current: {settings.backgroundUrl.split('/').pop()}</div>
+                  )}
+                  <input
+                    type="file"
+                    ref={el => fileInputRefs.current.backgroundImage = el}
+                    onChange={(e) => handleFileChange(e, 'backgroundImage')}
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                  />
                 </div>
-                <div className="upload-card">
+                <div className="upload-card" onClick={() => triggerFileUpload('audio')}>
                   <div className="upload-area">
                     <HiSpeakerWave className="upload-icon" />
-                    <span className="upload-text">Click to open audio manager</span>
+                    <span className="upload-text">
+                      {uploading.audio ? 'Uploading...' : 'Click to open audio manager'}
+                    </span>
+                    {uploading.audio && <HiClock className="upload-spinner" />}
                   </div>
                   <h3>Audio</h3>
+                  {settings.audioUrl && (
+                    <div className="upload-preview">Current: {settings.audioUrl.split('/').pop()}</div>
+                  )}
+                  <input
+                    type="file"
+                    ref={el => fileInputRefs.current.audio = el}
+                    onChange={(e) => handleFileChange(e, 'audio')}
+                    accept="audio/*"
+                    style={{ display: 'none' }}
+                  />
                 </div>
-                <div className="upload-card">
+                <div className="upload-card" onClick={() => triggerFileUpload('avatar')}>
                   <div className="upload-area">
                     <HiUser className="upload-icon" />
-                    <span className="upload-text">Click to upload a file</span>
+                    <span className="upload-text">
+                      {uploading.avatar ? 'Uploading...' : 'Click to upload a file'}
+                    </span>
+                    {uploading.avatar && <HiClock className="upload-spinner" />}
                   </div>
                   <h3>Profile Avatar</h3>
+                  {settings.avatarUrl && (
+                    <div className="upload-preview">Current: {settings.avatarUrl.split('/').pop()}</div>
+                  )}
+                  <input
+                    type="file"
+                    ref={el => fileInputRefs.current.avatar = el}
+                    onChange={(e) => handleFileChange(e, 'avatar')}
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                  />
                 </div>
-                <div className="upload-card">
+                <div className="upload-card" onClick={() => triggerFileUpload('cursor')}>
                   <div className="upload-area">
                     <HiCursorArrowRays className="upload-icon" />
-                    <span className="upload-text">Click to upload a file</span>
+                    <span className="upload-text">
+                      {uploading.cursor ? 'Uploading...' : 'Click to upload a file'}
+                    </span>
+                    {uploading.cursor && <HiClock className="upload-spinner" />}
                   </div>
                   <h3>Custom Cursor</h3>
+                  {settings.customCursor && (
+                    <div className="upload-preview">Current: {settings.customCursor.split('/').pop()}</div>
+                  )}
+                  <input
+                    type="file"
+                    ref={el => fileInputRefs.current.cursor = el}
+                    onChange={(e) => handleFileChange(e, 'cursor')}
+                    accept=".png,.ico,.cur"
+                    style={{ display: 'none' }}
+                  />
                 </div>
               </div>
             </div>
@@ -518,43 +1146,71 @@ const Dashboard = () => {
                   <h3>Description</h3>
                   <div className="input-group">
                     <HiExclamationTriangle className="warning-icon" />
-                    <input type="text" placeholder="dsadsadasdsa" className="custom-input" />
+                    <input 
+                      type="text" 
+                      placeholder="Add your description" 
+                      className="custom-input"
+                      value={settings.description}
+                      onChange={(e) => {
+                        // Update settings locally without triggering any side effects
+                        setSettings(prev => ({ ...prev, description: e.target.value }))
+                      }}
+                    />
                   </div>
                 </div>
                 
                 <div className="customize-card">
                   <h3>Discord Presence</h3>
-                  <div className="discord-toggle">
+                  <div 
+                    className={`discord-toggle ${settings.discordPresence ? 'active' : ''}`}
+                    onClick={() => {
+                      // Update settings locally without triggering side effects
+                      setSettings(prev => ({ ...prev, discordPresence: !prev.discordPresence }))
+                    }}
+                  >
                     <HiShieldExclamation className="discord-icon" />
-                    <span>Click here to connect your Discord and unlock this feature.</span>
+                    <span>
+                      {settings.discordPresence 
+                        ? 'Discord presence enabled' 
+                        : 'Click here to connect your Discord and unlock this feature.'
+                      }
+                    </span>
                   </div>
                 </div>
 
                 <div className="customize-card">
                   <h3>Profile Opacity</h3>
                   <div className="slider-container">
-                    <input type="range" min="0" max="100" defaultValue="50" className="custom-slider" />
-                    <div className="slider-dots">
-                      <span className="dot"></span>
-                      <span className="dot"></span>
-                      <span className="dot active"></span>
-                      <span className="dot"></span>
-                      <span className="dot"></span>
-                    </div>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="100" 
+                      value={settings.profileOpacity}
+                      onChange={(e) => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, profileOpacity: parseInt(e.target.value) }))
+                      }}
+                      className="custom-slider" 
+                    />
+                    <div className="slider-value">{settings.profileOpacity}%</div>
                   </div>
                 </div>
 
                 <div className="customize-card">
                   <h3>Profile Blur</h3>
                   <div className="slider-container">
-                    <input type="range" min="0" max="100" defaultValue="75" className="custom-slider" />
-                    <div className="slider-dots">
-                      <span className="dot"></span>
-                      <span className="dot"></span>
-                      <span className="dot"></span>
-                      <span className="dot active"></span>
-                      <span className="dot"></span>
-                    </div>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="50" 
+                      value={settings.profileBlur}
+                      onChange={(e) => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, profileBlur: parseInt(e.target.value) }))
+                      }}
+                      className="custom-slider" 
+                    />
+                    <div className="slider-value">{settings.profileBlur}px</div>
                   </div>
                 </div>
 
@@ -562,11 +1218,20 @@ const Dashboard = () => {
                   <h3>Background Effects</h3>
                   <div className="dropdown-container">
                     <HiTv className="dropdown-icon" />
-                    <select className="custom-select">
-                      <option>Old TV</option>
-                      <option>None</option>
-                      <option>Matrix</option>
-                      <option>Particles</option>
+                    <select 
+                      className="custom-select"
+                      value={settings.backgroundEffect}
+                      onChange={(e) => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, backgroundEffect: e.target.value }))
+                      }}
+                    >
+                      <option value="none">None</option>
+                      <option value="particles">Particles</option>
+                      <option value="matrix">Matrix</option>
+                      <option value="waves">Waves</option>
+                      <option value="gradient">Gradient</option>
+                      <option value="geometric">Geometric</option>
                     </select>
                     <HiChevronDown className="chevron-icon" />
                   </div>
@@ -576,11 +1241,20 @@ const Dashboard = () => {
                   <h3>Username Effects</h3>
                   <div className="dropdown-container">
                     <HiSparkles className="dropdown-icon" />
-                    <select className="custom-select">
-                      <option>Choose Username Effects</option>
-                      <option>Glow</option>
-                      <option>Rainbow</option>
-                      <option>Typewriter</option>
+                    <select 
+                      className="custom-select"
+                      value={settings.usernameEffect}
+                      onChange={(e) => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, usernameEffect: e.target.value }))
+                      }}
+                    >
+                      <option value="none">Choose Username Effects</option>
+                      <option value="glow">Glow</option>
+                      <option value="rainbow">Rainbow</option>
+                      <option value="typewriter">Typewriter</option>
+                      <option value="bounce">Bounce</option>
+                      <option value="fade">Fade In</option>
                     </select>
                     <HiChevronDown className="chevron-icon" />
                   </div>
@@ -590,22 +1264,49 @@ const Dashboard = () => {
                   <h3>Location</h3>
                   <div className="input-group">
                     <HiMapPin className="location-icon" />
-                    <input type="text" placeholder="kontol haha" className="custom-input" />
+                    <input 
+                      type="text" 
+                      placeholder="Add your location" 
+                      className="custom-input"
+                      value={settings.location}
+                      onChange={(e) => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, location: e.target.value }))
+                      }}
+                    />
                   </div>
                 </div>
 
                 <div className="customize-card">
                   <h3>Glow Settings</h3>
                   <div className="glow-buttons">
-                    <button className="glow-button active">
+                    <button 
+                      className={`glow-button ${settings.glowUsername ? 'active' : ''}`}
+                      onClick={() => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, glowUsername: !prev.glowUsername }))
+                      }}
+                    >
                       <HiUser className="glow-icon" />
                       Username
                     </button>
-                    <button className="glow-button">
+                    <button 
+                      className={`glow-button ${settings.glowSocials ? 'active' : ''}`}
+                      onClick={() => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, glowSocials: !prev.glowSocials }))
+                      }}
+                    >
                       <HiShare className="glow-icon" />
                       Socials
                     </button>
-                    <button className="glow-button active">
+                    <button 
+                      className={`glow-button ${settings.glowBadges ? 'active' : ''}`}
+                      onClick={() => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, glowBadges: !prev.glowBadges }))
+                      }}
+                    >
                       <HiShieldCheck className="glow-icon" />
                       Badges
                     </button>
@@ -621,8 +1322,17 @@ const Dashboard = () => {
                 <div className="color-card">
                   <h3>Accent Color</h3>
                   <div className="color-picker">
-                    <div className="color-swatch" style={{ background: '#c96c01' }}></div>
-                    <span className="color-code">#c96c01</span>
+                    <div className="color-swatch" style={{ background: settings.accentColor }}></div>
+                    <input 
+                      type="color" 
+                      value={settings.accentColor} 
+                      onChange={(e) => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, accentColor: e.target.value }))
+                      }}
+                      className="color-input"
+                    />
+                    <span className="color-code">{settings.accentColor}</span>
                     <HiPencilSquare className="edit-icon" />
                   </div>
                 </div>
@@ -630,8 +1340,17 @@ const Dashboard = () => {
                 <div className="color-card">
                   <h3>Text Color</h3>
                   <div className="color-picker">
-                    <div className="color-swatch" style={{ background: '#eb0000' }}></div>
-                    <span className="color-code">#eb0000</span>
+                    <div className="color-swatch" style={{ background: settings.textColor }}></div>
+                    <input 
+                      type="color" 
+                      value={settings.textColor} 
+                      onChange={(e) => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, textColor: e.target.value }))
+                      }}
+                      className="color-input"
+                    />
+                    <span className="color-code">{settings.textColor}</span>
                     <HiPencilSquare className="edit-icon" />
                   </div>
                 </div>
@@ -639,8 +1358,17 @@ const Dashboard = () => {
                 <div className="color-card">
                   <h3>Background Color</h3>
                   <div className="color-picker">
-                    <div className="color-swatch" style={{ background: '#c96c01' }}></div>
-                    <span className="color-code">#c96c01</span>
+                    <div className="color-swatch" style={{ background: settings.backgroundColor }}></div>
+                    <input 
+                      type="color" 
+                      value={settings.backgroundColor} 
+                      onChange={(e) => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, backgroundColor: e.target.value }))
+                      }}
+                      className="color-input"
+                    />
+                    <span className="color-code">{settings.backgroundColor}</span>
                     <HiPencilSquare className="edit-icon" />
                   </div>
                 </div>
@@ -648,15 +1376,68 @@ const Dashboard = () => {
                 <div className="color-card">
                   <h3>Icon Color</h3>
                   <div className="color-picker">
-                    <div className="color-swatch" style={{ background: '#b50000' }}></div>
-                    <span className="color-code">#b50000</span>
+                    <div className="color-swatch" style={{ background: settings.iconColor }}></div>
+                    <input 
+                      type="color" 
+                      value={settings.iconColor} 
+                      onChange={(e) => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, iconColor: e.target.value }))
+                      }}
+                      className="color-input"
+                    />
+                    <span className="color-code">{settings.iconColor}</span>
                     <HiPencilSquare className="edit-icon" />
                   </div>
                 </div>
               </div>
               
-              <button className="gradient-button">
-                Enable Profile Gradient
+              <div className="color-grid">
+                <div className="color-card">
+                  <h3>Primary Color</h3>
+                  <div className="color-picker">
+                    <div className="color-swatch" style={{ background: settings.primaryColor }}></div>
+                    <input 
+                      type="color" 
+                      value={settings.primaryColor} 
+                      onChange={(e) => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, primaryColor: e.target.value }))
+                      }}
+                      className="color-input"
+                    />
+                    <span className="color-code">{settings.primaryColor}</span>
+                    <HiPencilSquare className="edit-icon" />
+                  </div>
+                </div>
+                
+                <div className="color-card">
+                  <h3>Secondary Color</h3>
+                  <div className="color-picker">
+                    <div className="color-swatch" style={{ background: settings.secondaryColor }}></div>
+                    <input 
+                      type="color" 
+                      value={settings.secondaryColor} 
+                      onChange={(e) => {
+                        // Update settings locally without triggering side effects
+                        setSettings(prev => ({ ...prev, secondaryColor: e.target.value }))
+                      }}
+                      className="color-input"
+                    />
+                    <span className="color-code">{settings.secondaryColor}</span>
+                    <HiPencilSquare className="edit-icon" />
+                  </div>
+                </div>
+              </div>
+              
+              <button 
+                className={`gradient-button ${settings.profileGradient ? 'active' : ''}`}
+                onClick={() => {
+                  // Update settings locally without triggering side effects
+                  setSettings(prev => ({ ...prev, profileGradient: !prev.profileGradient }))
+                }}
+              >
+                {settings.profileGradient ? 'Disable' : 'Enable'} Profile Gradient
               </button>
             </div>
 
@@ -669,14 +1450,26 @@ const Dashboard = () => {
                     <h3>Monochrome Icons</h3>
                     <HiQuestionMarkCircle className="info-icon" />
                   </div>
-                  <div className="toggle-switch active">
+                  <div 
+                    className={`toggle-switch ${settings.monochromeIcons ? 'active' : ''}`}
+                    onClick={() => {
+                    // Update settings locally without triggering side effects
+                    setSettings(prev => ({ ...prev, monochromeIcons: !prev.monochromeIcons }))
+                  }}
+                  >
                     <div className="toggle-slider"></div>
                   </div>
                 </div>
                 
                 <div className="toggle-card">
                   <h3>Animated Title</h3>
-                  <div className="toggle-switch active">
+                  <div 
+                    className={`toggle-switch ${settings.animatedTitle ? 'active' : ''}`}
+                    onClick={() => {
+                    // Update settings locally without triggering side effects
+                    setSettings(prev => ({ ...prev, animatedTitle: !prev.animatedTitle }))
+                  }}
+                  >
                     <div className="toggle-slider"></div>
                   </div>
                 </div>
@@ -686,54 +1479,376 @@ const Dashboard = () => {
                     <h3>Swap Box Colors</h3>
                     <HiQuestionMarkCircle className="info-icon" />
                   </div>
-                  <div className="toggle-switch active">
+                  <div 
+                    className={`toggle-switch ${settings.swapBoxColors ? 'active' : ''}`}
+                    onClick={() => {
+                    // Update settings locally without triggering side effects
+                    setSettings(prev => ({ ...prev, swapBoxColors: !prev.swapBoxColors }))
+                  }}
+                  >
                     <div className="toggle-slider"></div>
                   </div>
                 </div>
                 
                 <div className="toggle-card">
                   <h3>Volume Control</h3>
-                  <div className="toggle-switch">
+                  <div 
+                    className={`toggle-switch ${settings.volumeControl ? 'active' : ''}`}
+                    onClick={() => {
+                    // Update settings locally without triggering side effects
+                    setSettings(prev => ({ ...prev, volumeControl: !prev.volumeControl }))
+                  }}
+                  >
                     <div className="toggle-slider"></div>
                   </div>
                 </div>
                 
                 <div className="toggle-card">
                   <h3>Use Discord Avatar</h3>
-                  <div className="toggle-switch active">
+                  <div 
+                    className={`toggle-switch ${settings.useDiscordAvatar ? 'active' : ''}`}
+                    onClick={() => {
+                    // Update settings locally without triggering side effects
+                    setSettings(prev => ({ ...prev, useDiscordAvatar: !prev.useDiscordAvatar }))
+                  }}
+                  >
                     <div className="toggle-slider"></div>
                   </div>
                 </div>
                 
                 <div className="toggle-card">
                   <h3>Discord Avatar Decoration</h3>
-                  <div className="toggle-switch active">
+                  <div 
+                    className={`toggle-switch ${settings.discordAvatarDecoration ? 'active' : ''}`}
+                    onClick={() => {
+                    // Update settings locally without triggering side effects
+                    setSettings(prev => ({ ...prev, discordAvatarDecoration: !prev.discordAvatarDecoration }))
+                  }}
+                  >
+                    <div className="toggle-slider"></div>
+                  </div>
+                </div>
+                
+                <div className="toggle-card">
+                  <h3>Discord Presence</h3>
+                  <div 
+                    className={`toggle-switch ${settings.discordPresence ? 'active' : ''}`}
+                    onClick={() => {
+                      // Update settings locally without triggering side effects
+                      setSettings(prev => ({ ...prev, discordPresence: !prev.discordPresence }))
+                    }}
+                  >
+                    <div className="toggle-slider"></div>
+                  </div>
+                </div>
+                
+                <div className="toggle-card">
+                  <h3>Show Badges</h3>
+                  <div 
+                    className={`toggle-switch ${settings.showBadges ? 'active' : ''}`}
+                    onClick={() => {
+                    // Update settings locally without triggering side effects
+                    setSettings(prev => ({ ...prev, showBadges: !prev.showBadges }))
+                  }}
+                  >
                     <div className="toggle-slider"></div>
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* Unsaved Changes Popup (only show when not in customize mode) */}
+            {hasUnsavedChanges && activeSection !== 'customize' && (
+              <div className="unsaved-changes-popup">
+                <div className="popup-content">
+                  <div className="popup-header">
+                    <HiExclamationTriangle className="warning-icon" />
+                    <h3>Unsaved Changes</h3>
+                  </div>
+                  <p>You have unsaved changes that need to be saved.</p>
+                  <div className="popup-actions">
+                    <button 
+                      className="save-now-btn"
+                      onClick={saveSettings}
+                      disabled={saving}
+                    >
+                      {saving ? 'Saving...' : 'Save Now'}
+                    </button>
+                    <button 
+                      className="discard-btn"
+                      onClick={resetSettings}
+                    >
+                      Discard Changes
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Save Success Notification */}
+            {showSaveSuccess && (
+              <div className="save-notification success">
+                <HiCheckCircle className="notification-icon" />
+                <span>Settings saved successfully!</span>
+              </div>
+            )}
+
+            {/* Save Error Notification */}
+            {showSaveError && (
+              <div className="save-notification error">
+                <HiXCircle className="notification-icon" />
+                <span>Failed to save settings: {saveErrorMessage}</span>
+              </div>
+            )}
           </>
         )}
 
         {activeSection === 'links' && (
           <div className="section-content">
-            <h1>Links</h1>
-            <p>Manage your social links and external profiles.</p>
+            <h1>Links Management</h1>
+            <p>Create, edit, and organize your social links and external profiles.</p>
+            
+            {/* Add New Link Button */}
+            <div className="links-header">
+              <button className="add-link-btn" onClick={handleAddLink}>
+                <HiPlus className="add-icon" />
+                Add New Link
+              </button>
+              <div className="links-stats">
+                <span className="stat-item">
+                  <HiLink className="stat-icon" />
+                  {userLinks.length} Links
+                </span>
+                <span className="stat-item">
+                  <HiEye className="stat-icon" />
+                  {userLinks.reduce((total, link) => total + (link.clicks || 0), 0)} Total Clicks
+                </span>
+              </div>
+            </div>
+
+            {/* Links List */}
+            <div className="links-container">
+              {userLinks.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-icon">
+                    <HiLink />
+                  </div>
+                  <h3>No links yet</h3>
+                  <p>Create your first link to get started with your profile.</p>
+                  <button className="primary-btn" onClick={handleAddLink}>
+                    <HiPlus />
+                    Create First Link
+                  </button>
+                </div>
+              ) : (
+                <div className="links-grid">
+                  {userLinks.map((link, index) => (
+                    <div key={link.id || index} className="link-card">
+                      <div className="link-header">
+                        <div className="link-info">
+                          <div className="link-icon" style={{ background: link.color || '#58A4B0' }}>
+                            {link.icon ? (
+                              <img src={link.icon} alt="" className="icon-img" />
+                            ) : (
+                              <HiLink className="default-icon" />
+                            )}
+                          </div>
+                          <div className="link-details">
+                            <h4 className="link-title">{link.title || 'Untitled Link'}</h4>
+                            <p className="link-url">{link.url || 'No URL'}</p>
+                          </div>
+                        </div>
+                        <div className="link-actions">
+                          <button className="action-btn" onClick={() => handleEditLink(link)}>
+                            <HiPencilSquare />
+                          </button>
+                          <button className="action-btn" onClick={() => handleDeleteLink(link.id)}>
+                            <HiTrash />
+                          </button>
+                          <button className="action-btn drag-handle">
+                            <HiViewfinderCircle />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="link-body">
+                        {link.description && (
+                          <p className="link-description">{link.description}</p>
+                        )}
+                        <div className="link-meta">
+                          <span className="link-type">
+                            {link.type === 'HEADER' && 'Header'}
+                            {link.type === 'PRODUCT' && 'Product'}
+                            {link.type === 'SERVICE' && 'Service'}
+                            {link.type === 'MARKETPLACE' && 'Marketplace'}
+                            {(!link.type || link.type === 'DEFAULT') && 'Default'}
+                          </span>
+                          <span className="link-clicks">
+                            <HiEye className="click-icon" />
+                            {link.clicks || 0} clicks
+                          </span>
+                          <span className={`link-status ${link.isActive ? 'active' : 'inactive'}`}>
+                            {link.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="link-footer">
+                        <div className="link-toggle">
+                          <span className="toggle-label">Visible</span>
+                          <label className="toggle-switch">
+                            <input
+                              type="checkbox"
+                              checked={link.isActive || false}
+                              onChange={() => handleToggleLink(link.id)}
+                            />
+                            <span className="toggle-slider"></span>
+                          </label>
+                        </div>
+                        <button className="preview-btn" onClick={() => handlePreviewLink(link)}>
+                          <HiEye />
+                          Preview
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Link Modal */}
+            {showLinkModal && (
+              <div className="modal-overlay" onClick={handleCloseModal}>
+                <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                  <div className="modal-header">
+                    <h3>{editingLink ? 'Edit Link' : 'Add New Link'}</h3>
+                    <button className="close-btn" onClick={handleCloseModal}>
+                      <HiXMark />
+                    </button>
+                  </div>
+
+                  <div className="modal-body">
+                    <div className="form-group">
+                      <label>Link Title</label>
+                      <input
+                        type="text"
+                        placeholder="Enter link title"
+                        value={currentLink.title || ''}
+                        onChange={(e) => setCurrentLink(prev => ({ ...prev, title: e.target.value }))}
+                        className="form-input"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>URL</label>
+                      <input
+                        type="url"
+                        placeholder="https://example.com"
+                        value={currentLink.url || ''}
+                        onChange={(e) => setCurrentLink(prev => ({ ...prev, url: e.target.value }))}
+                        className="form-input"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Description (Optional)</label>
+                      <textarea
+                        placeholder="Brief description of this link"
+                        value={currentLink.description || ''}
+                        onChange={(e) => setCurrentLink(prev => ({ ...prev, description: e.target.value }))}
+                        className="form-textarea"
+                        rows="3"
+                      />
+                    </div>
+
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Link Type</label>
+                        <div className="select-wrapper">
+                          <select
+                            value={currentLink.type || 'DEFAULT'}
+                            onChange={(e) => setCurrentLink(prev => ({ ...prev, type: e.target.value }))}
+                            className="form-select"
+                          >
+                            <option value="DEFAULT">Default</option>
+                            <option value="HEADER">Header</option>
+                            <option value="PRODUCT">Product</option>
+                            <option value="SERVICE">Service</option>
+                            <option value="MARKETPLACE">Marketplace</option>
+                          </select>
+                          <HiChevronDown className="select-arrow" />
+                        </div>
+                      </div>
+
+                      <div className="form-group">
+                        <label>Color</label>
+                        <div className="color-picker-group">
+                          <div
+                            className="color-preview"
+                            style={{ background: currentLink.color || '#58A4B0' }}
+                          ></div>
+                          <input
+                            type="color"
+                            value={currentLink.color || '#58A4B0'}
+                            onChange={(e) => setCurrentLink(prev => ({ ...prev, color: e.target.value }))}
+                            className="color-input"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Icon URL (Optional)</label>
+                      <input
+                        type="url"
+                        placeholder="https://example.com/icon.png"
+                        value={currentLink.icon || ''}
+                        onChange={(e) => setCurrentLink(prev => ({ ...prev, icon: e.target.value }))}
+                        className="form-input"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={currentLink.isActive !== false}
+                          onChange={(e) => setCurrentLink(prev => ({ ...prev, isActive: e.target.checked }))}
+                          className="checkbox-input"
+                        />
+                        <span className="checkbox-custom"></span>
+                        Make this link visible on profile
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="modal-footer">
+                    <button className="secondary-btn" onClick={handleCloseModal}>
+                      Cancel
+                    </button>
+                    <button className="primary-btn" onClick={handleSaveLink}>
+                      {editingLink ? 'Update Link' : 'Create Link'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {activeSection === 'premium' && (
           <div className="section-content">
-            <h1>Premium</h1>
+            <h1>Premium Plans</h1>
             <p>Upgrade to premium for exclusive features and customization options.</p>
+            {/* Premium content will be implemented here */}
           </div>
         )}
 
         {activeSection === 'templates' && (
           <div className="section-content">
-            <h1>Templates</h1>
-            <p>Choose from pre-made templates for your profile.</p>
+            <h1>Profile Templates</h1>
+            <p>Choose from our collection of professionally designed templates.</p>
+            {/* Templates content will be implemented here */}
           </div>
         )}
       </MainContent>
@@ -747,6 +1862,21 @@ const DashboardWrapper = styled.div`
   position: relative;
   overflow: hidden;
   background: #1a1a1a;
+
+  .mobile-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 15;
+    backdrop-filter: blur(4px);
+    
+    @media (min-width: 769px) {
+      display: none;
+    }
+  }
 
   .loading-container,
   .error-container {
@@ -804,15 +1934,38 @@ const DashboardWrapper = styled.div`
 
 const Sidebar = styled.div`
   width: 260px;
+  height: 100vh;
   background: linear-gradient(145deg, rgba(15, 15, 25, 0.98), rgba(25, 25, 35, 0.95));
   backdrop-filter: blur(20px);
   border-right: 1px solid rgba(88, 164, 176, 0.15);
   display: flex;
   flex-direction: column;
-  position: relative;
+  position: fixed;
+  top: 0;
+  left: 0;
   z-index: 10;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(88, 164, 176, 0.3) transparent;
+  
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background: rgba(88, 164, 176, 0.3);
+    border-radius: 3px;
+    
+    &:hover {
+      background: rgba(88, 164, 176, 0.5);
+    }
+  }
   
   &.collapsed {
     width: 64px;
@@ -824,6 +1977,24 @@ const Sidebar = styled.div`
     
     .nav-menu .nav-item .nav-link .nav-link-content {
       justify-content: center;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    transform: translateX(-100%);
+    z-index: 20;
+    
+    &.mobile-open {
+      transform: translateX(0);
+    }
+    
+    &.collapsed {
+      width: 260px;
+      transform: translateX(-100%);
+      
+      &.mobile-open {
+        transform: translateX(0);
+      }
     }
   }
   
@@ -902,6 +2073,14 @@ const Sidebar = styled.div`
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
         overflow: hidden;
+        text-decoration: none;
+        color: inherit;
+        display: block;
+        
+        &:visited, &:hover, &:focus, &:active {
+          text-decoration: none;
+          color: inherit;
+        }
         
         &::before {
           content: '';
@@ -1212,10 +2391,58 @@ const Sidebar = styled.div`
 
 const MainContent = styled.div`
   flex: 1;
+  margin-left: 260px;
   padding: 2rem;
   overflow-y: auto;
   position: relative;
-  z-index: 10;
+  z-index: 5;
+  min-height: 100vh;
+  transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  
+  &.sidebar-collapsed {
+    margin-left: 64px;
+  }
+  
+  @media (max-width: 768px) {
+    margin-left: 0;
+    
+    &.sidebar-collapsed {
+      margin-left: 0;
+    }
+  }
+  
+  .mobile-menu-toggle {
+    display: none;
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    z-index: 15;
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(145deg, rgba(15, 15, 25, 0.95), rgba(25, 25, 35, 0.9));
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(88, 164, 176, 0.2);
+    border-radius: 12px;
+    color: #58A4B0;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    
+    &:hover {
+      background: linear-gradient(145deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1));
+      transform: scale(1.05);
+    }
+    
+    svg {
+      font-size: 1.5rem;
+    }
+    
+    @media (max-width: 768px) {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
   
   .content-header {
     margin-bottom: 2rem;
@@ -1662,6 +2889,67 @@ const MainContent = styled.div`
     }
   }
   
+  /* Header Content Styles */
+  .header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    
+    @media (max-width: 768px) {
+      flex-direction: column;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+  }
+  
+  .new-customization-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: linear-gradient(135deg, #FF6B6B, #4ECDC4);
+    border: none;
+    border-radius: 12px;
+    color: #ffffff;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 16px rgba(255, 107, 107, 0.3);
+    
+    &:hover {
+      background: linear-gradient(135deg, #FF5252, #26C6DA);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+    }
+    
+    &:active {
+      transform: translateY(0);
+    }
+    
+    .btn-icon {
+      font-size: 1.1rem;
+      animation: sparkle 2s ease-in-out infinite;
+    }
+    
+    @keyframes sparkle {
+      0%, 100% { 
+        transform: scale(1) rotate(0deg);
+        opacity: 1;
+      }
+      50% { 
+        transform: scale(1.1) rotate(180deg);
+        opacity: 0.8;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+
   /* Customize Page Styles */
   .customize-section {
     margin-bottom: 2rem;
@@ -2122,6 +3410,635 @@ const MainContent = styled.div`
     
     .toggles-grid {
       grid-template-columns: 1fr;
+    }
+
+    .links-header {
+      flex-direction: column;
+      gap: 1rem;
+      
+      .links-stats {
+        justify-content: center;
+        gap: 1rem;
+      }
+    }
+
+    .links-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .link-card {
+      .link-header {
+        flex-direction: column;
+        gap: 1rem;
+        
+        .link-info {
+          .link-details {
+            .link-url {
+              word-break: break-all;
+            }
+          }
+        }
+        
+        .link-actions {
+          justify-content: center;
+        }
+      }
+
+      .link-footer {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: center;
+      }
+    }
+
+    .modal-content {
+      margin: 1rem;
+      width: calc(100% - 2rem);
+      max-height: calc(100vh - 2rem);
+      
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  }
+
+  /* Links Management Styles */
+  .links-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+    border: 1px solid rgba(88, 164, 176, 0.15);
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+
+    .add-link-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      background: linear-gradient(135deg, #58A4B0, #4a8a94);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(88, 164, 176, 0.3);
+
+      &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(88, 164, 176, 0.4);
+        background: linear-gradient(135deg, #4a8a94, #3c7278);
+      }
+
+      .add-icon {
+        font-size: 1.1rem;
+      }
+    }
+
+    .links-stats {
+      display: flex;
+      gap: 2rem;
+
+      .stat-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #a0a0a0;
+        font-size: 0.9rem;
+
+        .stat-icon {
+          color: #58A4B0;
+          font-size: 1.1rem;
+        }
+      }
+    }
+  }
+
+  .links-container {
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+      border: 2px dashed rgba(88, 164, 176, 0.2);
+      border-radius: 16px;
+
+      .empty-icon {
+        font-size: 3rem;
+        color: #58A4B0;
+        margin-bottom: 1rem;
+      }
+
+      h3 {
+        color: #ffffff;
+        margin-bottom: 0.5rem;
+        font-size: 1.5rem;
+      }
+
+      p {
+        color: #a0a0a0;
+        margin-bottom: 2rem;
+        font-size: 1rem;
+      }
+
+      .primary-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, #58A4B0, #4a8a94);
+        border: none;
+        border-radius: 8px;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+
+        &:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px rgba(88, 164, 176, 0.4);
+        }
+      }
+    }
+
+    .links-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .link-card {
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 1.5rem;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+      &:hover {
+        border-color: rgba(88, 164, 176, 0.3);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+      }
+
+      .link-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 1rem;
+
+        .link-info {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+
+          .link-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+
+            .icon-img {
+              width: 24px;
+              height: 24px;
+              border-radius: 4px;
+            }
+
+            .default-icon {
+              color: white;
+              font-size: 1.5rem;
+            }
+          }
+
+          .link-details {
+            .link-title {
+              color: #ffffff;
+              font-size: 1.1rem;
+              font-weight: 600;
+              margin-bottom: 0.25rem;
+              word-break: break-word;
+            }
+
+            .link-url {
+              color: #58A4B0;
+              font-size: 0.9rem;
+              text-decoration: none;
+              word-break: break-all;
+
+              &:hover {
+                text-decoration: underline;
+              }
+            }
+          }
+        }
+
+        .link-actions {
+          display: flex;
+          gap: 0.5rem;
+
+          .action-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #a0a0a0;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            &:hover {
+              background: rgba(88, 164, 176, 0.2);
+              color: #58A4B0;
+            }
+          }
+        }
+      }
+
+      .link-body {
+        margin-bottom: 1rem;
+
+        .link-description {
+          color: #c0c0c0;
+          font-size: 0.9rem;
+          margin-bottom: 1rem;
+          line-height: 1.5;
+        }
+
+        .link-meta {
+          display: flex;
+          gap: 1rem;
+          flex-wrap: wrap;
+
+          .link-type {
+            padding: 0.25rem 0.5rem;
+            background: rgba(88, 164, 176, 0.2);
+            color: #58A4B0;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+          }
+
+          .link-clicks {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            color: #a0a0a0;
+            font-size: 0.8rem;
+
+            .click-icon {
+              font-size: 0.9rem;
+            }
+          }
+
+          .link-status {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+
+            &.active {
+              background: rgba(34, 197, 94, 0.2);
+              color: #22c55e;
+            }
+
+            &.inactive {
+              background: rgba(239, 68, 68, 0.2);
+              color: #ef4444;
+            }
+          }
+        }
+      }
+
+      .link-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+
+        .link-toggle {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+
+          .toggle-label {
+            color: #a0a0a0;
+            font-size: 0.9rem;
+          }
+
+          .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            cursor: pointer;
+
+            input {
+              opacity: 0;
+              width: 0;
+              height: 0;
+
+              &:checked + .toggle-slider {
+                background: #58A4B0;
+
+                &::before {
+                  transform: translateX(20px);
+                }
+              }
+            }
+
+            .toggle-slider {
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              background: #333;
+              border-radius: 12px;
+              transition: all 0.3s ease;
+
+              &::before {
+                content: '';
+                position: absolute;
+                top: 2px;
+                left: 2px;
+                width: 20px;
+                height: 20px;
+                background: white;
+                border-radius: 50%;
+                transition: transform 0.3s ease;
+              }
+            }
+          }
+        }
+
+        .preview-btn {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.5rem 1rem;
+          background: rgba(255, 255, 255, 0.1);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          border-radius: 6px;
+          color: #a0a0a0;
+          font-size: 0.9rem;
+          cursor: pointer;
+          transition: all 0.3s ease;
+
+          &:hover {
+            background: rgba(88, 164, 176, 0.2);
+            border-color: rgba(88, 164, 176, 0.3);
+            color: #58A4B0;
+          }
+        }
+      }
+    }
+  }
+
+  /* Modal Styles */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal-content {
+    background: linear-gradient(145deg, rgba(25, 25, 35, 0.98), rgba(15, 15, 25, 0.95));
+    border: 1px solid rgba(88, 164, 176, 0.2);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
+    backdrop-filter: blur(20px);
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+
+      h3 {
+        color: #ffffff;
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 0;
+      }
+
+      .close-btn {
+        width: 32px;
+        height: 32px;
+        border: none;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        color: #a0a0a0;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        &:hover {
+          background: rgba(239, 68, 68, 0.2);
+          color: #ef4444;
+        }
+      }
+    }
+
+    .modal-body {
+      padding: 2rem;
+
+      .form-group {
+        margin-bottom: 1.5rem;
+
+        label {
+          display: block;
+          color: #ffffff;
+          font-weight: 500;
+          margin-bottom: 0.5rem;
+          font-size: 0.9rem;
+        }
+
+        .form-input,
+        .form-textarea,
+        .form-select {
+          width: 100%;
+          padding: 0.75rem;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+          color: #ffffff;
+          font-size: 0.9rem;
+          transition: all 0.3s ease;
+
+          &:focus {
+            outline: none;
+            border-color: #58A4B0;
+            box-shadow: 0 0 0 3px rgba(88, 164, 176, 0.1);
+          }
+
+          &::placeholder {
+            color: #666;
+          }
+        }
+
+        .form-textarea {
+          resize: vertical;
+          min-height: 80px;
+          font-family: inherit;
+        }
+
+        .select-wrapper {
+          position: relative;
+
+          .select-arrow {
+            position: absolute;
+            right: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #a0a0a0;
+            pointer-events: none;
+          }
+        }
+
+        .color-picker-group {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+
+          .color-preview {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+          }
+
+          .color-input {
+            width: 60px;
+            height: 40px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+
+            &::-webkit-color-swatch {
+              border: none;
+              border-radius: 6px;
+            }
+
+            &::-webkit-color-swatch-wrapper {
+              padding: 0;
+              border: none;
+              border-radius: 6px;
+            }
+          }
+        }
+
+        .checkbox-label {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          cursor: pointer;
+          margin-bottom: 0;
+
+          .checkbox-input {
+            display: none;
+
+            &:checked + .checkbox-custom {
+              background: #58A4B0;
+              border-color: #58A4B0;
+
+              &::after {
+                opacity: 1;
+              }
+            }
+          }
+
+          .checkbox-custom {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            background: transparent;
+            position: relative;
+            transition: all 0.3s ease;
+
+            &::after {
+              content: '✓';
+              position: absolute;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%);
+              color: white;
+              font-size: 12px;
+              opacity: 0;
+              transition: opacity 0.3s ease;
+            }
+          }
+        }
+      }
+
+      .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+      }
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+      padding: 1.5rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+
+      .secondary-btn,
+      .primary-btn {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      .secondary-btn {
+        background: rgba(255, 255, 255, 0.1);
+        color: #a0a0a0;
+
+        &:hover {
+          background: rgba(255, 255, 255, 0.2);
+          color: #ffffff;
+        }
+      }
+
+      .primary-btn {
+        background: linear-gradient(135deg, #58A4B0, #4a8a94);
+        color: white;
+
+        &:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 15px rgba(88, 164, 176, 0.3);
+        }
+      }
     }
   }
 `

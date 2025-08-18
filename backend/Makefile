@@ -30,10 +30,12 @@ dev:
 	@echo "Starting development server with hot reload..."
 	@if command -v air > /dev/null; then \
 		air; \
+	elif [ -f $$(go env GOPATH)/bin/air ]; then \
+		$$(go env GOPATH)/bin/air; \
 	else \
 		echo "Installing air for hot reload..."; \
-		go install github.com/cosmtrek/air@latest; \
-		air; \
+		go install github.com/air-verse/air@latest; \
+		$$(go env GOPATH)/bin/air; \
 	fi
 
 # Run tests

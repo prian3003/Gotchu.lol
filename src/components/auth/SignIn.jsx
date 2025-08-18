@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import styled from 'styled-components'
 import ParticleBackground from '../effects/ParticleBackground'
 import ShinyText from '../effects/ShinyText'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useAuth } from '../../contexts/AuthContext'
 
 function SignIn() {
   const [formData, setFormData] = useState({
@@ -14,7 +15,9 @@ function SignIn() {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const { colors, isDarkMode } = useTheme()
+  const { login } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const handleChange = (e) => {
     setFormData({
@@ -73,20 +76,17 @@ function SignIn() {
       if (response.ok && data.success) {
         console.log('Login success - data received:', data)
         
-        // Store authentication data
+        // Store authentication data using auth context
         if (data.data?.token && data.data?.session_id) {
-          localStorage.setItem('authToken', data.data.token)
-          localStorage.setItem('sessionId', data.data.session_id)
-          console.log('Auth data stored:', { 
-            token: !!localStorage.getItem('authToken'), 
-            sessionId: !!localStorage.getItem('sessionId') 
-          })
+          login(data.data.token, data.data.session_id, data.data.user)
+          console.log('Auth data stored via context')
         }
 
         // Check if user is verified
         if (data.data?.user?.is_verified) {
-          // Redirect to dashboard for verified users
-          navigate('/dashboard')
+          // Redirect to intended destination or dashboard
+          const from = location.state?.from?.pathname || '/dashboard'
+          navigate(from, { replace: true })
         } else {
           // Redirect to email verification page for unverified users
           navigate('/email-verification', { 

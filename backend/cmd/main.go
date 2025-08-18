@@ -81,10 +81,14 @@ func main() {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, authService, redisClient, authMiddleware, emailService, cfg.SiteURL)
-	dashboardHandler := handlers.NewDashboardHandler(db)
+	dashboardHandler := handlers.NewDashboardHandler(db, redisClient, cfg)
+	linkHandler := handlers.NewLinkHandler(db, redisClient)
 
 	// Setup router
-	router := setupRouter(cfg, authMiddleware, rateLimiter, authHandler, dashboardHandler)
+	router := setupRouter(cfg, authMiddleware, rateLimiter, authHandler, dashboardHandler, linkHandler)
+
+	// Serve uploaded files
+	router.Static("/uploads", "./uploads")
 
 	// Setup HTTP server
 	srv := &http.Server{
@@ -140,6 +144,7 @@ func setupRouter(
 	rateLimiter *middleware.RateLimiter,
 	authHandler *handlers.AuthHandler,
 	dashboardHandler *handlers.DashboardHandler,
+	linkHandler *handlers.LinkHandler,
 ) *gin.Engine {
 	router := gin.New()
 
@@ -193,11 +198,45 @@ func setupRouter(
 			dashboard.GET("", dashboardHandler.GetDashboard)
 		}
 
+		// Customization routes (protected)
+		customization := api.Group("/customization")
+		customization.Use(authMiddleware.RequireAuth())
+		{
+			customization.GET("/settings", dashboardHandler.GetCustomizationSettings)
+			customization.POST("/settings", dashboardHandler.SaveCustomizationSettings)
+		}
+
+		// Upload routes (protected)
+		upload := api.Group("/upload")
+		upload.Use(authMiddleware.RequireAuth())
+		{
+			upload.POST("/asset", dashboardHandler.UploadAsset)
+		}
+
 		// User routes
 		users := api.Group("/users")
 		users.Use(authMiddleware.OptionalAuth())
 		{
 			users.GET("/:username", dashboardHandler.GetUserProfile)
+		}
+
+		// Link routes
+		links := api.Group("/links")
+		{
+			// Public routes for link clicks (no auth required)
+			links.POST("/:id/click", linkHandler.TrackClick)
+			
+			// Protected routes (authentication required)
+			linksProtected := links.Group("")
+			linksProtected.Use(authMiddleware.RequireAuth())
+			{
+				linksProtected.GET("", linkHandler.GetLinks)
+				linksProtected.POST("", linkHandler.CreateLink)
+				linksProtected.GET("/:id", linkHandler.GetLink)
+				linksProtected.PUT("/:id", linkHandler.UpdateLink)
+				linksProtected.DELETE("/:id", linkHandler.DeleteLink)
+				linksProtected.PUT("/reorder", linkHandler.ReorderLinks)
+			}
 		}
 
 		// Protected API routes

@@ -1,5 +1,5 @@
 import React from 'react'
-import ParticleBackground from '../effects/ParticleBackground'
+import ParticleBackgroundOptimized from '../effects/ParticleBackgroundOptimized'
 import { useTheme } from '../../contexts/ThemeContext'
 
 const Hero = () => {
@@ -14,8 +14,8 @@ const Hero = () => {
           : "radial-gradient(circle at center, #f8f8f8 0%, #ffffff 100%)"
       }}></div>
       
-      {/* Particle Background */}
-      <ParticleBackground />
+      {/* Optimized Particle Background - deferred loading */}
+      <ParticleBackgroundOptimized />
       
       {/* Theme-aware dot pattern */}
       <div className="absolute inset-0 opacity-10">

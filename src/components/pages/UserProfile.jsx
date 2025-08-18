@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import styled from 'styled-components'
+import { IoEye } from 'react-icons/io5'
 import ParticleBackground from '../effects/ParticleBackground'
-import ShinyText from '../effects/ShinyText'
 import { useTheme } from '../../contexts/ThemeContext'
+import logger from '../../utils/logger'
 
 const UserProfile = () => {
   const { username } = useParams()
@@ -16,53 +17,184 @@ const UserProfile = () => {
     fetchUserProfile()
   }, [username])
 
+  // Apply custom cursor if set - moved to top to follow Rules of Hooks
+  useEffect(() => {
+    if (user?.customization?.cursorUrl) {
+      document.body.style.cursor = `url(${user.customization.cursorUrl}), auto`
+      return () => {
+        document.body.style.cursor = 'auto'
+      }
+    }
+  }, [user?.customization?.cursorUrl])
+
   const fetchUserProfile = async () => {
     try {
       setLoading(true)
+      setError(null)
       
-      // For now, let's use mock data
-      setUser({
-        id: 1,
-        username: username || 'testuser',
-        displayName: 'Test User',
-        bio: 'Welcome to my profile! I love coding and creating amazing things.',
-        avatar_url: null,
-        is_verified: true,
-        plan: 'free',
-        theme: 'dark',
-        uid: '772,558',
-        joinedDate: '2024-01-15',
-        profileViews: 7,
-        links: [
-          { id: 1, title: 'Twitter', url: 'https://twitter.com/testuser', icon: '🐦', clicks: 45 },
-          { id: 2, title: 'GitHub', url: 'https://github.com/testuser', icon: '🐙', clicks: 32 },
-          { id: 3, title: 'Website', url: 'https://testuser.dev', icon: '🌐', clicks: 28 },
-          { id: 4, title: 'YouTube', url: 'https://youtube.com/testuser', icon: '📺', clicks: 15 }
-        ],
-        stats: {
-          totalClicks: 120,
-          totalViews: 456,
-          linksCount: 4
-        }
+      // Fetch real user data from backend API
+      const response = await fetch(`/api/users/${username}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       })
       
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('User not found')
+        } else if (response.status === 403) {
+          throw new Error('This profile is private')
+        } else {
+          throw new Error('Failed to load profile')
+        }
+      }
+      
+      const data = await response.json()
+      
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to load profile')
+      }
+      
+      const userData = data.data.user
+      
+      // Map API response to expected format with customization settings
+      const profileData = {
+        id: userData.id,
+        username: userData.username,
+        displayName: userData.display_name || userData.username,
+        bio: userData.bio || `Welcome to ${userData.username}'s profile!`,
+        avatar_url: userData.avatar_url,
+        is_verified: userData.is_verified,
+        plan: userData.plan,
+        theme: userData.theme,
+        uid: userData.id.toString(),
+        joinedDate: userData.created_at,
+        profileViews: userData.profile_views || 0,
+        links: userData.links ? userData.links.map(link => ({
+          id: link.id,
+          title: link.title,
+          url: link.url,
+          icon: link.icon || '🔗',
+          clicks: link.clicks || 0
+        })) : [],
+        stats: {
+          totalClicks: userData.total_clicks || 0,
+          totalViews: userData.profile_views || 0,
+          linksCount: userData.links ? userData.links.length : 0
+        },
+        // Include customization settings
+        customization: userData.customization ? {
+          // Colors & Theme
+          accentColor: userData.customization.accent_color || '#58A4B0',
+          textColor: userData.customization.text_color || '#FFFFFF',
+          backgroundColor: userData.customization.background_color || '#0F0F23',
+          primaryColor: userData.customization.primary_color || '#1bbd9a',
+          secondaryColor: userData.customization.secondary_color || '#EC4899',
+          iconColor: userData.customization.icon_color || '#FFFFFF',
+          
+          // Effects
+          backgroundEffect: userData.customization.background_effect || '',
+          usernameEffect: userData.customization.username_effect || '',
+          showBadges: userData.customization.show_badges ?? true,
+          
+          // Visual Settings
+          profileBlur: userData.customization.profile_blur || 0,
+          profileOpacity: userData.customization.profile_opacity || 90,
+          profileGradient: userData.customization.profile_gradient ?? true,
+          
+          // Glow Effects
+          glowUsername: userData.customization.glow_username || false,
+          glowSocials: userData.customization.glow_socials || false,
+          glowBadges: userData.customization.glow_badges || false,
+          
+          // Animations & Effects
+          animatedTitle: userData.customization.animated_title || false,
+          monochromeIcons: userData.customization.monochrome_icons || false,
+          swapBoxColors: userData.customization.swap_box_colors || false,
+          
+          // Audio
+          volumeLevel: userData.customization.volume_level || 50,
+          volumeControl: userData.customization.volume_control ?? true,
+          
+          // Asset URLs
+          backgroundUrl: userData.customization.background_url || '',
+          audioUrl: userData.customization.audio_url || '',
+          cursorUrl: userData.customization.cursor_url || ''
+        } : {
+          // Default customization if none provided
+          accentColor: '#58A4B0',
+          textColor: '#FFFFFF',
+          backgroundColor: '#0F0F23',
+          primaryColor: '#1bbd9a',
+          secondaryColor: '#EC4899',
+          iconColor: '#FFFFFF',
+          backgroundEffect: '',
+          usernameEffect: '',
+          showBadges: true,
+          profileBlur: 0,
+          profileOpacity: 90,
+          profileGradient: true,
+          glowUsername: false,
+          glowSocials: false,
+          glowBadges: false,
+          animatedTitle: false,
+          monochromeIcons: false,
+          swapBoxColors: false,
+          volumeLevel: 50,
+          volumeControl: true,
+          backgroundUrl: '',
+          audioUrl: '',
+          cursorUrl: ''
+        }
+      }
+      
+      setUser(profileData)
       setLoading(false)
     } catch (err) {
-      console.error('Profile fetch error:', err)
+      logger.error('Profile fetch failed', err)
       setError(err.message)
       setLoading(false)
     }
   }
 
-  const handleLinkClick = (link) => {
-    // Track click and open link
-    console.log(`Clicked on ${link.title}`)
-    window.open(link.url, '_blank')
+  const handleLinkClick = async (link) => {
+    try {
+      // Track click analytics (fire and forget - TODO: implement backend endpoint)
+      fetch(`/api/links/${link.id}/click`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_agent: navigator.userAgent,
+          referer: window.location.href,
+        }),
+      }).catch(err => {
+        // Silently fail if endpoint doesn't exist yet
+        logger.debug('Link click tracking not implemented yet', err)
+      })
+      
+      // Open link
+      if (link.url) {
+        window.open(link.url, '_blank')
+      }
+    } catch (err) {
+      logger.error('Link click failed', err)
+      // Still open the link even if tracking fails
+      if (link.url) {
+        window.open(link.url, '_blank')
+      }
+    }
   }
 
   if (loading) {
     return (
-      <ProfileWrapper style={{ background: colors.background }}>
+      <ProfileWrapper style={{ 
+        background: colors.background,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center'
+      }}>
         <ParticleBackground />
         <div className="loading-container">
           <div className="loading-spinner"></div>
@@ -74,7 +206,11 @@ const UserProfile = () => {
 
   if (error || !user) {
     return (
-      <ProfileWrapper style={{ background: colors.background }}>
+      <ProfileWrapper style={{ 
+        background: colors.background,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center'
+      }}>
         <ParticleBackground />
         <div className="error-container">
           <h2>Profile Not Found</h2>
@@ -90,27 +226,47 @@ const UserProfile = () => {
     )
   }
 
+  // Get customization settings for styling
+  const customization = user?.customization || {}
+  const hasBackgroundImage = customization.backgroundUrl && customization.backgroundUrl.trim() !== ''
+  const profileStyles = {
+    background: hasBackgroundImage
+      ? `linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url("${customization.backgroundUrl}")`
+      : customization.backgroundColor || colors.background,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundAttachment: 'fixed',
+    minHeight: '100vh'
+  }
+
+
   return (
-    <ProfileWrapper style={{ background: colors.background }}>
-      <ParticleBackground />
+    <ProfileWrapper style={profileStyles} customization={customization}>
+      {/* Background Effects */}
+      {customization.backgroundEffect === 'particles' && <ParticleBackground />}
       
-      {/* Large Background Text */}
-      <div className="background-text">
-        <ShinyText
-          size="4xl"
-          weight="extrabold"
-          speed={4}
-          baseColor={isDarkMode ? "rgba(255, 255, 255, 0.03)" : "rgba(19, 21, 21, 0.03)"}
-          shineColor={isDarkMode ? "rgba(88, 164, 176, 0.15)" : "rgba(88, 164, 176, 0.2)"}
-          intensity={1}
-          direction="left-to-right"
-          shineWidth={30}
-          repeat="infinite"
-          className="bg-text"
+      {/* Audio Element */}
+      {customization.audioUrl && customization.volumeControl && (
+        <audio
+          controls
+          autoPlay
+          loop
+          volume={customization.volumeLevel / 100}
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            zIndex: 1000,
+            borderRadius: '8px',
+            background: 'rgba(0,0,0,0.7)',
+            backdropFilter: 'blur(10px)'
+          }}
         >
-          {user.username}
-        </ShinyText>
-      </div>
+          <source src={customization.audioUrl} type="audio/mpeg" />
+          Your browser does not support the audio element.
+        </audio>
+      )}
+      
 
       {/* Profile Content */}
       <div className="profile-container">
@@ -141,87 +297,15 @@ const UserProfile = () => {
             
             <p className="bio">{user.bio}</p>
             
-            <div className="user-stats">
-              <div className="stat-item">
-                <span className="stat-value">{user.stats.totalViews}</span>
-                <span className="stat-label">Profile Views</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-value">{user.stats.totalClicks}</span>
-                <span className="stat-label">Total Clicks</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-value">{user.stats.linksCount}</span>
-                <span className="stat-label">Links</span>
-              </div>
-            </div>
-            
-            <div className="user-meta">
-              <div className="meta-item">
-                <span className="meta-icon">🆔</span>
-                <span>UID: {user.uid}</span>
-              </div>
-              <div className="meta-item">
-                <span className="meta-icon">📅</span>
-                <span>Joined {new Date(user.joinedDate).toLocaleDateString('en-US', { 
-                  year: 'numeric', 
-                  month: 'long' 
-                })}</span>
-              </div>
-            </div>
+          </div>
+          
+          {/* Profile Views - Bottom Left of Card */}
+          <div className="profile-views-bottom">
+            <IoEye className="views-icon" /><span className="views-count">{user.stats.totalViews}</span>
           </div>
         </div>
 
-        {/* Links Section */}
-        <div className="links-section">
-          <h3>Links</h3>
-          <div className="links-grid">
-            {user.links.map((link) => (
-              <div 
-                key={link.id} 
-                className="link-card"
-                onClick={() => handleLinkClick(link)}
-              >
-                <div className="link-icon">{link.icon}</div>
-                <div className="link-content">
-                  <div className="link-title">{link.title}</div>
-                  <div className="link-url">{link.url}</div>
-                </div>
-                <div className="link-stats">
-                  <span className="click-count">{link.clicks}</span>
-                  <span className="click-label">clicks</span>
-                </div>
-                <div className="link-arrow">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
-                  </svg>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
 
-        {/* Footer */}
-        <div className="profile-footer">
-          <div className="powered-by">
-            <span>Powered by</span>
-            <strong>gotchu.lol</strong>
-          </div>
-          <div className="footer-actions">
-            <button className="action-btn">
-              <span className="action-icon">📊</span>
-              View Analytics
-            </button>
-            <button className="action-btn">
-              <span className="action-icon">📤</span>
-              Share Profile
-            </button>
-            <button className="action-btn primary">
-              <span className="action-icon">🚀</span>
-              Create Your Own
-            </button>
-          </div>
-        </div>
       </div>
     </ProfileWrapper>
   )
@@ -231,29 +315,20 @@ const ProfileWrapper = styled.div`
   min-height: 100vh;
   position: relative;
   overflow-x: hidden;
-  background: #1a1a1a;
+  /* Background is set via inline styles to support background images */
+  color: ${props => props.customization?.textColor || '#ffffff'};
   
-  .background-text {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-    z-index: 1;
-    
-    .bg-text {
-      font-size: clamp(6rem, 15vw, 20rem);
-      font-family: 'DM Serif Text', serif;
-      font-weight: 800;
-      line-height: 1;
-      text-transform: lowercase;
-      letter-spacing: -0.02em;
-    }
-  }
+  /* Apply blur effect if enabled */
+  ${props => props.customization?.profileBlur > 0 && `
+    backdrop-filter: blur(${props.customization.profileBlur}px);
+  `}
+  
+  /* Apply custom cursor if set */
+  ${props => props.customization?.cursorUrl && `
+    cursor: url(${props.customization.cursorUrl}), auto;
+    * { cursor: url(${props.customization.cursorUrl}), auto; }
+  `}
+  
 
   .loading-container,
   .error-container {
@@ -312,22 +387,27 @@ const ProfileWrapper = styled.div`
     position: relative;
     z-index: 10;
     max-width: 800px;
-    margin: 0 auto;
+    margin: 10vh auto 0;
     padding: 2rem;
     
     @media (max-width: 768px) {
       padding: 1rem;
+      margin: 5vh auto 0;
     }
   }
 
   .profile-header {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    position: relative;
+    background: ${props => props.customization?.profileGradient 
+      ? `linear-gradient(135deg, ${props.customization.accentColor || '#58A4B0'}20, ${props.customization.primaryColor || '#1bbd9a'}20)`
+      : 'rgba(255, 255, 255, 0.05)'
+    };
     border-radius: 20px;
     padding: 3rem;
     backdrop-filter: blur(10px);
     margin-bottom: 2rem;
     text-align: center;
+    opacity: ${props => (props.customization?.profileOpacity || 90) / 100};
     
     @media (max-width: 768px) {
       padding: 2rem 1rem;
@@ -343,15 +423,18 @@ const ProfileWrapper = styled.div`
         width: 120px;
         height: 120px;
         border-radius: 50%;
-        border: 4px solid #58A4B0;
+        border: 4px solid ${props => props.customization?.accentColor || '#58A4B0'};
         object-fit: cover;
+        ${props => props.customization?.glowUsername && `
+          box-shadow: 0 0 20px ${props.customization.accentColor || '#58A4B0'};
+        `}
       }
       
       .avatar-placeholder {
         display: flex;
         align-items: center;
         justify-content: center;
-        background: linear-gradient(135deg, #58A4B0, #4A8C96);
+        background: linear-gradient(135deg, ${props => props.customization?.accentColor || '#58A4B0'}, ${props => props.customization?.primaryColor || '#4A8C96'});
         color: white;
         font-size: 3rem;
         font-weight: bold;
@@ -363,7 +446,7 @@ const ProfileWrapper = styled.div`
         right: 8px;
         width: 32px;
         height: 32px;
-        background: #58A4B0;
+        background: ${props => props.customization?.accentColor || '#58A4B0'};
         border-radius: 50%;
         display: flex;
         align-items: center;
@@ -371,7 +454,11 @@ const ProfileWrapper = styled.div`
         color: white;
         font-size: 16px;
         font-weight: bold;
-        border: 3px solid #1a1a1a;
+        border: 3px solid ${props => props.customization?.backgroundColor || '#1a1a1a'};
+        ${props => props.customization?.glowBadges && props.customization?.showBadges && `
+          box-shadow: 0 0 15px ${props.customization.accentColor || '#58A4B0'};
+        `}
+        display: ${props => props.customization?.showBadges !== false ? 'flex' : 'none'};
       }
     }
     
@@ -387,8 +474,11 @@ const ProfileWrapper = styled.div`
         h1 {
           font-size: 2.5rem;
           font-weight: 700;
-          color: #ffffff;
+          color: ${props => props.customization?.textColor || '#ffffff'};
           margin: 0;
+          ${props => props.customization?.glowUsername && `
+            text-shadow: 0 0 20px ${props.customization.accentColor || '#58A4B0'};
+          `}
           
           @media (max-width: 768px) {
             font-size: 2rem;
@@ -398,7 +488,7 @@ const ProfileWrapper = styled.div`
         .plan-badge {
           display: inline-block;
           padding: 0.5rem 1rem;
-          background: linear-gradient(135deg, #58A4B0, #4A8C96);
+          background: linear-gradient(135deg, ${props => props.customization?.accentColor || '#58A4B0'}, ${props => props.customization?.primaryColor || '#4A8C96'});
           color: white;
           border-radius: 20px;
           font-size: 0.8rem;
@@ -429,215 +519,27 @@ const ProfileWrapper = styled.div`
         }
       }
       
-      .user-stats {
-        display: flex;
-        justify-content: center;
-        gap: 3rem;
-        margin-bottom: 2rem;
+      .profile-views-bottom {
+        position: absolute;
+        bottom: 1rem;
+        left: 1rem;
         
-        @media (max-width: 768px) {
-          gap: 1.5rem;
+        .views-icon {
+          font-size: 1.2rem;
+          color: ${props => props.customization?.accentColor || '#58A4B0'};
         }
         
-        .stat-item {
-          text-align: center;
-          
-          .stat-value {
-            display: block;
-            font-size: 2rem;
-            font-weight: 700;
-            color: #58A4B0;
-            margin-bottom: 0.25rem;
-            
-            @media (max-width: 768px) {
-              font-size: 1.5rem;
-            }
-          }
-          
-          .stat-label {
-            font-size: 0.9rem;
-            color: #666;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }
-        }
-      }
-      
-      .user-meta {
-        display: flex;
-        justify-content: center;
-        gap: 2rem;
-        flex-wrap: wrap;
-        
-        .meta-item {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          color: #a0a0a0;
+        .views-count {
+          font-weight: 600;
+          color: ${props => props.customization?.textColor || '#ffffff'};
           font-size: 0.9rem;
-          
-          .meta-icon {
-            font-size: 1rem;
-          }
+          margin-left: 0.3rem;
         }
       }
     }
   }
 
-  .links-section {
-    margin-bottom: 3rem;
-    
-    h3 {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: #ffffff;
-      margin-bottom: 1.5rem;
-      text-align: center;
-    }
-    
-    .links-grid {
-      display: grid;
-      gap: 1rem;
-      
-      .link-card {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        padding: 1.5rem;
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 16px;
-        backdrop-filter: blur(10px);
-        cursor: pointer;
-        transition: all 0.3s ease;
-        
-        &:hover {
-          background: rgba(88, 164, 176, 0.1);
-          border-color: #58A4B0;
-          transform: translateY(-2px);
-        }
-        
-        .link-icon {
-          font-size: 2rem;
-          width: 48px;
-          height: 48px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: rgba(88, 164, 176, 0.2);
-          border-radius: 12px;
-          flex-shrink: 0;
-        }
-        
-        .link-content {
-          flex: 1;
-          min-width: 0;
-          
-          .link-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: #ffffff;
-            margin-bottom: 0.25rem;
-          }
-          
-          .link-url {
-            font-size: 0.9rem;
-            color: #666;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-          }
-        }
-        
-        .link-stats {
-          text-align: center;
-          margin-right: 1rem;
-          
-          .click-count {
-            display: block;
-            font-size: 1.2rem;
-            font-weight: 700;
-            color: #58A4B0;
-            margin-bottom: 0.25rem;
-          }
-          
-          .click-label {
-            font-size: 0.8rem;
-            color: #666;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }
-        }
-        
-        .link-arrow {
-          color: #58A4B0;
-          transition: transform 0.3s ease;
-        }
-        
-        &:hover .link-arrow {
-          transform: translateX(4px);
-        }
-      }
-    }
-  }
 
-  .profile-footer {
-    text-align: center;
-    padding: 2rem 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    
-    .powered-by {
-      color: #666;
-      font-size: 0.9rem;
-      margin-bottom: 2rem;
-      
-      strong {
-        color: #58A4B0;
-        margin-left: 0.5rem;
-      }
-    }
-    
-    .footer-actions {
-      display: flex;
-      justify-content: center;
-      gap: 1rem;
-      flex-wrap: wrap;
-      
-      .action-btn {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.75rem 1.5rem;
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        color: #ffffff;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        font-size: 0.9rem;
-        font-weight: 500;
-        
-        &:hover {
-          background: rgba(88, 164, 176, 0.1);
-          border-color: #58A4B0;
-          transform: translateY(-2px);
-        }
-        
-        &.primary {
-          background: linear-gradient(135deg, #58A4B0, #4A8C96);
-          border-color: #58A4B0;
-          
-          &:hover {
-            background: linear-gradient(135deg, #4A8C96, #3A7A84);
-          }
-        }
-        
-        .action-icon {
-          font-size: 1rem;
-        }
-      }
-    }
-  }
 `
 
 export default UserProfile

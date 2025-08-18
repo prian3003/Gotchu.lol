@@ -74,7 +74,7 @@ func (am *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 func (am *AuthMiddleware) OptionalAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, session, _ := am.authenticateRequest(c)
-		
+
 		if user != nil && user.IsActive {
 			c.Set("user", user)
 			c.Set("session", session)
@@ -100,7 +100,7 @@ func (am *AuthMiddleware) RequirePremium() gin.HandlerFunc {
 
 		userModel := user.(*models.User)
 		premiumPlans := []string{"premium", "pro", "enterprise", "admin", "staff"}
-		
+
 		isPremium := false
 		for _, plan := range premiumPlans {
 			if userModel.Plan == plan {
@@ -256,7 +256,7 @@ func (am *AuthMiddleware) RateLimitAuth(maxAttempts int, window time.Duration) g
 		var requestBody map[string]interface{}
 		if c.ShouldBindJSON(&requestBody) == nil {
 			var identifier string
-			
+
 			if id, exists := requestBody["identifier"]; exists {
 				identifier = id.(string)
 			} else if username, exists := requestBody["username"]; exists {

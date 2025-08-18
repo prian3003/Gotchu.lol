@@ -124,9 +124,13 @@ const ScrollStack = ({
             >
               {cards.slice(0, 5).map((card, index) => {
                 const cardTransform = getCardTransform(index);
-                const backgroundImage =
-                  card.backgroundImage ||
-                  defaultBackgrounds[index % defaultBackgrounds.length];
+                
+                // Prioritize CSS gradients for instant loading, fallback to images
+                const hasGradient = card.gradient;
+                const backgroundImage = !hasGradient ? (
+                  card.backgroundImage || card.fallbackImage ||
+                  defaultBackgrounds[index % defaultBackgrounds.length]
+                ) : null;
 
                 return (
                   <div
@@ -146,12 +150,14 @@ const ScrollStack = ({
                     }}
                   >
                     <div
-                      className="absolute inset-0 z-0 bg-gradient-to-b from-black/40 to-black/80"
+                      className="absolute inset-0 z-0"
                       style={{
-                        backgroundImage: `url('${backgroundImage}')`,
-                        backgroundSize: "cover",
-                        backgroundPosition: "center",
-                        backgroundBlendMode: "overlay",
+                        background: hasGradient 
+                          ? `${card.gradient}, linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.7))`
+                          : `linear-gradient(to bottom, rgba(0,0,0,0.4), rgba(0,0,0,0.8)), url('${backgroundImage}')`,
+                        backgroundSize: hasGradient ? "cover" : "cover, cover",
+                        backgroundPosition: hasGradient ? "center" : "center, center",
+                        backgroundBlendMode: hasGradient ? "normal" : "overlay",
                       }}
                     />
 

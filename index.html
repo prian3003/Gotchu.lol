@@ -14,9 +14,18 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="gotchu.lol" />
     <meta name="twitter:description" content="Modern web development and creative digital solutions" />
+    <!-- Performance optimizations -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="dns-prefetch" href="https://images.unsplash.com">
+    <link rel="dns-prefetch" href="https://images.pexels.com">
+    
+    <!-- Critical fonts with display=swap for better LCP -->
     <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Text:ital@0;1&family=Press+Start+2P&display=swap" rel="stylesheet">
+    
+    <!-- Preload critical resources -->
+    <link rel="modulepreload" href="/src/main.jsx">
+    <link rel="modulepreload" href="/src/App.jsx">
     <title>gotchu.lol</title>
   </head>
   <body>
