@@ -691,6 +691,8 @@ func (h *DashboardHandler) UploadAsset(c *gin.Context) {
 	maxSize := int64(5 << 20) // 5MB default
 	if assetType == "audio" {
 		maxSize = int64(10 << 20) // 10MB for audio
+	} else if assetType == "backgroundImage" {
+		maxSize = int64(15 << 20) // 15MB for background (images and videos)
 	}
 	
 	if header.Size > maxSize {
@@ -703,9 +705,14 @@ func (h *DashboardHandler) UploadAsset(c *gin.Context) {
 
 	// Validate file type
 	allowedTypes := map[string][]string{
-		"backgroundImage": {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"},
+		"backgroundImage": {
+			// Images
+			"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp",
+			// Videos
+			"video/mp4", "video/webm", "video/ogg", "video/avi", "video/mov", "video/quicktime",
+		},
 		"avatar":         {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"},
-		"audio":          {"audio/mpeg", "audio/wav", "audio/mp3", "audio/ogg", "audio/m4a"},
+		"audio":          {"audio/mpeg", "audio/wav", "audio/mp3", "audio/ogg", "audio/m4a", "audio/opus"},
 		"cursor":         {"image/png", "image/x-icon", "image/vnd.microsoft.icon", "image/svg+xml"},
 	}
 
@@ -810,6 +817,184 @@ func (h *DashboardHandler) UploadAsset(c *gin.Context) {
 			},
 			"url": fileURL,
 		},
+	})
+}
+
+// ListUserAudioFiles lists all audio files for the authenticated user
+func (h *DashboardHandler) ListUserAudioFiles(c *gin.Context) {
+	// Get session from context
+	session, exists := c.Get("session")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, DashboardResponse{
+			Success: false,
+			Message: "Unauthorized",
+		})
+		return
+	}
+
+	sessionData, ok := session.(*redis.SessionData)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, DashboardResponse{
+			Success: false,
+			Message: "Invalid session",
+		})
+		return
+	}
+
+	userID := sessionData.UserID
+
+	// Create folder path for user
+	folderPath := fmt.Sprintf("user_%d", userID)
+
+	// List files from Supabase
+	files, err := h.storage.ListFiles("user-audio", folderPath)
+	if err != nil {
+		fmt.Printf("Error listing audio files for user %d: %v\n", userID, err)
+		c.JSON(http.StatusInternalServerError, DashboardResponse{
+			Success: false,
+			Message: "Failed to list audio files",
+		})
+		return
+	}
+
+	// Transform files to include public URLs
+	var audioFiles []gin.H
+	for _, file := range files {
+		// Skip placeholder files and hidden files
+		if file.Name == ".emptyFolderPlaceholder" || strings.HasPrefix(file.Name, ".") {
+			continue
+		}
+		
+		filePath := fmt.Sprintf("%s/%s", folderPath, file.Name)
+		publicURL := h.storage.GetPublicURL("user-audio", filePath)
+		
+		audioFiles = append(audioFiles, gin.H{
+			"name":       file.Name,
+			"url":        publicURL,
+			"filePath":   filePath,
+			"fileName":   file.Name,
+			"size":       file.Size,
+			"createdAt":  file.CreatedAt,
+			"updatedAt":  file.UpdatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, DashboardResponse{
+		Success: true,
+		Message: "Audio files retrieved successfully",
+		Data: gin.H{
+			"files": audioFiles,
+		},
+	})
+}
+
+// DeleteUserAsset deletes a specific asset file for the authenticated user
+func (h *DashboardHandler) DeleteUserAsset(c *gin.Context) {
+	// Get session from context
+	session, exists := c.Get("session")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, DashboardResponse{
+			Success: false,
+			Message: "Unauthorized",
+		})
+		return
+	}
+
+	sessionData, ok := session.(*redis.SessionData)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, DashboardResponse{
+			Success: false,
+			Message: "Invalid session",
+		})
+		return
+	}
+
+	userID := sessionData.UserID
+
+	// Get file path and asset type from request body
+	var deleteRequest struct {
+		FilePath  string `json:"filePath" binding:"required"`
+		AssetType string `json:"assetType" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&deleteRequest); err != nil {
+		c.JSON(http.StatusBadRequest, DashboardResponse{
+			Success: false,
+			Message: "Invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	// Validate asset type
+	validAssetTypes := []string{"audio", "backgroundImage", "avatar", "cursor"}
+	isValidType := false
+	for _, validType := range validAssetTypes {
+		if deleteRequest.AssetType == validType {
+			isValidType = true
+			break
+		}
+	}
+	
+	if !isValidType {
+		c.JSON(http.StatusBadRequest, DashboardResponse{
+			Success: false,
+			Message: "Invalid asset type",
+		})
+		return
+	}
+
+	// Verify the file path belongs to the user
+	expectedPrefix := fmt.Sprintf("user_%d/", userID)
+	if !strings.HasPrefix(deleteRequest.FilePath, expectedPrefix) {
+		c.JSON(http.StatusForbidden, DashboardResponse{
+			Success: false,
+			Message: "Access denied: file does not belong to user",
+		})
+		return
+	}
+
+	// Get the appropriate bucket name
+	bucketName := storage.GetBucketForAssetType(deleteRequest.AssetType)
+	
+	// Delete file from Supabase storage
+	err := h.storage.DeleteFile(bucketName, deleteRequest.FilePath)
+	if err != nil {
+		fmt.Printf("Error deleting %s file %s for user %d: %v\n", deleteRequest.AssetType, deleteRequest.FilePath, userID, err)
+		c.JSON(http.StatusInternalServerError, DashboardResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to delete %s file", deleteRequest.AssetType),
+		})
+		return
+	}
+
+	// Update user's asset URL field based on asset type
+	updateData := make(map[string]interface{})
+	switch deleteRequest.AssetType {
+	case "backgroundImage":
+		updateData["background_url"] = nil
+	case "avatar":
+		updateData["avatar_url"] = nil
+	case "audio":
+		updateData["audio_url"] = nil
+	case "cursor":
+		updateData["custom_cursor_url"] = nil
+	}
+
+	// Update the user record to remove the asset URL
+	if len(updateData) > 0 {
+		var user models.User
+		if err := h.db.Where("id = ?", userID).First(&user).Error; err == nil {
+			if err := h.db.Model(&user).Updates(updateData).Error; err != nil {
+				fmt.Printf("Warning: Failed to update user asset URL after deletion: %v\n", err)
+			}
+		}
+	}
+
+	fmt.Printf("Successfully deleted %s file %s for user %d\n", deleteRequest.AssetType, deleteRequest.FilePath, userID)
+
+	c.JSON(http.StatusOK, DashboardResponse{
+		Success: true,
+		Message: fmt.Sprintf("%s file deleted successfully", strings.Title(deleteRequest.AssetType)),
 	})
 }
 

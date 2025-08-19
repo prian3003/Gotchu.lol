@@ -9,10 +9,9 @@ import {
   HiEye,
   HiSpeakerWave,
   HiCursorArrowRays,
-  HiPhoto,
-  HiSwatchBook,
-  HiSliders
+  HiPhoto
 } from 'react-icons/hi2'
+import { HiColorSwatch } from 'react-icons/hi'
 
 const CustomizationSettings = ({ settings, onSettingsChange, onSave, isSaving }) => {
   const { colors } = useTheme()
@@ -108,7 +107,7 @@ const CustomizationSettings = ({ settings, onSettingsChange, onSave, isSaving })
             {/* Theme Selection */}
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <HiSwatchBook size={20} style={{ color: colors.accent }} />
+                <HiColorSwatch size={20} style={{ color: colors.accent }} />
                 <h3 style={{ color: colors.text, fontSize: '18px', fontWeight: '600' }}>
                   Theme
                 </h3>
@@ -525,7 +524,7 @@ const CustomizationSettings = ({ settings, onSettingsChange, onSave, isSaving })
             {/* Profile Blur */}
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <HiSliders size={20} style={{ color: colors.accent }} />
+                <HiAdjustmentsHorizontal size={20} style={{ color: colors.accent }} />
                 <h3 style={{ color: colors.text, fontSize: '16px', fontWeight: '600' }}>
                   Background Blur: {settings.profileBlur}px
                 </h3>

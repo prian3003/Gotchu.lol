@@ -48,17 +48,17 @@ const LazyLoadFallback = ({ error, retry, pastDelay, timedOut }) => {
 }
 
 // Route-specific fallbacks
-export const DashboardFallback = () => (
-  <FallbackContainer>
-    <PageLoading text="Loading dashboard..." />
-  </FallbackContainer>
-)
+export const DashboardFallback = () => {
+  // Return null since Dashboard has its own loading state
+  // This prevents double loading screens
+  return null
+}
 
-export const ProfileFallback = () => (
-  <FallbackContainer>
-    <PageLoading text="Loading profile..." />
-  </FallbackContainer>
-)
+export const ProfileFallback = () => {
+  // Return null since UserProfile has its own loading state
+  // This prevents double loading screens
+  return null
+}
 
 export const AuthFallback = () => (
   <FallbackContainer>

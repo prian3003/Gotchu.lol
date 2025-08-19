@@ -69,11 +69,8 @@ const Templates = createLazyRoute(
   { chunkName: 'templates', fallbackType: 'default' }
 )
 
-// User profile page
-const UserProfile = createLazyRoute(
-  () => import('./components/pages/UserProfile'),
-  { chunkName: 'profile', fallbackType: 'profile' }
-)
+// User profile page - simplified lazy loading to fix import issues
+const UserProfile = React.lazy(() => import('./components/pages/UserProfile'))
 
 const TestCustomization = createLazyRoute(
   () => import('./components/pages/TestCustomization'),
@@ -96,26 +93,6 @@ const NavbarWrapper = () => {
 }
 
 const App = () => {
-  const [isLoading, setIsLoading] = useState(true)
-
-  useEffect(() => {
-    // Simulate loading time
-    const timer = setTimeout(() => {
-      setIsLoading(false)
-    }, 2000) // 2 seconds loading time
-
-    return () => clearTimeout(timer)
-  }, [])
-
-  if (isLoading) {
-    return (
-      <ThemeProvider>
-        <main>
-          <Loader />
-        </main>
-      </ThemeProvider>
-    )
-  }
 
   return (
     <ErrorProvider>
@@ -192,7 +169,11 @@ const App = () => {
               <Route path='/test-customization' element={<TestCustomization />}/>
               
               {/* Public user profiles */}
-              <Route path='/:username' element={<UserProfile />}/>
+              <Route path='/:username' element={
+                <React.Suspense fallback={<div>Loading profile...</div>}>
+                  <UserProfile />
+                </React.Suspense>
+              }/>
               </Routes>
             </RouteErrorBoundary>
           </Router>

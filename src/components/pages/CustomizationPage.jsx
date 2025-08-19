@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import styled from 'styled-components'
 import { useTheme } from '../../contexts/ThemeContext'
 import logger from '../../utils/logger'
 import LivePreview from '../ui/LivePreview'
+import AudioManager from '../customization/AudioManager'
+import AssetThumbnail from '../customization/AssetThumbnail'
+import { deleteAsset, getAssetFilePath, getAssetTypeFromUrl } from '../../utils/assetUtils'
 import {
   HiUser,
   HiCog,
@@ -41,8 +45,8 @@ const CustomizationPage = ({ onBack }) => {
     accentColor: '#58A4B0',
     textColor: '#FFFFFF',
     backgroundColor: '#0F0F23',
-    primaryColor: '#58A4B0',
-    secondaryColor: '#EC4899',
+    primaryColor: '#881c9c',
+    secondaryColor: '#0d0d0d',
     iconColor: '#FFFFFF',
     backgroundUrl: '',
     avatarUrl: '',
@@ -158,7 +162,9 @@ const CustomizationPage = ({ onBack }) => {
     accentColor: null,
     textColor: null,
     backgroundColor: null,
-    iconColor: null
+    iconColor: null,
+    primaryColor: null,
+    secondaryColor: null
   })
 
   // Load settings on component mount 
@@ -361,7 +367,7 @@ const CustomizationPage = ({ onBack }) => {
   }
 
   // Direct save function for audio settings - bypasses unsaved changes dialog
-  const saveAudioSettings = async () => {
+  const saveAudioSettings = async (silent = false) => {
     try {
       const sessionId = localStorage.getItem('sessionId')
       if (!sessionId) return
@@ -410,11 +416,20 @@ const CustomizationPage = ({ onBack }) => {
       if (response.ok) {
         // Update originalSettings to reflect the saved state
         setOriginalSettings(JSON.parse(JSON.stringify(settings)))
-        setHasUnsavedChanges(false)
+        // Only clear unsaved changes if not called silently from audio manager
+        if (!silent) {
+          setHasUnsavedChanges(false)
+        }
       }
     } catch (error) {
       logger.error('Failed to save audio settings:', error)
     }
+  }
+
+  // Callback for when AudioManager saves audio settings
+  const handleAudioSaved = (newSettings) => {
+    // Update originalSettings to reflect the saved state
+    setOriginalSettings(JSON.parse(JSON.stringify(newSettings)))
   }
 
   // Simple debounce implementation for audio settings
@@ -586,29 +601,202 @@ const CustomizationPage = ({ onBack }) => {
     setShowResetDialog(false)
   }
 
+  // Helper function to get user ID
+  const fetchUserId = async () => {
+    try {
+      const token = localStorage.getItem('authToken')
+      const sessionId = localStorage.getItem('sessionId')
+      
+      if (!token && !sessionId) {
+        console.error('No authentication found')
+        return null
+      }
+
+      const response = await fetch('/api/dashboard', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '',
+          'X-Session-ID': sessionId || '',
+        },
+      })
+
+      if (!response.ok) {
+        console.error('Failed to fetch user data:', response.status)
+        return null
+      }
+
+      const data = await response.json()
+      
+      if (data.success && data.data && data.data.user) {
+        return data.data.user.id
+      }
+      
+      return null
+    } catch (error) {
+      console.error('Error fetching user ID:', error)
+      return null
+    }
+  }
+
+  // Asset management functions
+  const handleAssetRemove = async (assetType) => {
+    try {
+      const assetUrl = getAssetUrl(assetType)
+      if (!assetUrl) return
+
+      // Get user ID from dashboard API
+      const userId = await fetchUserId()
+      if (!userId) {
+        console.error('User ID not found for asset removal')
+        return
+      }
+
+      const filePath = getAssetFilePath(assetUrl, userId)
+      if (!filePath) {
+        console.error('Could not determine file path for asset removal')
+        return
+      }
+
+      const result = await deleteAsset(assetType, filePath)
+      if (result.success) {
+        // Update settings to remove the asset URL
+        setSettings(prev => ({
+          ...prev,
+          [getAssetUrlKey(assetType)]: ''
+        }))
+        
+        // Save settings silently
+        setTimeout(async () => {
+          await saveAudioSettings(true)
+        }, 100)
+        
+        console.log(`${assetType} removed successfully`)
+      } else {
+        console.error(`Failed to remove ${assetType}:`, result.error)
+      }
+    } catch (error) {
+      console.error(`Error removing ${assetType}:`, error)
+    }
+  }
+
+  const handleAssetChange = async (assetType) => {
+    try {
+      // First, remove the existing asset if there is one
+      const existingAssetUrl = getAssetUrl(assetType)
+      if (existingAssetUrl) {
+        const userId = await fetchUserId()
+        if (!userId) {
+          console.error('Failed to get user ID for asset change')
+          return
+        }
+
+        const filePath = getAssetFilePath(existingAssetUrl, userId)
+        if (filePath) {
+          console.log(`Removing existing ${assetType} before uploading new one...`)
+          const result = await deleteAsset(assetType, filePath)
+          if (!result.success) {
+            console.error(`Failed to remove existing ${assetType}:`, result.error)
+            // Continue anyway to allow new upload
+          } else {
+            console.log(`Existing ${assetType} removed successfully`)
+          }
+        }
+      }
+
+      // Then trigger file input click for new upload
+      const fileInput = fileInputRefs.current[assetType]
+      if (fileInput) {
+        fileInput.click()
+      }
+    } catch (error) {
+      console.error(`Error during asset change for ${assetType}:`, error)
+      // Still trigger file input as fallback
+      const fileInput = fileInputRefs.current[assetType]
+      if (fileInput) {
+        fileInput.click()
+      }
+    }
+  }
+
+  const getAssetUrl = (assetType) => {
+    switch (assetType) {
+      case 'backgroundImage':
+        return settings.backgroundUrl
+      case 'avatar':
+        return settings.avatarUrl
+      case 'audio':
+        return settings.audioUrl
+      case 'cursor':
+        return settings.cursorUrl
+      default:
+        return ''
+    }
+  }
+
+  const getAssetUrlKey = (assetType) => {
+    switch (assetType) {
+      case 'backgroundImage':
+        return 'backgroundUrl'
+      case 'avatar':
+        return 'avatarUrl'
+      case 'audio':
+        return 'audioUrl'
+      case 'cursor':
+        return 'cursorUrl'
+      default:
+        return ''
+    }
+  }
+
   // File upload handlers - Fixed validation mapping
   const handleFileUpload = async (file, type) => {
     if (!file) return
 
     // Validate file size and type
-    const maxSize = type === 'audio' ? 10 * 1024 * 1024 : 5 * 1024 * 1024 // 10MB for audio, 5MB for others
+    const getMaxSize = (type) => {
+      switch (type) {
+        case 'audio':
+          return 10 * 1024 * 1024 // 10MB for audio
+        case 'backgroundImage':
+          return 15 * 1024 * 1024 // 15MB for background (images and videos)
+        default:
+          return 5 * 1024 * 1024 // 5MB for others
+      }
+    }
+
+    const maxSize = getMaxSize(type)
     if (file.size > maxSize) {
-      setSaveErrorMessage(`File too large. Maximum size is ${type === 'audio' ? '10MB' : '5MB'}`)
+      const sizeMB = Math.round(maxSize / (1024 * 1024))
+      setSaveErrorMessage(`File too large. Maximum size is ${sizeMB}MB`)
       setShowSaveError(true)
       setTimeout(() => setShowSaveError(false), 5000)
       return
     }
 
-    // Fixed: Use correct type mapping to match backend
+    // Updated: Support video files for background
     const allowedTypes = {
-      backgroundImage: ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'],
+      backgroundImage: [
+        // Images
+        'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+        // Videos
+        'video/mp4', 'video/webm', 'video/ogg', 'video/avi', 'video/mov', 'video/quicktime'
+      ],
       avatar: ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'],
-      audio: ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/ogg', 'audio/m4a'],
+      audio: ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/ogg', 'audio/m4a', 'audio/opus'],
       cursor: ['image/png', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/svg+xml']
     }
 
     if (!allowedTypes[type]?.includes(file.type)) {
-      setSaveErrorMessage(`Invalid file type for ${type}. Please select a valid file. Supported: PNG, JPG, WebP`)
+      const supportedFormats = type === 'backgroundImage' 
+        ? 'Images: PNG, JPG, WebP, GIF | Videos: MP4, WebM, OGG, AVI, MOV'
+        : type === 'audio'
+        ? 'MP3, WAV, OGG, M4A, OPUS'
+        : type === 'cursor'
+        ? 'PNG, ICO, SVG'
+        : 'PNG, JPG, WebP, GIF'
+      
+      setSaveErrorMessage(`Invalid file type for ${type}. Supported formats: ${supportedFormats}`)
       setShowSaveError(true)
       setTimeout(() => setShowSaveError(false), 5000)
       return
@@ -683,7 +871,8 @@ const CustomizationPage = ({ onBack }) => {
   }
 
   return (
-    <CustomizationWrapper style={{ background: colors.background }}>
+    <>
+      <CustomizationWrapper style={{ background: colors.background }}>
       {/* Header */}
       <Header>
         <HeaderLeft>
@@ -714,113 +903,54 @@ const CustomizationPage = ({ onBack }) => {
             
             <SettingsGroup>
               <GroupTitle>Upload Your Assets</GroupTitle>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
-                {/* Background Upload */}
-                <div style={{ 
-                  padding: settings.backgroundUrl ? '1rem' : '2rem', 
-                  background: settings.backgroundUrl 
-                    ? `linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url("${settings.backgroundUrl}")` 
-                    : 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  border: `2px dashed ${settings.backgroundUrl ? 'rgba(88, 164, 176, 0.6)' : 'rgba(88, 164, 176, 0.3)'}`, 
-                  borderRadius: '12px', 
-                  textAlign: 'center', 
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                  position: 'relative',
-                  minHeight: settings.backgroundUrl ? '150px' : 'auto'
-                }} 
-                onMouseEnter={(e) => {
-                  e.target.style.borderColor = 'rgba(88, 164, 176, 0.8)'
-                  e.target.style.transform = 'translateY(-2px)'
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.borderColor = settings.backgroundUrl ? 'rgba(88, 164, 176, 0.6)' : 'rgba(88, 164, 176, 0.3)'
-                  e.target.style.transform = 'translateY(0)'
-                }}
-                onClick={() => fileInputRefs.current.background?.click()}>
+              <AssetsContainer>
+                {/* Background Asset */}
+                <AssetSection>
                   {settings.backgroundUrl ? (
-                    <div style={{ 
-                      display: 'flex', 
-                      flexDirection: 'column', 
-                      alignItems: 'center', 
-                      justifyContent: 'center', 
-                      height: '100%',
-                      color: '#ffffff',
-                      textShadow: '0 2px 4px rgba(0,0,0,0.8)'
-                    }}>
-                      <HiPhoto style={{ fontSize: '2rem', marginBottom: '0.5rem' }} />
-                      <div style={{ fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.25rem' }}>Background Active</div>
-                      <div style={{ fontSize: '0.8rem', opacity: 0.9 }}>
-                        {uploading.background ? 'Uploading new...' : 'Click to change'}
-                      </div>
-                    </div>
+                    <AssetThumbnail
+                      assetType="backgroundImage"
+                      assetUrl={settings.backgroundUrl}
+                      onRemove={() => handleAssetRemove('backgroundImage')}
+                      onChange={() => handleAssetChange('backgroundImage')}
+                      loading={uploading.backgroundImage}
+                    />
                   ) : (
-                    <>
+                    <UploadZone onClick={() => fileInputRefs.current.backgroundImage?.click()}>
                       <HiPhoto style={{ fontSize: '2rem', marginBottom: '0.5rem', color: '#58A4B0' }} />
-                      <div style={{ fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.25rem', color: '#ffffff' }}>Background</div>
-                      <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>
-                        {uploading.background ? 'Uploading...' : 'Click to upload a file'}
-                      </div>
-                    </>
-                  )}
-                  {settings.backgroundUrl && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '0.5rem',
-                      right: '0.5rem',
-                      background: 'rgba(0,0,0,0.6)',
-                      borderRadius: '50%',
-                      width: '24px',
-                      height: '24px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '0.8rem',
-                      color: '#ffffff'
-                    }} onClick={(e) => {
-                      e.stopPropagation()
-                      setSettings(prev => ({ ...prev, backgroundUrl: '' }))
-                    }}>
-                      <HiXMark />
-                    </div>
+                      <UploadLabel>Background</UploadLabel>
+                      <UploadSubtext>
+                        {uploading.backgroundImage ? 'Uploading...' : 'Image or Video'}
+                      </UploadSubtext>
+                    </UploadZone>
                   )}
                   <input
-                    ref={el => fileInputRefs.current.background = el}
+                    ref={el => fileInputRefs.current.backgroundImage = el}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,video/*"
                     onChange={(e) => handleFileUpload(e.target.files[0], 'backgroundImage')}
                     style={{ display: 'none' }}
                   />
-                </div>
+                </AssetSection>
 
-                {/* Audio Upload */}
-                <div style={{ 
-                  padding: '2rem', 
-                  background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
-                  border: '2px dashed rgba(88, 164, 176, 0.3)', 
-                  borderRadius: '12px', 
-                  textAlign: 'center', 
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease'
-                }} 
-                onMouseEnter={(e) => {
-                  e.target.style.borderColor = 'rgba(88, 164, 176, 0.5)'
-                  e.target.style.background = 'linear-gradient(145deg, rgba(88, 164, 176, 0.08), rgba(88, 164, 176, 0.03))'
-                  e.target.style.transform = 'translateY(-2px)'
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.borderColor = 'rgba(88, 164, 176, 0.3)'
-                  e.target.style.background = 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))'
-                  e.target.style.transform = 'translateY(0)'
-                }}
-                onClick={() => setShowAudioModal(true)}>
-                  <HiSpeakerWave style={{ fontSize: '2rem', marginBottom: '0.5rem', color: '#58A4B0' }} />
-                  <div style={{ fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.25rem', color: '#ffffff' }}>Audio</div>
-                  <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>
-                    {uploading.audio ? 'Uploading...' : 'Click to open audio manager'}
-                  </div>
+                {/* Audio Asset */}
+                <AssetSection>
+                  {settings.audioUrl ? (
+                    <AssetThumbnail
+                      assetType="audio"
+                      assetUrl={settings.audioUrl}
+                      onRemove={() => handleAssetRemove('audio')}
+                      onChange={() => setShowAudioModal(true)}
+                      loading={uploading.audio}
+                    />
+                  ) : (
+                    <UploadZone onClick={() => setShowAudioModal(true)}>
+                      <HiSpeakerWave style={{ fontSize: '2rem', marginBottom: '0.5rem', color: '#58A4B0' }} />
+                      <UploadLabel>Audio</UploadLabel>
+                      <UploadSubtext>
+                        {uploading.audio ? 'Uploading...' : 'Open manager'}
+                      </UploadSubtext>
+                    </UploadZone>
+                  )}
                   <input
                     ref={el => fileInputRefs.current.audio = el}
                     type="file"
@@ -828,107 +958,26 @@ const CustomizationPage = ({ onBack }) => {
                     onChange={(e) => handleFileUpload(e.target.files[0], 'audio')}
                     style={{ display: 'none' }}
                   />
-                </div>
+                </AssetSection>
 
-                {/* Profile Avatar Upload */}
-                <div style={{ 
-                  padding: settings.avatarUrl ? '1rem' : '2rem', 
-                  background: settings.avatarUrl 
-                    ? `linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url("${settings.avatarUrl}")` 
-                    : 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  border: settings.avatarUrl 
-                    ? '2px solid rgba(88, 164, 176, 0.4)' 
-                    : '2px dashed rgba(88, 164, 176, 0.3)', 
-                  borderRadius: '12px', 
-                  textAlign: 'center', 
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                  minHeight: settings.avatarUrl ? '120px' : 'auto',
-                  position: 'relative',
-                  overflow: 'hidden'
-                }} 
-                onMouseEnter={(e) => {
-                  e.target.style.borderColor = 'rgba(88, 164, 176, 0.6)'
-                  e.target.style.transform = 'translateY(-2px)'
-                  e.target.style.boxShadow = '0 8px 25px rgba(88, 164, 176, 0.2)'
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.borderColor = settings.avatarUrl ? 'rgba(88, 164, 176, 0.4)' : 'rgba(88, 164, 176, 0.3)'
-                  e.target.style.transform = 'translateY(0)'
-                  e.target.style.boxShadow = 'none'
-                }}
-                onClick={() => fileInputRefs.current.avatar?.click()}>
+                {/* Avatar Asset */}
+                <AssetSection>
                   {settings.avatarUrl ? (
-                    <div style={{ position: 'relative', zIndex: 2 }}>
-                      <div style={{ 
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        marginBottom: '0.75rem'
-                      }}>
-                        <div style={{ fontSize: '0.9rem', fontWeight: '600', color: '#ffffff', display: 'flex', alignItems: 'center' }}>
-                          <HiUser style={{ marginRight: '0.5rem', fontSize: '1.1rem' }} />
-                          Avatar Active
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSettings(prev => ({ ...prev, avatarUrl: '' }))
-                          }}
-                          style={{
-                            background: 'rgba(220, 38, 38, 0.8)',
-                            border: 'none',
-                            borderRadius: '6px',
-                            color: 'white',
-                            padding: '0.4rem 0.8rem',
-                            fontSize: '0.75rem',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                            transition: 'all 0.2s ease'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.target.style.background = 'rgba(220, 38, 38, 1)'
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.background = 'rgba(220, 38, 38, 0.8)'
-                          }}
-                        >
-                          <HiXMark style={{ fontSize: '0.9rem' }} />
-                          Remove
-                        </button>
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.8)' }}>
-                        {uploading.avatar ? 'Uploading new avatar...' : 'Click to change avatar'}
-                      </div>
-                    </div>
+                    <AssetThumbnail
+                      assetType="avatar"
+                      assetUrl={settings.avatarUrl}
+                      onRemove={() => handleAssetRemove('avatar')}
+                      onChange={() => handleAssetChange('avatar')}
+                      loading={uploading.avatar}
+                    />
                   ) : (
-                    <>
-                      {uploading.avatar ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                          <div style={{
-                            width: '32px',
-                            height: '32px',
-                            border: '3px solid rgba(88, 164, 176, 0.3)',
-                            borderTop: '3px solid #58A4B0',
-                            borderRadius: '50%',
-                            animation: 'spin 1s linear infinite',
-                            marginBottom: '1rem'
-                          }} />
-                          <div style={{ fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.25rem', color: '#58A4B0' }}>Uploading Avatar...</div>
-                          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>Please wait</div>
-                        </div>
-                      ) : (
-                        <>
-                          <HiUser style={{ fontSize: '2rem', marginBottom: '0.5rem', color: '#58A4B0' }} />
-                          <div style={{ fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.25rem', color: '#ffffff' }}>Profile Avatar</div>
-                          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>Click to upload avatar image</div>
-                        </>
-                      )}
-                    </>
+                    <UploadZone onClick={() => fileInputRefs.current.avatar?.click()}>
+                      <HiUser style={{ fontSize: '2rem', marginBottom: '0.5rem', color: '#58A4B0' }} />
+                      <UploadLabel>Avatar</UploadLabel>
+                      <UploadSubtext>
+                        {uploading.avatar ? 'Uploading...' : 'Click to upload'}
+                      </UploadSubtext>
+                    </UploadZone>
                   )}
                   <input
                     ref={el => fileInputRefs.current.avatar = el}
@@ -937,111 +986,26 @@ const CustomizationPage = ({ onBack }) => {
                     onChange={(e) => handleFileUpload(e.target.files[0], 'avatar')}
                     style={{ display: 'none' }}
                   />
-                </div>
+                </AssetSection>
 
-                {/* Custom Cursor Upload */}
-                <div style={{ 
-                  padding: settings.cursorUrl ? '1rem' : '2rem', 
-                  background: settings.cursorUrl 
-                    ? 'linear-gradient(145deg, rgba(88, 164, 176, 0.15), rgba(88, 164, 176, 0.05))'
-                    : 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
-                  border: `2px dashed ${settings.cursorUrl ? 'rgba(88, 164, 176, 0.6)' : 'rgba(88, 164, 176, 0.3)'}`, 
-                  borderRadius: '12px', 
-                  textAlign: 'center', 
-                  cursor: settings.cursorUrl ? `url(${settings.cursorUrl}), pointer` : 'pointer',
-                  transition: 'all 0.3s ease',
-                  position: 'relative',
-                  minHeight: settings.cursorUrl ? '120px' : 'auto'
-                }} 
-                onMouseEnter={(e) => {
-                  e.target.style.borderColor = 'rgba(88, 164, 176, 0.8)'
-                  e.target.style.transform = 'translateY(-2px)'
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.borderColor = settings.cursorUrl ? 'rgba(88, 164, 176, 0.6)' : 'rgba(88, 164, 176, 0.3)'
-                  e.target.style.transform = 'translateY(0)'
-                }}
-                onClick={() => fileInputRefs.current.cursor?.click()}>
+                {/* Cursor Asset */}
+                <AssetSection>
                   {settings.cursorUrl ? (
-                    <div style={{ position: 'relative', zIndex: 2 }}>
-                      <div style={{ 
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        marginBottom: '0.75rem'
-                      }}>
-                        <div style={{ fontSize: '0.9rem', fontWeight: '600', color: '#ffffff', display: 'flex', alignItems: 'center' }}>
-                          <HiCursorArrowRays style={{ marginRight: '0.5rem', fontSize: '1.1rem' }} />
-                          Cursor Active
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSettings(prev => ({ ...prev, cursorUrl: '' }))
-                          }}
-                          style={{
-                            background: 'rgba(220, 38, 38, 0.8)',
-                            border: 'none',
-                            borderRadius: '6px',
-                            color: 'white',
-                            padding: '0.4rem 0.8rem',
-                            fontSize: '0.75rem',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                            transition: 'all 0.2s ease'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.target.style.background = 'rgba(220, 38, 38, 1)'
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.background = 'rgba(220, 38, 38, 0.8)'
-                          }}
-                        >
-                          <HiXMark style={{ fontSize: '0.9rem' }} />
-                          Remove
-                        </button>
-                      </div>
-                      <div style={{
-                        width: '40px',
-                        height: '40px',
-                        backgroundImage: `url(${settings.cursorUrl})`,
-                        backgroundSize: 'contain',
-                        backgroundRepeat: 'no-repeat',
-                        backgroundPosition: 'center',
-                        marginBottom: '0.5rem',
-                        margin: '0 auto 0.5rem auto',
-                        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
-                      }} />
-                      <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.8)' }}>
-                        {uploading.cursor ? 'Uploading new cursor...' : 'Click to change cursor'}
-                      </div>
-                    </div>
+                    <AssetThumbnail
+                      assetType="cursor"
+                      assetUrl={settings.cursorUrl}
+                      onRemove={() => handleAssetRemove('cursor')}
+                      onChange={() => handleAssetChange('cursor')}
+                      loading={uploading.cursor}
+                    />
                   ) : (
-                    <>
-                      {uploading.cursor ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                          <div style={{
-                            width: '32px',
-                            height: '32px',
-                            border: '3px solid rgba(88, 164, 176, 0.3)',
-                            borderTop: '3px solid #58A4B0',
-                            borderRadius: '50%',
-                            animation: 'spin 1s linear infinite',
-                            marginBottom: '1rem'
-                          }} />
-                          <div style={{ fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.25rem', color: '#58A4B0' }}>Uploading Cursor...</div>
-                          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>Please wait</div>
-                        </div>
-                      ) : (
-                        <>
-                          <HiCursorArrowRays style={{ fontSize: '2rem', marginBottom: '0.5rem', color: '#58A4B0' }} />
-                          <div style={{ fontSize: '0.9rem', fontWeight: '600', marginBottom: '0.25rem', color: '#ffffff' }}>Custom Cursor</div>
-                          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>Click to upload cursor file</div>
-                        </>
-                      )}
-                    </>
+                    <UploadZone onClick={() => fileInputRefs.current.cursor?.click()}>
+                      <HiCursorArrowRays style={{ fontSize: '2rem', marginBottom: '0.5rem', color: '#58A4B0' }} />
+                      <UploadLabel>Cursor</UploadLabel>
+                      <UploadSubtext>
+                        {uploading.cursor ? 'Uploading...' : 'Click to upload'}
+                      </UploadSubtext>
+                    </UploadZone>
                   )}
                   <input
                     ref={el => fileInputRefs.current.cursor = el}
@@ -1050,8 +1014,8 @@ const CustomizationPage = ({ onBack }) => {
                     onChange={(e) => handleFileUpload(e.target.files[0], 'cursor')}
                     style={{ display: 'none' }}
                   />
-                </div>
-              </div>
+                </AssetSection>
+              </AssetsContainer>
             </SettingsGroup>
 
             {/* 2. Premium Banner */}
@@ -1176,6 +1140,59 @@ const CustomizationPage = ({ onBack }) => {
                       <span key={val} style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>{val}px</span>
                     ))}
                   </div>
+                </div>
+
+                {/* Background Effect */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Background Effect</label>
+                  <select
+                    value={settings.backgroundEffect || 'none'}
+                    onChange={(e) => {
+                      setSettings(prev => ({ ...prev, backgroundEffect: e.target.value }))
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      fontSize: '0.9rem'
+                    }}
+                  >
+                    <option value="none" style={{ background: '#1a1a1a', color: '#ffffff' }}>None</option>
+                    <option value="particles" style={{ background: '#1a1a1a', color: '#ffffff' }}>Particles</option>
+                    <option value="bubbles" style={{ background: '#1a1a1a', color: '#ffffff' }}>Bubbles</option>
+                    <option value="lines" style={{ background: '#1a1a1a', color: '#ffffff' }}>Lines</option>
+                    <option value="gradient" style={{ background: '#1a1a1a', color: '#ffffff' }}>Gradient</option>
+                  </select>
+                </div>
+
+                {/* Username Effect */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Username Effect</label>
+                  <select
+                    value={settings.usernameEffect || 'none'}
+                    onChange={(e) => {
+                      setSettings(prev => ({ ...prev, usernameEffect: e.target.value }))
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      fontSize: '0.9rem'
+                    }}
+                  >
+                    <option value="none" style={{ background: '#1a1a1a', color: '#ffffff' }}>None</option>
+                    <option value="glow" style={{ background: '#1a1a1a', color: '#ffffff' }}>Glow</option>
+                    <option value="rainbow" style={{ background: '#1a1a1a', color: '#ffffff' }}>Rainbow</option>
+                    <option value="shadow" style={{ background: '#1a1a1a', color: '#ffffff' }}>Shadow</option>
+                    <option value="outline" style={{ background: '#1a1a1a', color: '#ffffff' }}>Outline</option>
+                    <option value="typewriter" style={{ background: '#1a1a1a', color: '#ffffff' }}>Typewriter</option>
+                  </select>
                 </div>
               </div>
             </SettingsGroup>
@@ -1474,6 +1491,143 @@ const CustomizationPage = ({ onBack }) => {
               </button>
             </div>
 
+            {/* Gradient Color Controls - Only show when profileGradient is enabled */}
+            {settings.profileGradient && (
+              <div style={{ 
+                margin: '1.5rem 0',
+                padding: '1.5rem',
+                background: 'linear-gradient(145deg, rgba(136, 28, 156, 0.1), rgba(13, 13, 13, 0.1))',
+                border: '1px solid rgba(136, 28, 156, 0.2)',
+                borderRadius: '12px'
+              }}>
+                <h3 style={{ 
+                  fontSize: '1.1rem', 
+                  fontWeight: '600', 
+                  marginBottom: '1rem',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}>
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.secondaryColor})`,
+                    borderRadius: '4px'
+                  }} />
+                  Gradient Colors
+                </h3>
+                
+                <div style={{ display: 'grid', gap: '1rem' }}>
+                  {/* Primary Color */}
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Primary Color</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div 
+                        onClick={() => colorInputRefs.current.primaryColor?.click()}
+                        style={{ 
+                          width: '40px', 
+                          height: '40px', 
+                          borderRadius: '8px', 
+                          background: settings.primaryColor || '#881c9c',
+                          border: '2px solid rgba(255,255,255,0.2)',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.transform = 'scale(1.1)'
+                          e.target.style.borderColor = 'rgba(255,255,255,0.4)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.transform = 'scale(1)'
+                          e.target.style.borderColor = 'rgba(255,255,255,0.2)'
+                        }}
+                      />
+                      <input
+                        ref={el => colorInputRefs.current.primaryColor = el}
+                        type="color"
+                        value={settings.primaryColor || '#881c9c'}
+                        onChange={(e) => {
+                          setSettings(prev => ({ ...prev, primaryColor: e.target.value }))
+                        }}
+                        style={{ opacity: 0, width: 0, height: 0 }}
+                      />
+                      <span style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>
+                        {settings.primaryColor || '#881c9c'}
+                      </span>
+                      <HiPencilSquare 
+                        onClick={() => colorInputRefs.current.primaryColor?.click()}
+                        style={{ color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }} 
+                      />
+                    </div>
+                  </div>
+
+                  {/* Secondary Color */}
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Secondary Color</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div 
+                        onClick={() => colorInputRefs.current.secondaryColor?.click()}
+                        style={{ 
+                          width: '40px', 
+                          height: '40px', 
+                          borderRadius: '8px', 
+                          background: settings.secondaryColor || '#0d0d0d',
+                          border: '2px solid rgba(255,255,255,0.2)',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.transform = 'scale(1.1)'
+                          e.target.style.borderColor = 'rgba(255,255,255,0.4)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.transform = 'scale(1)'
+                          e.target.style.borderColor = 'rgba(255,255,255,0.2)'
+                        }}
+                      />
+                      <input
+                        ref={el => colorInputRefs.current.secondaryColor = el}
+                        type="color"
+                        value={settings.secondaryColor || '#0d0d0d'}
+                        onChange={(e) => {
+                          setSettings(prev => ({ ...prev, secondaryColor: e.target.value }))
+                        }}
+                        style={{ opacity: 0, width: 0, height: 0 }}
+                      />
+                      <span style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>
+                        {settings.secondaryColor || '#0d0d0d'}
+                      </span>
+                      <HiPencilSquare 
+                        onClick={() => colorInputRefs.current.secondaryColor?.click()}
+                        style={{ color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }} 
+                      />
+                    </div>
+                  </div>
+
+                  {/* Gradient Preview */}
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Gradient Preview</label>
+                    <div style={{
+                      width: '100%',
+                      height: '60px',
+                      background: `linear-gradient(135deg, ${settings.primaryColor || '#881c9c'}, ${settings.secondaryColor || '#0d0d0d'})`,
+                      borderRadius: '8px',
+                      border: '2px solid rgba(255,255,255,0.1)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#ffffff',
+                      fontWeight: '600',
+                      textShadow: '0 1px 2px rgba(0,0,0,0.5)'
+                    }}>
+                      Your Gradient Preview
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 6. Other Customization Section */}
             <div style={{ marginTop: '2rem' }}>
               <h2 style={{ 
@@ -1751,8 +1905,39 @@ const CustomizationPage = ({ onBack }) => {
 
       {/* Unsaved Changes Dialog - Only show when explicitly triggered */}
 
-      {/* Reset Confirmation Dialog */}
-      {showResetDialog && (
+
+
+      {/* Error Notification */}
+      {showSaveError && (
+        <ErrorNotification>
+          <HiExclamationTriangle className="error-icon" />
+          <div>
+            <span>Failed to save settings</span>
+            <p>{saveErrorMessage}</p>
+          </div>
+        </ErrorNotification>
+      )}
+
+      </CustomizationWrapper>
+
+      {/* Audio Manager Modal - Using Portal for proper viewport positioning */}
+      {showAudioModal && createPortal(
+        <AudioManager
+          showAudioModal={showAudioModal}
+          setShowAudioModal={setShowAudioModal}
+          settings={settings}
+          setSettings={setSettings}
+          uploading={uploading}
+          fileInputRefs={fileInputRefs}
+          handleFileUpload={handleFileUpload}
+          saveAudioSettings={saveAudioSettings}
+          onAudioSaved={handleAudioSaved}
+        />,
+        document.body
+      )}
+
+      {/* Reset Confirmation Dialog - Using Portal for proper viewport positioning */}
+      {showResetDialog && createPortal(
         <DialogOverlay>
           <ConfirmationDialog>
             <div className="dialog-header">
@@ -1773,23 +1958,12 @@ const CustomizationPage = ({ onBack }) => {
               </button>
             </div>
           </ConfirmationDialog>
-        </DialogOverlay>
+        </DialogOverlay>,
+        document.body
       )}
 
-
-      {/* Error Notification */}
-      {showSaveError && (
-        <ErrorNotification>
-          <HiExclamationTriangle className="error-icon" />
-          <div>
-            <span>Failed to save settings</span>
-            <p>{saveErrorMessage}</p>
-          </div>
-        </ErrorNotification>
-      )}
-
-      {/* Dynamic Save Changes Snackbar */}
-      {hasUnsavedChanges && (
+      {/* Dynamic Save Changes Snackbar - Using Portal for proper viewport positioning */}
+      {hasUnsavedChanges && createPortal(
         <SaveSnackbar>
           <SaveSnackbarContent>
             <SaveSnackbarIcon>
@@ -1818,110 +1992,10 @@ const CustomizationPage = ({ onBack }) => {
               </SaveSnackbarButton>
             </SaveSnackbarActions>
           </SaveSnackbarContent>
-        </SaveSnackbar>
+        </SaveSnackbar>,
+        document.body
       )}
-
-      {/* Audio Manager Modal */}
-      {showAudioModal && (
-        <AudioManagerModal>
-          <AudioModalOverlay onClick={() => setShowAudioModal(false)} />
-          <AudioModalContent>
-            <AudioModalHeader>
-              <h2 style={{ margin: 0, color: '#ffffff', fontSize: '1.5rem', fontWeight: '600' }}>
-                <HiMusicalNote style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
-                Audio Manager
-              </h2>
-              <button 
-                onClick={() => setShowAudioModal(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#ffffff',
-                  cursor: 'pointer',
-                  fontSize: '1.5rem',
-                  padding: '0.5rem'
-                }}
-              >
-                <HiXMark />
-              </button>
-            </AudioModalHeader>
-
-            <AudioModalBody>
-              {/* Current Audio Section */}
-              {settings.audioUrl ? (
-                <CurrentAudioSection>
-                  <h3 style={{ color: '#ffffff', fontSize: '1rem', marginBottom: '0.75rem' }}>Current Audio</h3>
-                  <AudioPlayer controls src={settings.audioUrl} style={{ width: '100%', borderRadius: '8px' }} />
-                  <AudioControls>
-                    <AudioControlButton onClick={() => {
-                      setSettings(prev => ({ ...prev, audioUrl: '' }))
-                      // Auto-save immediately when removing audio
-                      setTimeout(() => saveAudioSettings(), 100)
-                    }}>
-                      <HiXMark style={{ marginRight: '0.5rem' }} />
-                      Remove
-                    </AudioControlButton>
-                  </AudioControls>
-                </CurrentAudioSection>
-              ) : (
-                <EmptyAudioState>
-                  <HiSpeakerWave style={{ fontSize: '2.5rem', color: '#58A4B0', marginBottom: '0.5rem' }} />
-                  <h4 style={{ color: '#ffffff', marginBottom: '0.25rem', fontSize: '1rem' }}>No Audio Selected</h4>
-                  <p style={{ color: 'rgba(255,255,255,0.6)', marginBottom: '0', fontSize: '0.85rem' }}>Upload an audio file to play on your profile</p>
-                </EmptyAudioState>
-              )}
-
-              {/* Upload Section */}
-              <UploadSection>
-                <h3 style={{ color: '#ffffff', fontSize: '1rem', marginBottom: '0.75rem' }}>Upload New Audio</h3>
-                <AudioUploadZone
-                  onClick={() => fileInputRefs.current.audio?.click()}
-                  style={{
-                    border: uploading.audio ? '2px solid #58A4B0' : '2px dashed rgba(88, 164, 176, 0.3)',
-                    padding: '1.5rem'
-                  }}
-                >
-                  {uploading.audio ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <div style={{
-                        width: '24px',
-                        height: '24px',
-                        border: '2px solid rgba(88, 164, 176, 0.3)',
-                        borderTop: '2px solid #58A4B0',
-                        borderRadius: '50%',
-                        animation: 'spin 1s linear infinite',
-                        marginRight: '0.75rem'
-                      }} />
-                      <p style={{ color: '#58A4B0', fontWeight: '600', margin: 0 }}>Uploading...</p>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <HiSpeakerWave style={{ fontSize: '1.5rem', color: '#58A4B0', marginRight: '0.75rem' }} />
-                      <div>
-                        <h4 style={{ color: '#ffffff', marginBottom: '0.25rem', fontSize: '0.9rem' }}>Drop audio file here</h4>
-                        <p style={{ color: 'rgba(255,255,255,0.6)', marginBottom: '0', fontSize: '0.8rem' }}>or click to browse</p>
-                      </div>
-                    </div>
-                  )}
-                  <input
-                    ref={el => fileInputRefs.current.audio = el}
-                    type="file"
-                    accept="audio/*"
-                    onChange={(e) => handleFileUpload(e.target.files[0], 'audio')}
-                    style={{ display: 'none' }}
-                  />
-                </AudioUploadZone>
-                
-                <AudioFormatInfo>
-                  <HiInformationCircle style={{ marginRight: '0.5rem' }} />
-                  MP3, WAV, OGG, M4A (Max: 10MB)
-                </AudioFormatInfo>
-              </UploadSection>
-            </AudioModalBody>
-          </AudioModalContent>
-        </AudioManagerModal>
-      )}
-    </CustomizationWrapper>
+    </>
   )
 }
 
@@ -1934,6 +2008,54 @@ const CustomizationWrapper = styled.div`
   @media (max-width: 768px) {
     padding: 1rem;
   }
+`
+
+const AssetsContainer = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+`
+
+const AssetSection = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+`
+
+const UploadZone = styled.div`
+  width: 120px;
+  height: 80px;
+  padding: 1rem;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 2px dashed rgba(88, 164, 176, 0.3);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: center;
+
+  &:hover {
+    border-color: rgba(88, 164, 176, 0.5);
+    background: linear-gradient(145deg, rgba(88, 164, 176, 0.08), rgba(88, 164, 176, 0.03));
+    transform: translateY(-2px);
+  }
+`
+
+const UploadLabel = styled.div`
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+`
+
+const UploadSubtext = styled.div`
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.7rem;
 `
 
 const Header = styled.header`
@@ -2844,7 +2966,7 @@ const DialogOverlay = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 10001;
   padding: 2rem;
   animation: fadeIn 0.3s ease-out;
   
@@ -2951,7 +3073,7 @@ const ConfirmationDialog = styled.div`
 
 const SuccessNotification = styled.div`
   position: fixed;
-  bottom: 20px;
+  top: 20px;
   right: 20px;
   background: linear-gradient(135deg, #00b894, #00a085);
   color: #ffffff;
@@ -2963,15 +3085,15 @@ const SuccessNotification = styled.div`
   box-shadow: 0 8px 32px rgba(0, 184, 148, 0.3);
   backdrop-filter: blur(10px);
   z-index: 1000;
-  animation: slideInUp 0.3s ease-out;
+  animation: slideInRight 0.3s ease-out;
   
-  @keyframes slideInUp {
+  @keyframes slideInRight {
     from {
-      transform: translateY(100%);
+      transform: translateX(100%);
       opacity: 0;
     }
     to {
-      transform: translateY(0);
+      transform: translateX(0);
       opacity: 1;
     }
   }
@@ -2987,7 +3109,7 @@ const SuccessNotification = styled.div`
   }
   
   @media (max-width: 768px) {
-    bottom: 10px;
+    top: 10px;
     right: 10px;
     left: 10px;
     text-align: center;
@@ -2996,7 +3118,7 @@ const SuccessNotification = styled.div`
 
 const ErrorNotification = styled.div`
   position: fixed;
-  bottom: 20px;
+  top: 20px;
   right: 20px;
   background: linear-gradient(135deg, #ff4757, #e74c3c);
   color: #ffffff;
@@ -3009,15 +3131,15 @@ const ErrorNotification = styled.div`
   backdrop-filter: blur(10px);
   z-index: 1000;
   max-width: 400px;
-  animation: slideInUp 0.3s ease-out;
+  animation: slideInRight 0.3s ease-out;
   
-  @keyframes slideInUp {
+  @keyframes slideInRight {
     from {
-      transform: translateY(100%);
+      transform: translateX(100%);
       opacity: 0;
     }
     to {
-      transform: translateY(0);
+      transform: translateX(0);
       opacity: 1;
     }
   }
@@ -3046,7 +3168,7 @@ const ErrorNotification = styled.div`
   }
   
   @media (max-width: 768px) {
-    bottom: 10px;
+    top: 10px;
     right: 10px;
     left: 10px;
   }
@@ -3058,9 +3180,10 @@ const SaveSnackbar = styled.div`
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1000;
+  z-index: 9999;
   animation: slideUpFade 0.3s ease-out;
   max-width: calc(100vw - 60px);
+  pointer-events: auto;
 
   @keyframes slideUpFade {
     from {
@@ -3208,234 +3331,5 @@ const SaveSnackbarButton = styled.button`
   }
 `
 
-// Audio Manager Modal Styled Components
-const AudioManagerModal = styled.div`
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-`
-
-const AudioModalOverlay = styled.div`
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(10px);
-`
-
-const AudioModalContent = styled.div`
-  position: relative;
-  background: linear-gradient(145deg, rgba(15, 15, 35, 0.95), rgba(20, 20, 40, 0.95));
-  border: 1px solid rgba(88, 164, 176, 0.2);
-  border-radius: 20px;
-  width: 100%;
-  max-width: 600px;
-  max-height: 70vh;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(20px);
-`
-
-const AudioModalHeader = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem 2rem;
-  border-bottom: 1px solid rgba(88, 164, 176, 0.2);
-  background: linear-gradient(135deg, rgba(88, 164, 176, 0.1), rgba(88, 164, 176, 0.05));
-`
-
-const AudioModalBody = styled.div`
-  padding: 2rem;
-  max-height: calc(80vh - 100px);
-  overflow-y: auto;
-  
-  &::-webkit-scrollbar {
-    width: 8px;
-  }
-  
-  &::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-  }
-  
-  &::-webkit-scrollbar-thumb {
-    background: #58A4B0;
-    border-radius: 4px;
-    
-    &:hover {
-      background: #4A8C96;
-    }
-  }
-`
-
-const AudioModalMainContent = styled.div`
-  display: flex;
-  gap: 2rem;
-  
-  @media (max-width: 768px) {
-    flex-direction: column;
-    gap: 1rem;
-  }
-`
-
-const AudioModalLeft = styled.div`
-  flex: 1;
-`
-
-const AudioModalRight = styled.div`
-  flex: 1;
-`
-
-const CurrentAudioSection = styled.div`
-  background: linear-gradient(145deg, rgba(88, 164, 176, 0.1), rgba(88, 164, 176, 0.05));
-  border: 1px solid rgba(88, 164, 176, 0.2);
-  border-radius: 12px;
-  padding: 1.5rem;
-  margin-bottom: 2rem;
-`
-
-const AudioPlayer = styled.audio`
-  width: 100%;
-  height: 40px;
-  
-  &::-webkit-media-controls-panel {
-    background-color: rgba(88, 164, 176, 0.2);
-  }
-`
-
-const AudioControls = styled.div`
-  display: flex;
-  gap: 1rem;
-  margin-top: 1rem;
-`
-
-const AudioControlButton = styled.button`
-  display: flex;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  background: rgba(220, 38, 127, 0.1);
-  border: 1px solid rgba(220, 38, 127, 0.3);
-  border-radius: 8px;
-  color: #ff6b9d;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  
-  &:hover {
-    background: rgba(220, 38, 127, 0.2);
-    border-color: rgba(220, 38, 127, 0.5);
-    transform: translateY(-2px);
-  }
-`
-
-const EmptyAudioState = styled.div`
-  text-align: center;
-  padding: 3rem 2rem;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
-  border: 2px dashed rgba(88, 164, 176, 0.3);
-  border-radius: 12px;
-  margin-bottom: 2rem;
-`
-
-const UploadSection = styled.div`
-  margin-bottom: 2rem;
-`
-
-const AudioUploadZone = styled.div`
-  padding: 3rem 2rem;
-  border-radius: 12px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
-  
-  &:hover {
-    border-color: rgba(88, 164, 176, 0.6) !important;
-    background: linear-gradient(145deg, rgba(88, 164, 176, 0.08), rgba(88, 164, 176, 0.03));
-    transform: translateY(-2px);
-  }
-  
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-`
-
-const AudioUploadButton = styled.button`
-  padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #58A4B0, #4A8C96);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  
-  &:hover {
-    background: linear-gradient(135deg, #4A8C96, #3A7A84);
-    transform: translateY(-2px);
-  }
-`
-
-const AudioFormatInfo = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 0.8rem;
-  margin-top: 1rem;
-  padding: 0.75rem;
-  background: rgba(88, 164, 176, 0.05);
-  border-radius: 8px;
-  border: 1px solid rgba(88, 164, 176, 0.1);
-`
-
-const AudioSettingsSection = styled.div`
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 1.5rem;
-`
-
-const AudioSetting = styled.div`
-  margin-bottom: 1.5rem;
-  
-  &:last-child {
-    margin-bottom: 0;
-  }
-  
-  input[type="range"] {
-    &::-webkit-slider-thumb {
-      appearance: none;
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      background: #58A4B0;
-      cursor: pointer;
-      border: 2px solid white;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-    }
-    
-    &::-moz-range-thumb {
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      background: #58A4B0;
-      cursor: pointer;
-      border: 2px solid white;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-    }
-  }
-`
 
 export default CustomizationPage

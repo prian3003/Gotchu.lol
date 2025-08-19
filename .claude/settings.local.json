@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(find:*)",
+      "Bash(npm run lint)",
+      "Bash(grep:*)",
+      "Bash(npm install:*)",
+      "Bash(npx prisma generate:*)",
+      "Bash(cp:*)"
+    ],
+    "deny": []
+  }
+}

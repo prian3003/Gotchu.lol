@@ -69,8 +69,8 @@ const QueryProvider = ({ children }) => {
   return (
     <QueryClientProvider client={client}>
       {children}
-      {/* Show React Query DevTools in development */}
-      {process.env.NODE_ENV === 'development' && (
+      {/* React Query DevTools disabled to prevent loading UI confusion */}
+      {false && process.env.NODE_ENV === 'development' && (
         <ReactQueryDevtools 
           initialIsOpen={false}
           position="bottom-right"

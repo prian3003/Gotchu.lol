@@ -30,6 +30,9 @@ func main() {
 		{ID: "user-audio", Name: "user-audio", Public: true},
 		{ID: "user-cursors", Name: "user-cursors", Public: true},
 		{ID: "user-assets", Name: "user-assets", Public: true},
+		{ID: "templates", Name: "templates", Public: true},
+		{ID: "template-previews", Name: "template-previews", Public: true},
+		{ID: "template-thumbnails", Name: "template-thumbnails", Public: true},
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}

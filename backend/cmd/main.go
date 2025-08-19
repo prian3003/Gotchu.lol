@@ -16,6 +16,7 @@ import (
 	"gotchu-backend/pkg/database"
 	"gotchu-backend/pkg/email"
 	"gotchu-backend/pkg/redis"
+	"gotchu-backend/pkg/storage"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,8 +34,8 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	// Skip migrations for development hot reload (set MIGRATE=true when needed)
-	if os.Getenv("MIGRATE") == "false" {
+	// Run migrations by default (set MIGRATE=false to skip for faster development)
+	if os.Getenv("MIGRATE") != "false" {
 		log.Println("Running database migrations...")
 		if err := database.AutoMigrate(db); err != nil {
 			log.Fatalf("Failed to run migrations: %v", err)
@@ -79,13 +80,23 @@ func main() {
 	authMiddleware := middleware.NewAuthMiddleware(authService, redisClient, db)
 	rateLimiter := middleware.NewRateLimiter(redisClient)
 
+	// Initialize Supabase storage
+	var supabaseStorage *storage.SupabaseStorage
+	if cfg.SupabaseURL != "" && cfg.SupabaseServiceRoleKey != "" {
+		supabaseStorage = storage.NewSupabaseStorage(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey, cfg.SupabaseAnonKey)
+		log.Println("🗄️ Supabase storage initialized")
+	} else {
+		log.Println("⚠️ Warning: Supabase storage not configured")
+	}
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, authService, redisClient, authMiddleware, emailService, cfg.SiteURL)
 	dashboardHandler := handlers.NewDashboardHandler(db, redisClient, cfg)
 	linkHandler := handlers.NewLinkHandler(db, redisClient)
+	templateHandler := handlers.NewTemplateHandler(db, redisClient, supabaseStorage)
 
 	// Setup router
-	router := setupRouter(cfg, authMiddleware, rateLimiter, authHandler, dashboardHandler, linkHandler)
+	router := setupRouter(cfg, authMiddleware, rateLimiter, authHandler, dashboardHandler, linkHandler, templateHandler)
 
 	// Serve uploaded files
 	router.Static("/uploads", "./uploads")
@@ -145,6 +156,7 @@ func setupRouter(
 	authHandler *handlers.AuthHandler,
 	dashboardHandler *handlers.DashboardHandler,
 	linkHandler *handlers.LinkHandler,
+	templateHandler *handlers.TemplateHandler,
 ) *gin.Engine {
 	router := gin.New()
 
@@ -206,6 +218,20 @@ func setupRouter(
 			customization.POST("/settings", dashboardHandler.SaveCustomizationSettings)
 		}
 
+		// Audio routes (protected)
+		audio := api.Group("/audio")
+		audio.Use(authMiddleware.RequireAuth())
+		{
+			audio.GET("/list", dashboardHandler.ListUserAudioFiles)
+		}
+
+		// Asset management routes (protected)
+		assets := api.Group("/assets")
+		assets.Use(authMiddleware.RequireAuth())
+		{
+			assets.DELETE("/delete", dashboardHandler.DeleteUserAsset)
+		}
+
 		// Upload routes (protected)
 		upload := api.Group("/upload")
 		upload.Use(authMiddleware.RequireAuth())
@@ -237,6 +263,28 @@ func setupRouter(
 				linksProtected.DELETE("/:id", linkHandler.DeleteLink)
 				linksProtected.PUT("/reorder", linkHandler.ReorderLinks)
 			}
+		}
+
+		// Template routes
+		templates := api.Group("/templates")
+		{
+			// Public routes (no auth required)
+			templates.GET("", templateHandler.GetTemplates)
+			templates.GET("/categories", templateHandler.GetTemplateCategories)
+			
+			// Protected routes (authentication required)
+			templatesProtected := templates.Group("")
+			templatesProtected.Use(authMiddleware.RequireAuth())
+			{
+				templatesProtected.POST("/create", templateHandler.CreateTemplate)
+				templatesProtected.GET("/my-templates", templateHandler.GetUserTemplates)
+				templatesProtected.GET("/liked", templateHandler.GetUserLikedTemplates)
+				templatesProtected.POST("/:id/apply", templateHandler.ApplyTemplate)
+				templatesProtected.POST("/:id/like", templateHandler.LikeTemplate)
+			}
+			
+			// ID-based routes must come last to avoid conflicts
+			templates.GET("/:id", templateHandler.GetTemplate)
 		}
 
 		// Protected API routes

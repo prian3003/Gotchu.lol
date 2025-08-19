@@ -1,18 +1,42 @@
 import React, { useState, useRef } from 'react'
 import logger from '../../utils/logger'
 import styled from 'styled-components'
-import { HiLink, HiPlus, HiPencil, HiTrash, HiEye, HiCursorArrowRays } from 'react-icons/hi2'
+import { HiLink, HiPlus, HiPencil, HiTrash, HiEye, HiCursorArrowRays, HiXMark } from 'react-icons/hi2'
+
+// Social Media Icons Data
+const socialMediaPlatforms = [
+  { name: 'YouTube', icon: '🔴', color: '#FF0000', placeholder: 'youtube.com/c/yourchannel' },
+  { name: 'Instagram', icon: '📷', color: '#E4405F', placeholder: 'instagram.com/yourusername' },
+  { name: 'Twitter', icon: '🐦', color: '#1DA1F2', placeholder: 'twitter.com/yourusername' },
+  { name: 'TikTok', icon: '🎵', color: '#000000', placeholder: 'tiktok.com/@yourusername' },
+  { name: 'Discord', icon: '💬', color: '#5865F2', placeholder: 'discord.gg/yourinvite' },
+  { name: 'Spotify', icon: '🎧', color: '#1DB954', placeholder: 'open.spotify.com/user/yourid' },
+  { name: 'Snapchat', icon: '👻', color: '#FFFC00', placeholder: 'snapchat.com/add/yourusername' },
+  { name: 'Telegram', icon: '✈️', color: '#0088cc', placeholder: 't.me/yourusername' },
+  { name: 'SoundCloud', icon: '🎶', color: '#ff5500', placeholder: 'soundcloud.com/yourusername' },
+  { name: 'PayPal', icon: '💰', color: '#0070ba', placeholder: 'paypal.me/yourusername' },
+  { name: 'GitHub', icon: '🐙', color: '#333', placeholder: 'github.com/yourusername' },
+  { name: 'LinkedIn', icon: '💼', color: '#0A66C2', placeholder: 'linkedin.com/in/yourusername' },
+  { name: 'Facebook', icon: '📘', color: '#1877F2', placeholder: 'facebook.com/yourusername' },
+  { name: 'Twitch', icon: '🎮', color: '#9146FF', placeholder: 'twitch.tv/yourusername' },
+  { name: 'OnlyFans', icon: '🔞', color: '#00AFF0', placeholder: 'onlyfans.com/yourusername' },
+  { name: 'Reddit', icon: '📱', color: '#FF4500', placeholder: 'reddit.com/u/yourusername' },
+  { name: 'Email', icon: '📧', color: '#EA4335', placeholder: 'your.email@domain.com' },
+  { name: 'Website', icon: '🌐', color: '#6B7280', placeholder: 'https://yourwebsite.com' },
+]
 
 const LinksSection = ({ 
   links, 
   setLinks, 
   user, 
   setUser, 
-  setHasUnsavedChanges,
-  setShowUnsavedModal,
-  showUnsavedModal 
+  setHasUnsavedChanges
 }) => {
+  // Ensure links is always an array
+  const safeLinks = Array.isArray(links) ? links : []
   const [showAddLink, setShowAddLink] = useState(false)
+  const [showSocialGrid, setShowSocialGrid] = useState(false)
+  const [selectedPlatform, setSelectedPlatform] = useState(null)
   const [editingLink, setEditingLink] = useState(null)
   const [newLink, setNewLink] = useState({ title: '', url: '', icon: '🔗' })
   const fileInputRef = useRef(null)
@@ -120,25 +144,81 @@ const LinksSection = ({
     setEditingLink(null)
   }
 
+  const handlePlatformSelect = (platform) => {
+    setSelectedPlatform(platform)
+    setNewLink({
+      title: platform.name,
+      url: '',
+      icon: platform.icon
+    })
+    setShowSocialGrid(false)
+    setShowAddLink(true)
+  }
+
+  const closeSocialGrid = () => {
+    setShowSocialGrid(false)
+    setSelectedPlatform(null)
+  }
+
   return (
-    <LinksContainer>
-      <SectionHeader>
-        <SectionTitle>
-          <HiLink style={{ color: '#58A4B0' }} />
-          Links Management
-        </SectionTitle>
-        <AddButton onClick={() => setShowAddLink(true)}>
-          <HiPlus />
-          Add Link
-        </AddButton>
-      </SectionHeader>
+    <LinksWrapper>
+      <ContentWrapper>
+        <SectionHeader>
+          <HiLink style={{ fontSize: '2rem', color: '#58A4B0' }} />
+          <HeaderContent>
+            <h2>Social Media Links</h2>
+            <p>Connect and showcase your social media profiles</p>
+          </HeaderContent>
+        </SectionHeader>
+
+        <SettingsGroup>
+          <GroupHeader>
+            <GroupTitle>Your Links</GroupTitle>
+            <AddButton onClick={() => setShowSocialGrid(true)}>
+              <HiPlus />
+              Add Social Link
+            </AddButton>
+          </GroupHeader>
+
+      {/* Social Media Grid */}
+      {showSocialGrid && (
+        <SocialMediaModal>
+          <SocialModalContent>
+            <SocialModalHeader>
+              <SocialModalTitle>Add Social Media</SocialModalTitle>
+              <CloseButton onClick={closeSocialGrid}>
+                <HiXMark />
+              </CloseButton>
+            </SocialModalHeader>
+            <SocialGrid>
+              {socialMediaPlatforms.map((platform) => (
+                <SocialIcon
+                  key={platform.name}
+                  onClick={() => handlePlatformSelect(platform)}
+                  color={platform.color}
+                >
+                  <span className="icon">{platform.icon}</span>
+                  <span className="name">{platform.name}</span>
+                </SocialIcon>
+              ))}
+            </SocialGrid>
+          </SocialModalContent>
+        </SocialMediaModal>
+      )}
 
       <LinksGrid>
         {/* Add Link Form */}
         {showAddLink && (
           <LinkCard className="add-form">
             <LinkForm>
-              <FormTitle>Add New Link</FormTitle>
+              {selectedPlatform ? (
+                <FormTitle>
+                  <span style={{ marginRight: '0.5rem' }}>{selectedPlatform.icon}</span>
+                  Add {selectedPlatform.name} Link
+                </FormTitle>
+              ) : (
+                <FormTitle>Add New Link</FormTitle>
+              )}
               <FormGroup>
                 <FormLabel>Title</FormLabel>
                 <FormInput
@@ -154,7 +234,7 @@ const LinksSection = ({
                   type="url"
                   value={newLink.url}
                   onChange={(e) => setNewLink(prev => ({ ...prev, url: e.target.value }))}
-                  placeholder="https://example.com"
+                  placeholder={selectedPlatform?.placeholder || "https://example.com"}
                 />
               </FormGroup>
               <FormGroup>
@@ -173,6 +253,7 @@ const LinksSection = ({
                 </FormButton>
                 <FormButton onClick={() => {
                   setShowAddLink(false)
+                  setSelectedPlatform(null)
                   setNewLink({ title: '', url: '', icon: '🔗' })
                 }}>
                   Cancel
@@ -183,7 +264,7 @@ const LinksSection = ({
         )}
 
         {/* Existing Links */}
-        {links.map((link) => (
+        {safeLinks.map((link) => (
           <LinkCard key={link.id}>
             {editingLink && editingLink.id === link.id ? (
               <LinkForm>
@@ -255,7 +336,7 @@ const LinksSection = ({
         ))}
       </LinksGrid>
 
-      {links.length === 0 && !showAddLink && (
+      {safeLinks.length === 0 && !showAddLink && (
         <EmptyState>
           <HiLink style={{ fontSize: '3rem', color: '#58A4B0', marginBottom: '1rem' }} />
           <h3>No links yet</h3>
@@ -266,19 +347,66 @@ const LinksSection = ({
           </AddButton>
         </EmptyState>
       )}
-    </LinksContainer>
+        </SettingsGroup>
+      </ContentWrapper>
+    </LinksWrapper>
   )
 }
 
-const LinksContainer = styled.div`
-  margin-bottom: 2rem;
+// Main wrapper to match CustomizationPage structure
+const LinksWrapper = styled.div`
+  min-height: 100vh;
+  position: relative;
+  padding: 2rem;
+  
+  @media (max-width: 768px) {
+    padding: 1rem;
+  }
+`
+
+const ContentWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 200px);
 `
 
 const SectionHeader = styled.div`
   display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  
+  svg {
+    font-size: 2rem;
+    color: #58A4B0;
+  }
+`
+
+const HeaderContent = styled.div`
+  h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 0;
+  }
+  
+  p {
+    font-size: 0.9rem;
+    color: #a0a0a0;
+    margin: 0.25rem 0 0 0;
+  }
+`
+
+const SettingsGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+`
+
+const GroupHeader = styled.div`
+  display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
   
   @media (max-width: 768px) {
     flex-direction: column;
@@ -287,15 +415,15 @@ const SectionHeader = styled.div`
   }
 `
 
-const SectionTitle = styled.h3`
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 1.25rem;
+const GroupTitle = styled.h3`
+  font-size: 1.1rem;
   font-weight: 600;
   color: #ffffff;
   margin: 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 `
+
 
 const AddButton = styled.button`
   display: flex;
@@ -520,6 +648,122 @@ const EmptyState = styled.div`
 
   p {
     margin-bottom: 2rem;
+  }
+`
+
+// Social Media Modal Styles
+const SocialMediaModal = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 2rem;
+`
+
+const SocialModalContent = styled.div`
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  padding: 2rem;
+  max-width: 800px;
+  max-height: 80vh;
+  overflow-y: auto;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  width: 100%;
+`
+
+const SocialModalHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+`
+
+const SocialModalTitle = styled.h3`
+  color: #ffffff;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+`
+
+const CloseButton = styled.button`
+  background: none;
+  border: none;
+  color: #ffffff;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+`
+
+const SocialGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 1rem;
+  max-height: 400px;
+  overflow-y: auto;
+  
+  @media (max-width: 768px) {
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 0.75rem;
+  }
+`
+
+const SocialIcon = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: center;
+  
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: ${props => props.color || '#58A4B0'};
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+  }
+  
+  .icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    display: block;
+  }
+  
+  .name {
+    font-size: 0.75rem;
+    color: #ffffff;
+    font-weight: 500;
+    line-height: 1.2;
+  }
+  
+  @media (max-width: 768px) {
+    padding: 0.75rem 0.25rem;
+    
+    .icon {
+      font-size: 1.5rem;
+      margin-bottom: 0.25rem;
+    }
+    
+    .name {
+      font-size: 0.65rem;
+    }
   }
 `
 
