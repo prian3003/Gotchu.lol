@@ -332,7 +332,7 @@ func validateCustomizationSettings(settings *CustomizationSettings) error {
 	}
 
 	// Validate effects
-	validBackgroundEffects := []string{"", "none", "particles", "matrix", "waves", "gradient", "geometric"}
+	validBackgroundEffects := []string{"", "none", "particles", "rain", "matrix", "waves", "gradient", "geometric"}
 	if settings.BackgroundEffect != "" && !contains(validBackgroundEffects, settings.BackgroundEffect) {
 		return fmt.Errorf("invalid background_effect: %s", settings.BackgroundEffect)
 	}

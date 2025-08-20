@@ -244,6 +244,7 @@ func setupRouter(
 		users.Use(authMiddleware.OptionalAuth())
 		{
 			users.GET("/:username", dashboardHandler.GetUserProfile)
+			users.GET("/:username/links", linkHandler.GetPublicUserLinks)
 		}
 
 		// Link routes

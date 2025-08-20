@@ -5,6 +5,7 @@ const EffectsSection = ({ settings, setSettings, validationErrors }) => {
   const backgroundEffects = [
     { value: '', label: 'None' },
     { value: 'particles', label: 'Particles' },
+    { value: 'rain', label: 'Rain' },
     { value: 'matrix', label: 'Matrix' },
     { value: 'waves', label: 'Waves' },
     { value: 'gradient', label: 'Gradient' },
@@ -36,6 +37,7 @@ const EffectsSection = ({ settings, setSettings, validationErrors }) => {
             >
               <div className="effect-preview">
                 {effect.value === 'particles' && <div className="particles-demo">●●●</div>}
+                {effect.value === 'rain' && <div className="rain-demo">|||</div>}
                 {effect.value === 'matrix' && <div className="matrix-demo">01010</div>}
                 {effect.value === 'waves' && <div className="waves-demo">～～～</div>}
                 {effect.value === 'gradient' && <div className="gradient-demo"></div>}
@@ -281,6 +283,12 @@ const EffectCard = styled.div`
     font-size: 1.2rem;
     
     .particles-demo { color: #58A4B0; }
+    .rain-demo { 
+      color: #4A90E2; 
+      font-family: monospace;
+      animation: rainFall 1.5s ease-in-out infinite;
+      transform: rotate(-10deg);
+    }
     .matrix-demo { color: #00ff00; font-family: monospace; }
     .waves-demo { color: #4ECDC4; }
     .gradient-demo { 
@@ -306,6 +314,20 @@ const EffectCard = styled.div`
   @keyframes bounce {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-5px); }
+  }
+  
+  @keyframes rainFall {
+    0% { 
+      transform: rotate(-10deg) translateY(-10px);
+      opacity: 0.3;
+    }
+    50% { 
+      opacity: 1;
+    }
+    100% { 
+      transform: rotate(-10deg) translateY(10px);
+      opacity: 0.3;
+    }
   }
 `
 

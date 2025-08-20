@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 import { 
   HiRectangleStack, 
@@ -18,6 +19,7 @@ import {
   HiInformationCircle
 } from 'react-icons/hi2'
 import logger from '../../utils/logger'
+import { useDashboard } from '../../hooks/dashboard/useDashboard'
 
 // Helper Functions
 const formatCategoryName = (category) => {
@@ -26,6 +28,8 @@ const formatCategoryName = (category) => {
 }
 
 const TemplatesSection = () => {
+  const navigate = useNavigate()
+  const { user } = useDashboard()
   const [activeTab, setActiveTab] = useState('library')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState('created_at')
@@ -45,7 +49,9 @@ const TemplatesSection = () => {
   const [selectedTemplate, setSelectedTemplate] = useState(null)
   const [showPreviewModal, setShowPreviewModal] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showUseTemplateModal, setShowUseTemplateModal] = useState(false)
   const [createLoading, setCreateLoading] = useState(false)
+  const [applyLoading, setApplyLoading] = useState(false)
 
   const tabs = [
     { id: 'library', label: 'Template Library', count: templates.length },
@@ -199,8 +205,14 @@ const TemplatesSection = () => {
     }
   }
 
-  const handleUseTemplate = async (template) => {
+  const handleUseTemplate = (template) => {
+    setSelectedTemplate(template)
+    setShowUseTemplateModal(true)
+  }
+
+  const handleApplyTemplate = async (template) => {
     try {
+      setApplyLoading(true)
       const token = localStorage.getItem('authToken')
       const sessionId = localStorage.getItem('sessionId')
 
@@ -214,8 +226,8 @@ const TemplatesSection = () => {
       const data = await response.json()
 
       if (data.success) {
+        setShowUseTemplateModal(false)
         // TODO: Show success notification
-        // TODO: Optionally redirect to customization page
         console.log('Template applied successfully!')
       } else {
         logger.error('Failed to apply template:', data.error)
@@ -223,6 +235,20 @@ const TemplatesSection = () => {
       }
     } catch (error) {
       logger.error('Error applying template:', error)
+    } finally {
+      setApplyLoading(false)
+    }
+  }
+
+  const handlePreviewTemplate = (template) => {
+    if (user?.username) {
+      // Navigate to user's profile page with template preview parameters
+      navigate(`/${user.username}?templatePreview=true&templateId=${template.id}`)
+    } else {
+      // Fallback to modal if no username available
+      setSelectedTemplate(template)
+      setShowUseTemplateModal(false)
+      setShowPreviewModal(true)
     }
   }
 
@@ -616,6 +642,18 @@ const TemplatesSection = () => {
         />,
         document.body
       )}
+
+      {/* Use Template Modal */}
+      {showUseTemplateModal && selectedTemplate && createPortal(
+        <UseTemplateModal 
+          template={selectedTemplate}
+          onClose={() => setShowUseTemplateModal(false)}
+          onPreview={() => handlePreviewTemplate(selectedTemplate)}
+          onApply={() => handleApplyTemplate(selectedTemplate)}
+          applyLoading={applyLoading}
+        />,
+        document.body
+      )}
     </TemplatesWrapper>
   )
 }
@@ -636,7 +674,7 @@ const CreateTemplateModal = ({ onClose, onSubmit, loading, categories }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!formData.name.trim()) return
+    if (!formData.name.trim() || !formData.thumbnail) return
 
     const templateData = {
       ...formData,
@@ -727,7 +765,7 @@ const CreateTemplateModal = ({ onClose, onSubmit, loading, categories }) => {
             </FormSection>
 
             <FormSection>
-              <FormLabel>Template Thumbnail</FormLabel>
+              <FormLabel>Template Thumbnail *</FormLabel>
               <ThumbnailUploadArea>
                 {thumbnailPreview ? (
                   <ThumbnailPreview>
@@ -747,8 +785,8 @@ const CreateTemplateModal = ({ onClose, onSubmit, loading, categories }) => {
                     />
                     <label htmlFor="thumbnail-upload" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <HiPlus style={{ fontSize: '2rem', color: '#58A4B0' }} />
-                      <span>Upload Thumbnail</span>
-                      <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>PNG, JPG up to 5MB</span>
+                      <span>Upload Thumbnail *</span>
+                      <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>PNG, JPG up to 5MB (Required)</span>
                     </label>
                   </ThumbnailUploadButton>
                 )}
@@ -831,7 +869,7 @@ const CreateTemplateModal = ({ onClose, onSubmit, loading, categories }) => {
               <SecondaryButton type="button" onClick={onClose}>
                 Cancel
               </SecondaryButton>
-              <SubmitButton type="submit" disabled={loading || !formData.name.trim()}>
+              <SubmitButton type="submit" disabled={loading || !formData.name.trim() || !formData.thumbnail}>
                 {loading ? 'Creating...' : 'Create Template'}
               </SubmitButton>
             </CreateFormActions>
@@ -854,6 +892,68 @@ const CreateTemplateModal = ({ onClose, onSubmit, loading, categories }) => {
           </TemplatePreviewInfo>
         </CreateModalBody>
       </ModalContent>
+    </TemplateModal>
+  )
+}
+
+// Use Template Modal Component
+const UseTemplateModal = ({ template, onClose, onPreview, onApply, applyLoading }) => {
+  const creatorAvatar = template.creator?.avatar_url || `https://ui-avatars.com/api/?name=${template.creator?.username || 'User'}&background=58A4B0&color=fff`
+  const templateThumbnail = template.thumbnail_url || template.preview_image_url || template.background_url || 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400&h=300&fit=crop'
+
+  return (
+    <TemplateModal>
+      <UseTemplateModalContent>
+        <ModalHeader>
+          <ModalTitle>Use Template</ModalTitle>
+          <CloseButton onClick={onClose}>
+            <HiXMark />
+          </CloseButton>
+        </ModalHeader>
+
+        <UseTemplateModalBody>
+          <TemplateImageContainer>
+            <TemplateImage src={templateThumbnail} alt={template.name} />
+          </TemplateImageContainer>
+
+          <TemplateDetails>
+            <TemplateName>{template.name}</TemplateName>
+            
+            {template.description && (
+              <UseModalDescription>{template.description}</UseModalDescription>
+            )}
+
+            <CreatorInfo>
+              <CreatorAvatar src={creatorAvatar} alt={template.creator?.username} />
+              <CreatorDetails>
+                <CreatorLabel>Created by</CreatorLabel>
+                <CreatorUsername>@{template.creator?.username || 'Unknown'}</CreatorUsername>
+              </CreatorDetails>
+            </CreatorInfo>
+
+            <TemplateStats>
+              <StatItem>
+                <HiArrowDownTray />
+                {template.downloads?.toLocaleString() || 0} downloads
+              </StatItem>
+              <StatItem>
+                <HiHeart />
+                {template.likes?.toLocaleString() || 0} likes
+              </StatItem>
+            </TemplateStats>
+
+            <UseTemplateActions>
+              <PreviewButton onClick={onPreview}>
+                <HiEye />
+                Preview Template
+              </PreviewButton>
+              <UseButton onClick={onApply} disabled={applyLoading}>
+                {applyLoading ? 'Applying...' : 'Use Template'}
+              </UseButton>
+            </UseTemplateActions>
+          </TemplateDetails>
+        </UseTemplateModalBody>
+      </UseTemplateModalContent>
     </TemplateModal>
   )
 }
@@ -1904,6 +2004,155 @@ const RemoveThumbnailButton = styled.button`
   
   svg {
     font-size: 0.8rem;
+  }
+`
+
+// Use Template Modal Styled Components
+const UseTemplateModalContent = styled.div`
+  background: linear-gradient(135deg, rgba(15, 15, 35, 0.95), rgba(30, 30, 60, 0.95));
+  border-radius: 12px;
+  width: 90vw;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+`
+
+const UseTemplateModalBody = styled.div`
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+`
+
+const TemplateImageContainer = styled.div`
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+`
+
+const TemplateImage = styled.img`
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+  display: block;
+`
+
+const TemplateDetails = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+`
+
+const TemplateName = styled.h2`
+  color: #ffffff;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+`
+
+const UseModalDescription = styled.p`
+  color: #a0a0a0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0;
+`
+
+const CreatorInfo = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+`
+
+const CreatorAvatar = styled.img`
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+`
+
+const CreatorDetails = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+`
+
+const CreatorLabel = styled.span`
+  color: #a0a0a0;
+  font-size: 0.8rem;
+`
+
+const CreatorUsername = styled.span`
+  color: #58A4B0;
+  font-size: 0.9rem;
+  font-weight: 500;
+`
+
+const UseTemplateActions = styled.div`
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  
+  @media (max-width: 480px) {
+    flex-direction: column;
+  }
+`
+
+const PreviewButton = styled.button`
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+  
+  svg {
+    font-size: 1rem;
+  }
+`
+
+const UseButton = styled.button`
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #58A4B0, #4A90A4);
+  border: none;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, #4A90A4, #3C7A86);
+    transform: translateY(-1px);
+  }
+  
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
   }
 `
 

@@ -40,7 +40,8 @@ const Dashboard = ({ defaultSection = 'overview' }) => {
     error,
     
     // Actions
-    handleLogout
+    handleLogout,
+    fetchLinks
   } = useDashboard(defaultSection)
 
   // Sidebar configuration
@@ -152,6 +153,7 @@ const Dashboard = ({ defaultSection = 'overview' }) => {
             user={user}
             setUser={setUser}
             setHasUnsavedChanges={setHasUnsavedChanges}
+            fetchLinks={fetchLinks}
           />
         )}
 

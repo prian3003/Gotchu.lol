@@ -1,0 +1,38 @@
+/* styles/RainEffect.module.css */
+
+
+.rain {
+  position: fixed !important;
+  width: 120vw;
+  height: 100vh;
+  z-index: 100 !important;
+  left: -10vw;
+  top: 0;
+  display: block !important;
+  pointer-events: none !important;
+  overflow: hidden;
+}
+
+.drop {
+  position: absolute;
+  top: -5vmin;
+  width: 2px;
+  height: 15px;
+  background: linear-gradient(to bottom, rgba(173, 194, 233, 0.9), rgba(173, 194, 233, 0.5));
+  opacity: 1;
+  animation: fall 2s linear infinite;
+  z-index: 101 !important;
+  pointer-events: none !important;
+  border-radius: 50%;
+  transition: transform 0.1s ease-out;
+  transform-origin: top center;
+}
+
+@keyframes fall {
+  from {
+    transform: translateY(-100%) translateX(var(--wind-x, 0px)) skewX(var(--wind-skew, 0deg));
+  }
+  to {
+    transform: translateY(100vh) translateX(var(--wind-x, 0px)) skewX(var(--wind-skew, 0deg));
+  }
+}

@@ -122,6 +122,7 @@ const CustomizationPage = ({ onBack }) => {
   const backgroundEffects = [
     { id: 'none', name: 'None', preview: '🚫' },
     { id: 'particles', name: 'Particles', preview: '✨' },
+    { id: 'rain', name: 'Rain', preview: '🌧️' },
     { id: 'matrix', name: 'Matrix', preview: '🟢' },
     { id: 'waves', name: 'Waves', preview: '🌊' },
     { id: 'gradient', name: 'Gradient', preview: '🎨' },

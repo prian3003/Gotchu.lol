@@ -42,7 +42,7 @@ type CreateLinkRequest struct {
 	URL         *string               `json:"url" binding:"omitempty,url"`
 	Description *string               `json:"description" binding:"omitempty,max=1000"`
 	Type        models.LinkType       `json:"type" binding:"omitempty,oneof=DEFAULT HEADER PRODUCT SERVICE MARKETPLACE"`
-	Icon        *string               `json:"icon" binding:"omitempty,url"`
+	Icon        *string               `json:"icon" binding:"omitempty,max=100"`
 	ImageURL    *string               `json:"image_url" binding:"omitempty,url"`
 	Color       *string               `json:"color" binding:"omitempty,len=7"`
 	IsActive    *bool                 `json:"is_active"`
@@ -54,7 +54,7 @@ type UpdateLinkRequest struct {
 	URL         *string               `json:"url" binding:"omitempty,url"`
 	Description *string               `json:"description" binding:"omitempty,max=1000"`
 	Type        *models.LinkType      `json:"type" binding:"omitempty,oneof=DEFAULT HEADER PRODUCT SERVICE MARKETPLACE"`
-	Icon        *string               `json:"icon" binding:"omitempty,url"`
+	Icon        *string               `json:"icon" binding:"omitempty,max=100"`
 	ImageURL    *string               `json:"image_url" binding:"omitempty,url"`
 	Color       *string               `json:"color" binding:"omitempty,len=7"`
 	IsActive    *bool                 `json:"is_active"`
@@ -73,27 +73,10 @@ func (h *LinkHandler) GetLinks(c *gin.Context) {
 		return
 	}
 
-	// Check cache first
-	cacheKey := fmt.Sprintf("links:user:%d", user.ID)
-	if h.redisClient != nil {
-		var cachedLinks []models.Link
-		err := h.redisClient.Get(cacheKey, &cachedLinks)
-		if err == nil {
-			c.JSON(http.StatusOK, LinkResponse{
-				Success: true,
-				Message: "Links retrieved successfully (cached)",
-				Data: gin.H{
-					"links": cachedLinks,
-				},
-			})
-			return
-		}
-	}
-
-	// Fetch from database
+	// Fetch from database directly (no caching for links)
 	var links []models.Link
 	err := h.db.Where("user_id = ?", user.ID).
-		Order("`order` ASC, created_at ASC").
+		Order("\"order\" ASC, created_at ASC").
 		Find(&links).Error
 
 	if err != nil {
@@ -105,9 +88,9 @@ func (h *LinkHandler) GetLinks(c *gin.Context) {
 		return
 	}
 
-	// Cache the result
-	if h.redisClient != nil {
-		h.redisClient.Set(cacheKey, links, 10*time.Minute)
+	// Ensure links is never nil
+	if links == nil {
+		links = []models.Link{}
 	}
 
 	c.JSON(http.StatusOK, LinkResponse{
@@ -201,11 +184,25 @@ func (h *LinkHandler) CreateLink(c *gin.Context) {
 		return
 	}
 
+	// Check for duplicate platform (except Custom URL which can have multiple)
+	if req.Icon != nil && *req.Icon != "link" {
+		var existingLink models.Link
+		err := h.db.Where("user_id = ? AND icon = ? AND is_active = ?", user.ID, *req.Icon, true).First(&existingLink).Error
+		if err == nil {
+			c.JSON(http.StatusBadRequest, LinkResponse{
+				Success: false,
+				Message: "You already have a link for this platform. Each platform can only be added once.",
+				Error:   "DUPLICATE_PLATFORM",
+			})
+			return
+		}
+	}
+
 	// Get the next order number
 	var maxOrder int
 	h.db.Model(&models.Link{}).
 		Where("user_id = ?", user.ID).
-		Select("COALESCE(MAX(`order`), 0)").
+		Select("COALESCE(MAX(\"order\"), 0)").
 		Scan(&maxOrder)
 
 	// Set default values
@@ -243,8 +240,7 @@ func (h *LinkHandler) CreateLink(c *gin.Context) {
 		return
 	}
 
-	// Clear cache
-	h.clearUserLinksCache(user.ID)
+	// No cache to clear since we removed caching
 
 	c.JSON(http.StatusCreated, LinkResponse{
 		Success: true,
@@ -344,7 +340,7 @@ func (h *LinkHandler) UpdateLink(c *gin.Context) {
 		updates["is_active"] = *req.IsActive
 	}
 	if req.Order != nil {
-		updates["order"] = *req.Order
+		updates["\"order\""] = *req.Order
 	}
 	updates["updated_at"] = time.Now()
 
@@ -370,8 +366,7 @@ func (h *LinkHandler) UpdateLink(c *gin.Context) {
 		return
 	}
 
-	// Clear cache
-	h.clearUserLinksCache(user.ID)
+	// No cache to clear since we removed caching
 
 	c.JSON(http.StatusOK, LinkResponse{
 		Success: true,
@@ -424,8 +419,31 @@ func (h *LinkHandler) DeleteLink(c *gin.Context) {
 		return
 	}
 
-	// Delete the link (this will cascade delete link clicks due to foreign key)
-	err = h.db.Delete(&link).Error
+	// Start transaction for safe deletion
+	tx := h.db.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, LinkResponse{
+			Success: false,
+			Message: "Failed to start transaction",
+			Error:   "DATABASE_ERROR",
+		})
+		return
+	}
+	defer tx.Rollback()
+
+	// First delete all related link clicks
+	err = tx.Where("link_id = ?", linkID).Delete(&models.LinkClick{}).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, LinkResponse{
+			Success: false,
+			Message: "Failed to delete link analytics",
+			Error:   "DATABASE_ERROR",
+		})
+		return
+	}
+
+	// Then delete the link
+	err = tx.Delete(&link).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, LinkResponse{
 			Success: false,
@@ -435,8 +453,17 @@ func (h *LinkHandler) DeleteLink(c *gin.Context) {
 		return
 	}
 
-	// Clear cache
-	h.clearUserLinksCache(user.ID)
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, LinkResponse{
+			Success: false,
+			Message: "Failed to commit deletion",
+			Error:   "DATABASE_ERROR",
+		})
+		return
+	}
+
+	// No cache to clear since we removed caching
 
 	c.JSON(http.StatusOK, LinkResponse{
 		Success: true,
@@ -500,8 +527,7 @@ func (h *LinkHandler) TrackClick(c *gin.Context) {
 		fmt.Printf("Failed to save click analytics for link %d: %v\n", linkID, err)
 	}
 
-	// Clear cache for the link owner
-	h.clearUserLinksCache(link.UserID)
+	// No cache to clear since we removed caching
 
 	c.JSON(http.StatusOK, LinkResponse{
 		Success: true,
@@ -557,7 +583,7 @@ func (h *LinkHandler) ReorderLinks(c *gin.Context) {
 	for _, linkOrder := range req.Links {
 		err := tx.Model(&models.Link{}).
 			Where("id = ? AND user_id = ?", linkOrder.ID, user.ID).
-			Update("order", linkOrder.Order).Error
+			Update("\"order\"", linkOrder.Order).Error
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, LinkResponse{
 				Success: false,
@@ -578,12 +604,67 @@ func (h *LinkHandler) ReorderLinks(c *gin.Context) {
 		return
 	}
 
-	// Clear cache
-	h.clearUserLinksCache(user.ID)
+	// No cache to clear since we removed caching
 
 	c.JSON(http.StatusOK, LinkResponse{
 		Success: true,
 		Message: "Links reordered successfully",
+	})
+}
+
+// GetPublicUserLinks retrieves all active links for a public user by username
+func (h *LinkHandler) GetPublicUserLinks(c *gin.Context) {
+	username := c.Param("username")
+	if username == "" {
+		c.JSON(http.StatusBadRequest, LinkResponse{
+			Success: false,
+			Message: "Username is required",
+			Error:   "INVALID_USERNAME",
+		})
+		return
+	}
+
+	// Find user by username
+	var user models.User
+	err := h.db.Where("username = ? AND is_active = ? AND is_public = ?", username, true, true).
+		First(&user).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, LinkResponse{
+				Success: false,
+				Message: "User not found or profile is private",
+				Error:   "USER_NOT_FOUND",
+			})
+		} else {
+			c.JSON(http.StatusInternalServerError, LinkResponse{
+				Success: false,
+				Message: "Failed to find user",
+				Error:   "DATABASE_ERROR",
+			})
+		}
+		return
+	}
+
+	// Get user's active links
+	var links []models.Link
+	err = h.db.Where("user_id = ? AND is_active = ?", user.ID, true).
+		Order("\"order\" ASC, created_at ASC").
+		Find(&links).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, LinkResponse{
+			Success: false,
+			Message: "Failed to retrieve links",
+			Error:   "DATABASE_ERROR",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, LinkResponse{
+		Success: true,
+		Message: "Links retrieved successfully",
+		Data: gin.H{
+			"links": links,
+		},
 	})
 }
 

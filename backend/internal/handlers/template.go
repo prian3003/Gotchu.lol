@@ -450,6 +450,18 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		return
 	}
 
+	// Fetch complete user data with customization settings
+	var fullUser models.User
+	if err := h.db.First(&fullUser, user.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Failed to fetch user data",
+		})
+		return
+	}
+	// Use fullUser instead of user for the rest of the function
+	user = &fullUser
+
 	// Parse multipart form data
 	if err := c.Request.ParseMultipartForm(10 << 20); err != nil { // 10 MB max
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -516,23 +528,40 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		return
 	}
 
-	// Handle thumbnail upload
+	// Handle thumbnail upload (required)
 	var thumbnailURL *string
-	if thumbnail, header, err := c.Request.FormFile("thumbnail"); err == nil {
-		defer thumbnail.Close()
-		
-		// Generate unique filename
-		fileName := fmt.Sprintf("template_thumbnail_%d_%d_%s", user.ID, time.Now().Unix(), header.Filename)
-		
-		// Upload to thumbnail bucket
-		if h.storage != nil {
-			if uploadedURL, uploadErr := h.storage.UploadFile("template-thumbnails", fileName, thumbnail, header.Header.Get("Content-Type")); uploadErr == nil {
-				thumbnailURL = &uploadedURL
-				fmt.Printf("✅ Thumbnail uploaded: %s\n", uploadedURL)
-			} else {
-				fmt.Printf("❌ Failed to upload thumbnail: %v\n", uploadErr)
-			}
+	thumbnail, header, err := c.Request.FormFile("thumbnail")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Thumbnail image is required",
+		})
+		return
+	}
+	defer thumbnail.Close()
+	
+	// Generate unique filename
+	fileName := fmt.Sprintf("template_thumbnail_%d_%d_%s", user.ID, time.Now().Unix(), header.Filename)
+	
+	// Upload to thumbnail bucket
+	if h.storage != nil {
+		if uploadedURL, uploadErr := h.storage.UploadFile("template-thumbnails", fileName, thumbnail, header.Header.Get("Content-Type")); uploadErr == nil {
+			thumbnailURL = &uploadedURL
+			fmt.Printf("✅ Thumbnail uploaded: %s\n", uploadedURL)
+		} else {
+			fmt.Printf("❌ Failed to upload thumbnail: %v\n", uploadErr)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   "Failed to upload thumbnail",
+			})
+			return
 		}
+	} else {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Storage service unavailable",
+		})
+		return
 	}
 
 	// Create template from user's current customization settings
@@ -763,4 +792,5 @@ func (h *TemplateHandler) copyAssetToTemplateStorage(sourceURL, assetType, templ
 	// Copy the file
 	return h.storage.CopyFileFromURL(sourceURL, bucketName, newFilename)
 }
+
 

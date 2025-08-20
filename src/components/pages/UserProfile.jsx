@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useLocation } from 'react-router-dom'
 import styled from 'styled-components'
 import { IoEye, IoVolumeHigh, IoVolumeMute, IoPlay, IoPause } from 'react-icons/io5'
 import ParticleBackground from '../effects/ParticleBackground'
+import RainEffect from '../background_effect/RainEffect.jsx'
+import UserLinks from '../profile/UserLinks'
 import { useTheme } from '../../contexts/ThemeContext'
 import logger from '../../utils/logger'
 
@@ -80,14 +82,24 @@ const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = t
         }
       }
       
-      // Start playback attempt
-      playAudio()
+      // Start playback attempt with promise error handling
+      try {
+        playAudio().catch(err => {
+          console.log('🔇 Audio autoplay silently failed (expected):', err.name)
+        })
+      } catch (err) {
+        console.log('❌ Audio setup synchronous error:', err)
+      }
       
       // Cleanup function
       return () => {
-        if (audio) {
-          audio.pause()
-          audio.currentTime = 0
+        try {
+          if (audio) {
+            audio.pause()
+            audio.currentTime = 0
+          }
+        } catch (err) {
+          // Ignore cleanup errors
         }
       }
     }
@@ -219,15 +231,49 @@ const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = t
 
 const UserProfile = () => {
   const { username } = useParams()
+  const location = useLocation()
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [templateData, setTemplateData] = useState(null)
+  const [isTemplatePreview, setIsTemplatePreview] = useState(false)
   const { colors, isDarkMode } = useTheme()
   const videoRef = useRef(null)
 
+  // Check for template preview parameters
+  const urlParams = new URLSearchParams(location.search)
+  const templatePreview = urlParams.get('templatePreview') === 'true'
+  const templateId = urlParams.get('templateId')
+
   useEffect(() => {
     fetchUserProfile()
-  }, [username])
+    
+    // If this is a template preview, also fetch template data
+    if (templatePreview && templateId) {
+      fetchTemplateData()
+    }
+
+    // Add global handler for unhandled promise rejections from audio
+    const handleUnhandledRejection = (event) => {
+      if (event.reason && event.reason.name === 'NotAllowedError' && event.reason.message.includes('play()')) {
+        console.log('🔇 Prevented audio autoplay error from crashing app')
+        event.preventDefault()
+      }
+    }
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection)
+
+    return () => {
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+    }
+  }, [username, templatePreview, templateId])
+
+  // Apply template customization when both user and template data are loaded
+  useEffect(() => {
+    if (user && templateData && isTemplatePreview) {
+      applyTemplateCustomization(user)
+    }
+  }, [user, templateData, isTemplatePreview])
 
   // Try to enable autoplay for audio when user data is loaded
   useEffect(() => {
@@ -323,6 +369,87 @@ const UserProfile = () => {
       }
     }
   }, [user?.customization?.backgroundUrl])
+
+  const fetchTemplateData = async () => {
+    try {
+      const response = await fetch(`/api/templates/${templateId}`)
+      const data = await response.json()
+      
+      if (data.success) {
+        setTemplateData(data.data.template)
+        setIsTemplatePreview(true)
+        console.log('🎨 Template preview loaded:', data.data.template.name)
+      } else {
+        console.error('Failed to fetch template:', data.error)
+      }
+    } catch (error) {
+      console.error('Error fetching template:', error)
+    }
+  }
+
+  const applyTemplateCustomization = (userData) => {
+    if (!templateData) {
+      console.log('❌ No template data available for customization')
+      return
+    }
+
+    console.log('🔍 Template data received:', templateData)
+    console.log('🔍 Template background_url:', templateData.background_url)
+    console.log('🔍 Template audio_url:', templateData.audio_url)
+    console.log('🔍 User current background:', userData.customization.backgroundUrl)
+
+    // Merge user data with template customization, keeping user's profile info but applying template styling
+    const mergedCustomization = {
+      ...userData.customization,
+      // Apply template colors and styling
+      accentColor: templateData.accent_color || userData.customization.accentColor,
+      textColor: templateData.text_color || userData.customization.textColor,
+      backgroundColor: templateData.background_color || userData.customization.backgroundColor,
+      primaryColor: templateData.primary_color || userData.customization.primaryColor,
+      secondaryColor: templateData.secondary_color || userData.customization.secondaryColor,
+      iconColor: templateData.icon_color || userData.customization.iconColor,
+      
+      // Apply template effects
+      backgroundEffect: templateData.background_effect || userData.customization.backgroundEffect,
+      usernameEffect: templateData.username_effect || userData.customization.usernameEffect,
+      
+      // Apply template settings
+      profileBlur: templateData.profile_blur ?? userData.customization.profileBlur,
+      profileOpacity: templateData.profile_opacity ?? userData.customization.profileOpacity,
+      profileGradient: templateData.profile_gradient ?? userData.customization.profileGradient,
+      
+      // Apply template glow effects
+      glowUsername: templateData.glow_username ?? userData.customization.glowUsername,
+      glowSocials: templateData.glow_socials ?? userData.customization.glowSocials,
+      glowBadges: templateData.glow_badges ?? userData.customization.glowBadges,
+      
+      // Apply template animations
+      animatedTitle: templateData.animated_title ?? userData.customization.animatedTitle,
+      monochromeIcons: templateData.monochrome_icons ?? userData.customization.monochromeIcons,
+      swapBoxColors: templateData.swap_box_colors ?? userData.customization.swapBoxColors,
+      
+      // Apply template audio settings
+      volumeLevel: templateData.volume_level ?? userData.customization.volumeLevel,
+      volumeControl: templateData.volume_control ?? userData.customization.volumeControl,
+      
+      // Apply template assets - prioritize template assets over user assets
+      backgroundUrl: templateData.background_url || userData.customization.backgroundUrl,
+      audioUrl: templateData.audio_url || userData.customization.audioUrl,
+      cursorUrl: templateData.custom_cursor_url || userData.customization.cursorUrl
+    }
+
+    console.log('🎨 Merged background URL:', mergedCustomization.backgroundUrl)
+    console.log('🎨 Merged audio URL:', mergedCustomization.audioUrl)
+
+    const updatedUserData = {
+      ...userData,
+      customization: mergedCustomization
+    }
+
+    setUser(updatedUserData)
+    console.log('✅ Template customization applied:', templateData.name)
+    console.log('✅ Final user data:', updatedUserData)
+  }
 
   const fetchUserProfile = async () => {
     try {
@@ -447,6 +574,8 @@ const UserProfile = () => {
       }
       
       setUser(profileData)
+      
+      // Template customization will be applied in separate useEffect when templateData is ready
       setLoading(false)
     } catch (err) {
       logger.error('Profile fetch failed', err)
@@ -619,6 +748,29 @@ const UserProfile = () => {
 
   return (
     <ProfileWrapper style={profileStyles} customization={customization}>
+      {/* Template Preview Banner */}
+      {isTemplatePreview && templateData && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          background: 'linear-gradient(135deg, rgba(88, 164, 176, 0.95), rgba(74, 144, 164, 0.95))',
+          backdropFilter: 'blur(10px)',
+          color: '#ffffff',
+          padding: '0.75rem 1rem',
+          textAlign: 'center',
+          zIndex: 1000,
+          borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+          fontSize: '0.9rem',
+          fontWeight: '500'
+        }}>
+          🎨 Template Preview: <strong>{templateData.name}</strong> by @{templateData.creator?.username}
+          <span style={{ margin: '0 1rem', opacity: 0.7 }}>•</span>
+          This is how your profile would look with this template
+        </div>
+      )}
+      
       {/* Video Background */}
       {isBackgroundVideo && (
         <video
@@ -665,6 +817,7 @@ const UserProfile = () => {
       
       {/* Background Effects */}
       {customization.backgroundEffect === 'particles' && <ParticleBackground />}
+      {customization.backgroundEffect === 'rain' && <RainEffect />}
       
       {/* Audio Controls - Always render if audioUrl exists, but hide controls based on volumeControl */}
       {customization.audioUrl && (
@@ -678,7 +831,9 @@ const UserProfile = () => {
       
 
       {/* Profile Content */}
-      <div className="profile-container">
+      <div className="profile-container" style={{
+        marginTop: isTemplatePreview ? '60px' : '0' // Add top margin for preview banner
+      }}>
         {/* Header Section */}
         <div className="profile-header">
           {user.avatar_url && (
@@ -701,6 +856,9 @@ const UserProfile = () => {
             
             <p className="bio">{user.bio}</p>
             
+            {/* User Links Section - Inside the profile card, after bio */}
+            <UserLinks username={user.username} monochromeIcons={customization.monochromeIcons} />
+            
           </div>
           
           {/* Profile Views - Bottom Left of Card */}
@@ -709,7 +867,6 @@ const UserProfile = () => {
             <span className="views-count">{user.stats.totalViews}</span>
           </div>
         </div>
-
 
       </div>
     </ProfileWrapper>
@@ -900,7 +1057,7 @@ const ProfileWrapper = styled.div`
   .profile-container {
     position: relative;
     z-index: 10;
-    max-width: 800px;
+    max-width: 600px;
     width: 90%;
     margin: 0 auto;
     padding: 3rem 1.5rem 2rem 1.5rem;
@@ -911,7 +1068,7 @@ const ProfileWrapper = styled.div`
     align-items: center;
     
     @media (max-width: 1024px) {
-      max-width: 700px;
+      max-width: 550px;
       width: 85%;
     }
     

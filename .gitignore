@@ -30,3 +30,17 @@ backend/.env
 *.njsproj
 *.sln
 *.sw?
+
+# Windows-specific files that should not be tracked
+nul
+CON
+PRN
+AUX
+CLOCK$
+NUL
+COM[1-9]
+LPT[1-9]
+
+# Go build artifacts
+*.exe
+tmp/

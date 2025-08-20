@@ -123,17 +123,25 @@ export const useDashboard = (defaultSection = 'profile') => {
   
   const fetchLinks = async () => {
     try {
+      const token = localStorage.getItem('authToken')
       const sessionId = localStorage.getItem('sessionId')
-      const response = await fetch('/api/links', {
+      
+      const response = await fetch('http://localhost:8080/api/links', {
         headers: {
-          'X-Session-ID': sessionId
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '',
+          'X-Session-ID': sessionId || ''
         }
       })
       
       const data = await response.json()
-      if (data.success) {
-        setUserLinks(data.data || [])
+      
+      if (data.success && data.data) {
+        // Handle both null and array cases
+        const links = data.data.links || []
+        setUserLinks(links)
       } else {
+        setUserLinks([]) // Ensure empty array is set
         logger.error('Failed to fetch links:', data.message)
       }
     } catch (error) {
@@ -266,10 +274,10 @@ export const useDashboard = (defaultSection = 'profile') => {
       if (data.success) {
         if (editingLink) {
           setUserLinks(prev => prev.map(link => 
-            link.id === editingLink.id ? data.data : link
+            link.id === editingLink.id ? data.data.link : link
           ))
         } else {
-          setUserLinks(prev => [...prev, data.data])
+          setUserLinks(prev => [...prev, data.data.link])
         }
         setShowLinkModal(false)
         setEditingLink(null)
