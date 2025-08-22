@@ -624,10 +624,9 @@ func (h *LinkHandler) GetPublicUserLinks(c *gin.Context) {
 		return
 	}
 
-	// Find user by username
+	// Skip cache and get fresh data directly from database
 	var user models.User
-	err := h.db.Where("username = ? AND is_active = ? AND is_public = ?", username, true, true).
-		First(&user).Error
+	err := h.db.Where("username = ? AND is_active = ? AND is_public = ?", username, true, true).First(&user).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, LinkResponse{

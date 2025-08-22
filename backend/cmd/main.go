@@ -14,6 +14,7 @@ import (
 	"gotchu-backend/internal/middleware"
 	"gotchu-backend/pkg/auth"
 	"gotchu-backend/pkg/database"
+	"gotchu-backend/pkg/discord"
 	"gotchu-backend/pkg/email"
 	"gotchu-backend/pkg/redis"
 	"gotchu-backend/pkg/storage"
@@ -79,6 +80,7 @@ func main() {
 	// Initialize middleware
 	authMiddleware := middleware.NewAuthMiddleware(authService, redisClient, db)
 	rateLimiter := middleware.NewRateLimiter(redisClient)
+	badgeMiddleware := middleware.NewBadgeMiddleware(db)
 
 	// Initialize Supabase storage
 	var supabaseStorage *storage.SupabaseStorage
@@ -89,14 +91,32 @@ func main() {
 		log.Println("⚠️ Warning: Supabase storage not configured")
 	}
 
+	// Initialize Discord service
+	var discordService *discord.Service
+	var discordHandler *handlers.DiscordHandler
+	if cfg.DiscordClientID != "" && cfg.DiscordClientSecret != "" {
+		discordService = discord.NewService(
+			cfg.DiscordClientID,
+			cfg.DiscordClientSecret,
+			cfg.DiscordRedirectURI,
+			cfg.DiscordBotToken,
+			cfg.DiscordGuildID,
+		)
+		discordHandler = handlers.NewDiscordHandler(db, redisClient, discordService)
+		log.Println("🤖 Discord integration initialized")
+	} else {
+		log.Println("⚠️ Warning: Discord integration not configured")
+	}
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, authService, redisClient, authMiddleware, emailService, cfg.SiteURL)
 	dashboardHandler := handlers.NewDashboardHandler(db, redisClient, cfg)
 	linkHandler := handlers.NewLinkHandler(db, redisClient)
 	templateHandler := handlers.NewTemplateHandler(db, redisClient, supabaseStorage)
+	badgesHandler := handlers.NewBadgesHandler(db)
 
 	// Setup router
-	router := setupRouter(cfg, authMiddleware, rateLimiter, authHandler, dashboardHandler, linkHandler, templateHandler)
+	router := setupRouter(cfg, authMiddleware, rateLimiter, badgeMiddleware, authHandler, dashboardHandler, linkHandler, templateHandler, badgesHandler, discordHandler)
 
 	// Serve uploaded files
 	router.Static("/uploads", "./uploads")
@@ -153,10 +173,13 @@ func setupRouter(
 	cfg *config.Config,
 	authMiddleware *middleware.AuthMiddleware,
 	rateLimiter *middleware.RateLimiter,
+	badgeMiddleware *middleware.BadgeMiddleware,
 	authHandler *handlers.AuthHandler,
 	dashboardHandler *handlers.DashboardHandler,
 	linkHandler *handlers.LinkHandler,
 	templateHandler *handlers.TemplateHandler,
+	badgesHandler *handlers.BadgesHandler,
+	discordHandler *handlers.DiscordHandler,
 ) *gin.Engine {
 	router := gin.New()
 
@@ -192,7 +215,8 @@ func setupRouter(
 		// auth.Use(authMiddleware.RateLimitAuth(cfg.AuthRateLimitMax, cfg.RateLimitWindow))
 		{
 			auth.POST("/register", authHandler.Register)
-			auth.POST("/login", authHandler.Login)
+			auth.POST("/login", badgeMiddleware.CheckBadgesOnLogin(), authHandler.Login)
+			auth.POST("/login/2fa", badgeMiddleware.CheckBadgesOnLogin(), authHandler.Login2FA)
 			auth.POST("/logout", authMiddleware.OptionalAuth(), authHandler.Logout)
 			auth.GET("/me", authMiddleware.RequireAuth(), authHandler.GetCurrentUser)
 			auth.POST("/refresh", authHandler.RefreshToken)
@@ -201,6 +225,20 @@ func setupRouter(
 			// Email verification routes
 			auth.GET("/verify-email", authHandler.VerifyEmail)
 			auth.POST("/resend-verification", authHandler.ResendVerification)
+			
+			// 2FA routes (protected)
+			twofa := auth.Group("/2fa")
+			twofa.Use(authMiddleware.RequireAuth())
+			{
+				twofa.POST("/generate", authHandler.Generate2FA)
+				twofa.POST("/verify", authHandler.Verify2FA)
+				twofa.POST("/disable", authHandler.Disable2FA)
+			}
+
+			// Profile update routes (protected)
+			auth.POST("/update-username", authMiddleware.RequireAuth(), authHandler.UpdateUsername)
+			auth.POST("/update-display-name", authMiddleware.RequireAuth(), authHandler.UpdateDisplayName)
+			auth.POST("/update-alias", authMiddleware.RequireAuth(), authHandler.UpdateAlias)
 		}
 
 		// Dashboard routes (protected)
@@ -208,6 +246,7 @@ func setupRouter(
 		dashboard.Use(authMiddleware.RequireAuth())
 		{
 			dashboard.GET("", dashboardHandler.GetDashboard)
+			dashboard.GET("/analytics", dashboardHandler.GetAnalytics)
 		}
 
 		// Customization routes (protected)
@@ -245,6 +284,8 @@ func setupRouter(
 		{
 			users.GET("/:username", dashboardHandler.GetUserProfile)
 			users.GET("/:username/links", linkHandler.GetPublicUserLinks)
+			users.GET("/:username/badges", badgesHandler.GetUserBadges)
+			users.GET("/:username/badges/showcased", badgesHandler.GetShowcasedBadges)
 		}
 
 		// Link routes
@@ -258,7 +299,7 @@ func setupRouter(
 			linksProtected.Use(authMiddleware.RequireAuth())
 			{
 				linksProtected.GET("", linkHandler.GetLinks)
-				linksProtected.POST("", linkHandler.CreateLink)
+				linksProtected.POST("", badgeMiddleware.CheckBadgesAfterAction(), linkHandler.CreateLink)
 				linksProtected.GET("/:id", linkHandler.GetLink)
 				linksProtected.PUT("/:id", linkHandler.UpdateLink)
 				linksProtected.DELETE("/:id", linkHandler.DeleteLink)
@@ -277,7 +318,7 @@ func setupRouter(
 			templatesProtected := templates.Group("")
 			templatesProtected.Use(authMiddleware.RequireAuth())
 			{
-				templatesProtected.POST("/create", templateHandler.CreateTemplate)
+				templatesProtected.POST("/create", badgeMiddleware.CheckBadgesAfterAction(), templateHandler.CreateTemplate)
 				templatesProtected.GET("/my-templates", templateHandler.GetUserTemplates)
 				templatesProtected.GET("/liked", templateHandler.GetUserLikedTemplates)
 				templatesProtected.POST("/:id/apply", templateHandler.ApplyTemplate)
@@ -286,6 +327,22 @@ func setupRouter(
 			
 			// ID-based routes must come last to avoid conflicts
 			templates.GET("/:id", templateHandler.GetTemplate)
+		}
+
+		// Badges routes
+		badges := api.Group("/badges")
+		{
+			// Public routes (no auth required)
+			badges.GET("", badgesHandler.GetAllBadges)
+			
+			// Protected routes (authentication required)
+			badgesProtected := badges.Group("")
+			badgesProtected.Use(authMiddleware.RequireAuth())
+			{
+				badgesProtected.PUT("/order", badgesHandler.UpdateBadgeOrder)
+				badgesProtected.POST("/check", badgesHandler.CheckBadges)
+				badgesProtected.POST("/award", badgesHandler.AwardBadgeManually) // Admin only - add admin middleware later
+			}
 		}
 
 		// Protected API routes
@@ -315,6 +372,25 @@ func setupRouter(
 					"message": "Admin stats endpoint",
 				})
 			})
+		}
+
+		// Discord routes
+		if discordHandler != nil {
+			discord := api.Group("/discord")
+			{
+				// Public callback route (no auth required)
+				discord.GET("/callback", discordHandler.DiscordCallback)
+				
+				// Protected Discord routes
+				discordProtected := discord.Group("")
+				discordProtected.Use(authMiddleware.RequireAuth())
+				{
+					discordProtected.POST("/auth", discordHandler.InitiateDiscordAuth)
+					discordProtected.GET("/status", discordHandler.GetDiscordStatus)
+					discordProtected.POST("/disconnect", discordHandler.DisconnectDiscord)
+					discordProtected.POST("/refresh", discordHandler.RefreshDiscordData)
+				}
+			}
 		}
 
 		// Premium routes

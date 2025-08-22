@@ -5,6 +5,11 @@ import ParticleBackground from '../effects/ParticleBackground'
 import ShinyText from '../effects/ShinyText'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useAuth } from '../../contexts/AuthContext'
+import { 
+  HiFingerPrint,
+  HiArrowLeft,
+  HiShieldCheck
+} from 'react-icons/hi2'
 
 function SignIn() {
   const [formData, setFormData] = useState({
@@ -14,6 +19,9 @@ function SignIn() {
   const [errors, setErrors] = useState({})
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [show2FA, setShow2FA] = useState(false)
+  const [twoFACode, setTwoFACode] = useState('')
+  const [tempLoginData, setTempLoginData] = useState(null)
   const { colors, isDarkMode } = useTheme()
   const { login } = useAuth()
   const navigate = useNavigate()
@@ -24,6 +32,61 @@ function SignIn() {
       ...formData,
       [e.target.name]: e.target.value
     })
+  }
+
+  const handle2FASubmit = async (e) => {
+    e.preventDefault()
+    
+    if (!twoFACode || twoFACode.length !== 6) {
+      setErrors({ twoFA: 'Please enter a valid 6-digit code' })
+      return
+    }
+    
+    setIsLoading(true)
+    setErrors({})
+    
+    try {
+      // Send the 2FA code along with the stored login credentials
+      const response = await fetch('http://localhost:8080/api/auth/login/2fa', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          identifier: tempLoginData.identifier,
+          password: tempLoginData.password,
+          twofa_code: twoFACode
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        // Store authentication data
+        if (data.data?.token && data.data?.session_id) {
+          login(data.data.token, data.data.session_id, data.data.user)
+        }
+
+        // Redirect to dashboard
+        const from = location.state?.from?.pathname || '/dashboard'
+        navigate(from, { replace: true })
+      } else {
+        setErrors({ twoFA: data.message || 'Invalid 2FA code' })
+      }
+      
+    } catch (error) {
+      console.error('2FA verification error:', error)
+      setErrors({ twoFA: 'Network error. Please try again.' })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const goBackToLogin = () => {
+    setShow2FA(false)
+    setTwoFACode('')
+    setTempLoginData(null)
+    setErrors({})
   }
 
   const validateForm = () => {
@@ -75,6 +138,15 @@ function SignIn() {
 
       if (response.ok && data.success) {
         console.log('Login success - data received:', data)
+        
+        // Check if user has 2FA enabled
+        if (data.requires_2fa) {
+          // Store temporary login data and show 2FA form
+          setTempLoginData(loginData)
+          setShow2FA(true)
+          setErrors({}) // Clear any previous errors
+          return
+        }
         
         // Store authentication data using auth context
         if (data.data?.token && data.data?.session_id) {
@@ -130,7 +202,8 @@ function SignIn() {
       <div className="container">
         <div className="form-container">
 
-          <form onSubmit={handleSubmit} className="form">
+          {!show2FA ? (
+            <form onSubmit={handleSubmit} className="form">
             {errors.general && (
               <div className="error-banner">
                 {errors.general}
@@ -233,6 +306,68 @@ function SignIn() {
               <Link to="/signup" className="signup-link"> Sign up</Link>
             </div>
           </form>
+          ) : (
+            <div className="twofa-form">
+              <div className="twofa-header">
+                <button type="button" className="back-button" onClick={goBackToLogin}>
+                  <HiArrowLeft />
+                </button>
+                <div className="header-content">
+                  <div className="twofa-icon">
+                    <HiShieldCheck />
+                  </div>
+                  <div className="header-text">
+                    <h2>Two-Factor Authentication</h2>
+                    <p>Enter the 6-digit code from your authenticator app</p>
+                  </div>
+                </div>
+              </div>
+
+              <form onSubmit={handle2FASubmit} className="form">
+                {errors.twoFA && (
+                  <div className="error-banner">
+                    {errors.twoFA}
+                  </div>
+                )}
+                
+                <div className="input-group">
+                  <label htmlFor="twofa-code">Authentication Code</label>
+                  <input
+                    type="text"
+                    id="twofa-code"
+                    name="twofa-code"
+                    value={twoFACode}
+                    onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    required
+                    placeholder="000000"
+                    className={`twofa-input ${errors.twoFA ? 'error' : ''}`}
+                    maxLength="6"
+                    autoComplete="one-time-code"
+                    autoFocus
+                  />
+                  <small className="input-help">
+                    Check your authenticator app for the 6-digit code
+                  </small>
+                  {errors.twoFA && <span className="error-message">{errors.twoFA}</span>}
+                </div>
+
+                <StyledButtonWrapper>
+                  <button type="submit" className="button" disabled={isLoading || twoFACode.length !== 6}>
+                    <span className="button_lg">
+                      <span className="button_sl" />
+                      <span className="button_text">
+                        {isLoading ? 'verifying...' : 'verify & sign in'}
+                      </span>
+                    </span>
+                  </button>
+                </StyledButtonWrapper>
+
+                <div className="help-text">
+                  <p>Having trouble? Contact support or use backup codes if available.</p>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
       </div>
     </PageWrapper>
@@ -485,6 +620,113 @@ const PageWrapper = styled.div`
 
     &:hover {
       color: #4A8C96;
+    }
+  }
+
+  /* 2FA Form Styles */
+  .twofa-form {
+    .twofa-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 2rem;
+
+      .back-button {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        padding: 0.5rem;
+        color: #ffffff;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 0.25rem;
+
+        &:hover {
+          background: rgba(255, 255, 255, 0.2);
+          border-color: #58A4B0;
+        }
+
+        svg {
+          width: 20px;
+          height: 20px;
+        }
+      }
+
+      .header-content {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+
+        .twofa-icon {
+          width: 48px;
+          height: 48px;
+          background: linear-gradient(135deg, #58A4B0, #4a8a94);
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #ffffff;
+          flex-shrink: 0;
+
+          svg {
+            width: 24px;
+            height: 24px;
+          }
+        }
+
+        .header-text {
+          h2 {
+            color: #ffffff;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 0 0 0.25rem 0;
+          }
+
+          p {
+            color: #a0a0a0;
+            font-size: 0.9rem;
+            margin: 0;
+            line-height: 1.4;
+          }
+        }
+      }
+    }
+
+    .twofa-input {
+      text-align: center;
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: 0.5rem;
+      padding: 1rem;
+      font-family: 'Courier New', monospace;
+
+      &::placeholder {
+        letter-spacing: 0.3rem;
+        font-size: 1.2rem;
+      }
+    }
+
+    .input-help {
+      color: #a0a0a0;
+      font-size: 0.8rem;
+      text-align: center;
+      margin-top: 0.5rem;
+      display: block;
+    }
+
+    .help-text {
+      text-align: center;
+      margin-top: 1.5rem;
+
+      p {
+        color: #a0a0a0;
+        font-size: 0.85rem;
+        line-height: 1.4;
+      }
     }
   }
 `;

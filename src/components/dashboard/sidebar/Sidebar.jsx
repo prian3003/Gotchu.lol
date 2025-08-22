@@ -20,7 +20,8 @@ const DashboardSidebar = ({
   accountDropdownOpen, 
   setAccountDropdownOpen,
   user,
-  handleLogout
+  handleLogout,
+  navigate
 }) => {
   return (
     <Sidebar className={`${sidebarCollapsed ? 'collapsed' : ''} ${mobileMenuOpen ? 'mobile-open' : ''}`}>
@@ -32,6 +33,7 @@ const DashboardSidebar = ({
         </div>
         <button 
           className="collapse-button"
+          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         >
           {sidebarCollapsed ? <HiBars3 /> : <HiXMark />}
@@ -46,12 +48,17 @@ const DashboardSidebar = ({
             <div key={item.id} className="nav-item">
               <div 
                 className={`nav-link ${activeSection === item.id ? 'active' : ''}`}
+                title={sidebarCollapsed ? item.label : ''}
                 onClick={() => {
-                  setActiveSection(item.id)
-                  if (item.hasDropdown) {
-                    setAccountDropdownOpen(!accountDropdownOpen)
+                  if (item.route && navigate && !item.hasDropdown) {
+                    navigate(item.route)
                   } else {
-                    setAccountDropdownOpen(false)
+                    setActiveSection(item.id)
+                    if (item.hasDropdown) {
+                      setAccountDropdownOpen(!accountDropdownOpen)
+                    } else {
+                      setAccountDropdownOpen(false)
+                    }
                   }
                 }}
               >
@@ -78,9 +85,14 @@ const DashboardSidebar = ({
                       <div 
                         key={dropdownItem.id}
                         className={`dropdown-item ${activeSection === dropdownItem.id ? 'active' : ''}`}
+                        title={sidebarCollapsed ? dropdownItem.label : ''}
                         onClick={(e) => {
                           e.stopPropagation()
-                          setActiveSection(dropdownItem.id)
+                          if (dropdownItem.route && navigate) {
+                            navigate(dropdownItem.route)
+                          } else {
+                            setActiveSection(dropdownItem.id)
+                          }
                         }}
                       >
                         <DropdownIcon className="dropdown-icon" />
@@ -183,10 +195,38 @@ const Sidebar = styled.div`
     .sidebar-header .logo .logo-text {
       opacity: 0;
       transform: translateX(-10px);
+      pointer-events: none;
     }
     
     .nav-menu .nav-item .nav-link .nav-link-content {
       justify-content: center;
+      
+      .nav-label {
+        opacity: 0;
+        transform: translateX(-10px);
+        pointer-events: none;
+      }
+      
+      .dropdown-arrow {
+        opacity: 0;
+        transform: translateX(-10px);
+        pointer-events: none;
+      }
+    }
+    
+    .dropdown-menu {
+      display: none !important;
+    }
+    
+    .sidebar-bottom {
+      .help-section,
+      .my-page-section {
+        display: none;
+      }
+      
+      .user-section .user-info {
+        display: none;
+      }
     }
   }
   

@@ -52,6 +52,7 @@ const TemplatesSection = () => {
   const [showUseTemplateModal, setShowUseTemplateModal] = useState(false)
   const [createLoading, setCreateLoading] = useState(false)
   const [applyLoading, setApplyLoading] = useState(false)
+  const [copiedTemplateId, setCopiedTemplateId] = useState(null)
 
   const tabs = [
     { id: 'library', label: 'Template Library', count: templates.length },
@@ -178,6 +179,64 @@ const TemplatesSection = () => {
 
   const handleLikeTemplate = async (templateId) => {
     try {
+      // Find the template to check current like status
+      const currentTemplate = getCurrentTemplates().find(t => t.id === templateId)
+      
+      // Determine current like status - in favorites tab, all templates are liked
+      const isCurrentlyLiked = activeTab === 'favorites' || currentTemplate?.is_liked
+      
+      // Determine new state (toggle)
+      const willBeLiked = !isCurrentlyLiked
+
+      console.log('Template like toggle:', {
+        templateId,
+        activeTab,
+        isCurrentlyLiked,
+        willBeLiked,
+        currentLikes: currentTemplate?.likes
+      })
+
+      // Update templates in all lists optimistically
+      const updateTemplateLike = (templatesList, newLikedState, newLikeCount) => {
+        return templatesList.map(template => {
+          if (template.id === templateId) {
+            return {
+              ...template,
+              is_liked: newLikedState,
+              likes: newLikeCount
+            }
+          }
+          return template
+        })
+      }
+
+      // Calculate new like count
+      const currentLikes = currentTemplate?.likes || 0
+      const newLikeCount = willBeLiked ? currentLikes + 1 : Math.max(0, currentLikes - 1)
+
+      // Update favorites list
+      if (willBeLiked && activeTab !== 'favorites') {
+        // Adding to favorites - add to liked templates list
+        if (currentTemplate) {
+          const updatedTemplate = { ...currentTemplate, is_liked: true, likes: newLikeCount }
+          setLikedTemplates(prev => [updatedTemplate, ...prev])
+        }
+      } else if (!willBeLiked && activeTab === 'favorites') {
+        // Removing from favorites - remove from liked templates list
+        setLikedTemplates(prev => prev.filter(t => t.id !== templateId))
+      } else if (!willBeLiked && activeTab !== 'favorites') {
+        // Unliking from other tabs - remove from liked templates list  
+        setLikedTemplates(prev => prev.filter(t => t.id !== templateId))
+      } else if (willBeLiked && activeTab === 'favorites') {
+        // This shouldn't happen - already in favorites and trying to like again
+        // Update the count in favorites list
+        setLikedTemplates(prev => updateTemplateLike(prev, willBeLiked, newLikeCount))
+      }
+
+      // Update main templates and user templates lists
+      setTemplates(prev => updateTemplateLike(prev, willBeLiked, newLikeCount))
+      setUserTemplates(prev => updateTemplateLike(prev, willBeLiked, newLikeCount))
+
       const token = localStorage.getItem('authToken')
       const sessionId = localStorage.getItem('sessionId')
 
@@ -190,18 +249,36 @@ const TemplatesSection = () => {
       })
       const data = await response.json()
 
-      if (data.success) {
-        // Update the templates list to reflect the like status
-        if (activeTab === 'library') {
-          fetchTemplates(pagination.page)
-        } else if (activeTab === 'favorites') {
-          fetchLikedTemplates()
+      if (!data.success) {
+        // Revert optimistic update if API call failed
+        console.error('Failed to update like status, reverting...')
+        
+        // Revert favorites list
+        if (willBeLiked && activeTab !== 'favorites') {
+          setLikedTemplates(prev => prev.filter(t => t.id !== templateId))
+        } else if (!willBeLiked && activeTab === 'favorites') {
+          if (currentTemplate) {
+            setLikedTemplates(prev => [currentTemplate, ...prev])
+          }
+        } else if (!willBeLiked && activeTab !== 'favorites') {
+          if (currentTemplate) {
+            setLikedTemplates(prev => [{ ...currentTemplate, is_liked: true }, ...prev])
+          }
         }
-      } else {
+        
+        // Revert other template lists
+        setTemplates(prev => updateTemplateLike(prev, isCurrentlyLiked, currentLikes))
+        setUserTemplates(prev => updateTemplateLike(prev, isCurrentlyLiked, currentLikes))
         logger.error('Failed to like template:', data.error)
       }
     } catch (error) {
       logger.error('Error liking template:', error)
+      // Revert optimistic updates on error
+      fetchLikedTemplates()
+      fetchTemplates(pagination.page)
+      if (activeTab === 'uploads') {
+        fetchUserTemplates()
+      }
     }
   }
 
@@ -253,8 +330,22 @@ const TemplatesSection = () => {
   }
 
   const handleCopyLink = (template) => {
-    navigator.clipboard.writeText(`${window.location.origin}/template/${template.id}`)
-    // TODO: Show toast notification
+    // Copy the template preview URL that shows the actual template applied to user's profile
+    if (user?.username) {
+      const previewUrl = `${window.location.origin}/${user.username}?templatePreview=true&templateId=${template.id}`
+      navigator.clipboard.writeText(previewUrl)
+    } else {
+      // Fallback to template page if no username available
+      navigator.clipboard.writeText(`${window.location.origin}/template/${template.id}`)
+    }
+    
+    // Show "Copied!" feedback
+    setCopiedTemplateId(template.id)
+    setTimeout(() => {
+      setCopiedTemplateId(null)
+    }, 2000) // Hide after 2 seconds
+    
+    console.log('Template preview URL copied to clipboard')
   }
 
   const handlePreview = (template) => {
@@ -463,7 +554,7 @@ const TemplatesSection = () => {
                   <TemplatePreview>
                     <img src={previewImage} alt={template.name} />
                     <FavoriteButton
-                      $favorited={activeTab === 'favorites'}
+                      $favorited={template.is_liked || activeTab === 'favorites'}
                       onClick={() => handleLikeTemplate(template.id)}
                     >
                       <HiHeart />
@@ -515,10 +606,22 @@ const TemplatesSection = () => {
                       >
                         {template.is_premium_only && !template.user_has_premium ? 'Premium Required' : 'Use Template'}
                       </UseTemplateButton>
-                      <ActionButton onClick={() => handleCopyLink(template)}>
-                        <HiLink />
+                      <ActionButton 
+                        onClick={() => handleCopyLink(template)} 
+                        title={copiedTemplateId === template.id ? "Copied!" : "Copy template preview link"}
+                        style={{
+                          background: copiedTemplateId === template.id ? 'rgba(34, 197, 94, 0.2)' : undefined,
+                          borderColor: copiedTemplateId === template.id ? 'rgba(34, 197, 94, 0.4)' : undefined,
+                          color: copiedTemplateId === template.id ? '#22c55e' : undefined
+                        }}
+                      >
+                        {copiedTemplateId === template.id ? (
+                          <span style={{ fontSize: '0.7rem', fontWeight: '600' }}>✓</span>
+                        ) : (
+                          <HiLink />
+                        )}
                       </ActionButton>
-                      <ActionButton onClick={() => handlePreview(template)}>
+                      <ActionButton onClick={() => handlePreviewTemplate(template)} title="Preview template">
                         <HiEye />
                       </ActionButton>
                     </TemplateActions>
@@ -529,23 +632,31 @@ const TemplatesSection = () => {
           </TemplatesGrid>
         )}
 
-        {activeTab === 'uploads' && (
+        {filteredTemplates.length === 0 && !loading && (
           <EmptyState>
-            <HiRectangleStack style={{ fontSize: '3rem', color: '#58A4B0', marginBottom: '1rem' }} />
-            <h3>No templates uploaded yet</h3>
-            <p>Create your first template to share with the community</p>
-            <CreateTemplateButton>
-              <HiPlus />
-              Create First Template
-            </CreateTemplateButton>
-          </EmptyState>
-        )}
-
-        {filteredTemplates.length === 0 && activeTab !== 'uploads' && !loading && (
-          <EmptyState>
-            <HiMagnifyingGlass style={{ fontSize: '3rem', color: '#58A4B0', marginBottom: '1rem' }} />
-            <h3>No templates found</h3>
-            <p>Try adjusting your search or filters</p>
+            {activeTab === 'uploads' ? (
+              <>
+                <HiRectangleStack style={{ fontSize: '3rem', color: '#58A4B0', marginBottom: '1rem' }} />
+                <h3>No templates uploaded yet</h3>
+                <p>Create your first template to share with the community</p>
+                <CreateTemplateButton onClick={() => setShowCreateModal(true)}>
+                  <HiPlus />
+                  Create First Template
+                </CreateTemplateButton>
+              </>
+            ) : activeTab === 'favorites' ? (
+              <>
+                <HiHeart style={{ fontSize: '3rem', color: '#58A4B0', marginBottom: '1rem' }} />
+                <h3>No favorite templates yet</h3>
+                <p>Favorite templates you like to find them here later</p>
+              </>
+            ) : (
+              <>
+                <HiMagnifyingGlass style={{ fontSize: '3rem', color: '#58A4B0', marginBottom: '1rem' }} />
+                <h3>No templates found</h3>
+                <p>Try adjusting your search or filters</p>
+              </>
+            )}
           </EmptyState>
         )}
       </ContentWrapper>
@@ -618,11 +729,23 @@ const TemplatesSection = () => {
                   >
                     {selectedTemplate.is_premium_only && !selectedTemplate.user_has_premium ? 'Premium Required' : 'Apply Template'}
                   </UseTemplateButton>
-                  <ActionButton onClick={() => handleLikeTemplate(selectedTemplate.id)}>
+                  <ActionButton onClick={() => handleLikeTemplate(selectedTemplate.id)} title="Like template">
                     <HiHeart />
                   </ActionButton>
-                  <ActionButton onClick={() => handleCopyLink(selectedTemplate)}>
-                    <HiLink />
+                  <ActionButton 
+                    onClick={() => handleCopyLink(selectedTemplate)} 
+                    title={copiedTemplateId === selectedTemplate.id ? "Copied!" : "Copy template preview link"}
+                    style={{
+                      background: copiedTemplateId === selectedTemplate.id ? 'rgba(34, 197, 94, 0.2)' : undefined,
+                      borderColor: copiedTemplateId === selectedTemplate.id ? 'rgba(34, 197, 94, 0.4)' : undefined,
+                      color: copiedTemplateId === selectedTemplate.id ? '#22c55e' : undefined
+                    }}
+                  >
+                    {copiedTemplateId === selectedTemplate.id ? (
+                      <span style={{ fontSize: '0.7rem', fontWeight: '600' }}>✓</span>
+                    ) : (
+                      <HiLink />
+                    )}
                   </ActionButton>
                 </ModalActions>
               </TemplateDetailsSection>
@@ -1061,7 +1184,7 @@ const CreateTemplateButton = styled.button`
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+  background: linear-gradient(135deg, #58A4B0, #4A8C96);
   border: none;
   border-radius: 8px;
   color: #ffffff;
@@ -1071,9 +1194,9 @@ const CreateTemplateButton = styled.button`
   font-weight: 600;
   
   &:hover {
-    background: linear-gradient(135deg, #7C3AED, #6D28D9);
+    background: linear-gradient(135deg, #4A8C96, #3D7580);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+    box-shadow: 0 4px 12px rgba(88, 164, 176, 0.3);
   }
   
   svg {
@@ -1303,7 +1426,7 @@ const TemplateActions = styled.div`
 const UseTemplateButton = styled.button`
   flex: 1;
   padding: 0.75rem 1rem;
-  background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+  background: linear-gradient(135deg, #58A4B0, #4A8C96);
   border: none;
   border-radius: 6px;
   color: #ffffff;
@@ -1313,8 +1436,17 @@ const UseTemplateButton = styled.button`
   font-weight: 600;
   
   &:hover {
-    background: linear-gradient(135deg, #7C3AED, #6D28D9);
+    background: linear-gradient(135deg, #4A8C96, #3D7580);
     transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(88, 164, 176, 0.3);
+  }
+  
+  &:disabled {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.5);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
   }
 `
 
@@ -1322,9 +1454,9 @@ const ActionButton = styled.button`
   width: 36px;
   height: 36px;
   background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(88, 164, 176, 0.2);
   border-radius: 6px;
-  color: #a0a0a0;
+  color: #58A4B0;
   cursor: pointer;
   transition: all 0.3s ease;
   display: flex;

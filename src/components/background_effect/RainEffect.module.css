@@ -5,7 +5,7 @@
   position: fixed !important;
   width: 120vw;
   height: 100vh;
-  z-index: 100 !important;
+  z-index: 8 !important;
   left: -10vw;
   top: 0;
   display: block !important;
@@ -16,12 +16,12 @@
 .drop {
   position: absolute;
   top: -5vmin;
-  width: 2px;
-  height: 15px;
-  background: linear-gradient(to bottom, rgba(173, 194, 233, 0.9), rgba(173, 194, 233, 0.5));
+  width: 4px;
+  height: 25px;
+  background: linear-gradient(to bottom, rgba(173, 216, 230, 0.8), rgba(173, 216, 230, 0.4));
   opacity: 1;
   animation: fall 2s linear infinite;
-  z-index: 101 !important;
+  z-index: 9 !important;
   pointer-events: none !important;
   border-radius: 50%;
   transition: transform 0.1s ease-out;

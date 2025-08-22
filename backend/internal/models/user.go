@@ -60,8 +60,21 @@ type User struct {
 	UseDiscordAvatar        bool      `json:"use_discord_avatar" gorm:"default:false"`
 	DiscordAvatarDecoration bool      `json:"discord_avatar_decoration" gorm:"default:false"`
 	ProfileGradient         bool      `json:"profile_gradient" gorm:"default:true"`
+	TextFont                *string   `json:"text_font,omitempty" gorm:"size:100"`
 	CurrentTemplateID       *uint     `json:"current_template_id,omitempty"`
 	LastLoginAt             *time.Time `json:"last_login_at,omitempty"`
+	
+	// Role and Badge Related Fields
+	Role                    string    `json:"role" gorm:"default:'user';size:20"` // user, helper, moderator, admin, staff
+	IsStaff                 bool      `json:"is_staff" gorm:"default:false"`
+	IsHelper                bool      `json:"is_helper" gorm:"default:false"`
+	IsModerator             bool      `json:"is_moderator" gorm:"default:false"`
+	VerifiedAt              *time.Time `json:"verified_at,omitempty"`
+	
+	// Donation and Support Fields
+	TotalDonated            float64   `json:"total_donated" gorm:"default:0"`
+	IsBooster               bool      `json:"is_booster" gorm:"default:false"` // Discord server booster
+	BoostingSince           *time.Time `json:"boosting_since,omitempty"`
 	MfaEnabled              bool      `json:"mfa_enabled" gorm:"default:false"`
 	MfaSecret               *string   `json:"mfa_secret,omitempty" gorm:"size:255"`
 	MfaType                 *string   `json:"mfa_type,omitempty" gorm:"size:20"`
@@ -301,3 +314,9 @@ func (UserAuth) TableName() string {
 func (UserSession) TableName() string {
 	return "user_sessions"
 }
+
+// TableName specifies the table name for ProfileView
+func (ProfileView) TableName() string {
+	return "profile_views"
+}
+

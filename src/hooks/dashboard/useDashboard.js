@@ -51,7 +51,7 @@ export const useDashboard = (defaultSection = 'profile') => {
       setIsLoading(true)
       setError(null)
       
-      const token = localStorage.getItem('authToken')
+      const token = localStorage.getItem('token')
       const sessionId = localStorage.getItem('sessionId')
       
       if (!token && !sessionId) {
@@ -71,7 +71,7 @@ export const useDashboard = (defaultSection = 'profile') => {
       if (!response.ok) {
         if (response.status === 401) {
           // Clear auth tokens and redirect to login
-          localStorage.removeItem('authToken')
+          localStorage.removeItem('token')
           localStorage.removeItem('sessionId')
           window.location.href = '/signin'
           return
@@ -92,12 +92,14 @@ export const useDashboard = (defaultSection = 'profile') => {
         id: userData.id,
         username: userData.username || 'User',
         email: userData.email,
-        alias: userData.alias || userData.username,
+        displayName: userData.display_name,
+        alias: userData.alias,
         uid: userData.uid || userData.id,
         profileViews: userData.profile_views || 0,
         profileCompletion: userData.profile_completion || 50,
         joinedDate: userData.created_at,
         isPremium: userData.is_premium || false,
+        plan: userData.plan || 'free',
         settings: userData.settings || {}
       }
 
@@ -123,7 +125,7 @@ export const useDashboard = (defaultSection = 'profile') => {
   
   const fetchLinks = async () => {
     try {
-      const token = localStorage.getItem('authToken')
+      const token = localStorage.getItem('token')
       const sessionId = localStorage.getItem('sessionId')
       
       const response = await fetch('http://localhost:8080/api/links', {
@@ -153,7 +155,7 @@ export const useDashboard = (defaultSection = 'profile') => {
   const handleLogout = useCallback(async () => {
     try {
       const sessionId = localStorage.getItem('sessionId')
-      const authToken = localStorage.getItem('authToken')
+      const authToken = localStorage.getItem('token')
       
       if (sessionId) {
         await fetch('/api/auth/logout', {
@@ -169,7 +171,7 @@ export const useDashboard = (defaultSection = 'profile') => {
       logger.error('Logout request failed:', error)
     } finally {
       localStorage.removeItem('sessionId')
-      localStorage.removeItem('authToken')
+      localStorage.removeItem('token')
       logout()
     }
   }, [logout])

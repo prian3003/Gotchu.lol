@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom'
 import styled from 'styled-components'
 import { useTheme } from '../../contexts/ThemeContext'
 import logger from '../../utils/logger'
-import LivePreview from '../ui/LivePreview'
 import AudioManager from '../customization/AudioManager'
 import AssetThumbnail from '../customization/AssetThumbnail'
 import { deleteAsset, getAssetFilePath, getAssetTypeFromUrl } from '../../utils/assetUtils'
+import { SimpleIconComponent } from '../../utils/simpleIconsHelper.jsx'
+import { useDiscord } from '../../hooks/useDiscord'
 import {
   HiUser,
   HiCog,
@@ -14,7 +15,6 @@ import {
   HiSpeakerWave,
   HiCamera,
   HiCursorArrowRays,
-  HiEye,
   HiArrowLeft,
   HiCheck,
   HiXMark,
@@ -31,14 +31,60 @@ import {
   HiExclamationTriangle,
   HiInformationCircle,
   HiClock,
-  HiPencilSquare
+  HiPencilSquare,
+  HiDocumentText
 } from 'react-icons/hi2'
+
+// Popular Google Fonts list
+const GOOGLE_FONTS = [
+  { name: 'Default', family: '', category: 'System' },
+  { name: 'Inter', family: 'Inter', category: 'Sans Serif' },
+  { name: 'Roboto', family: 'Roboto', category: 'Sans Serif' },
+  { name: 'Open Sans', family: 'Open Sans', category: 'Sans Serif' },
+  { name: 'Lato', family: 'Lato', category: 'Sans Serif' },
+  { name: 'Poppins', family: 'Poppins', category: 'Sans Serif' },
+  { name: 'Montserrat', family: 'Montserrat', category: 'Sans Serif' },
+  { name: 'Source Sans Pro', family: 'Source Sans Pro', category: 'Sans Serif' },
+  { name: 'Nunito', family: 'Nunito', category: 'Sans Serif' },
+  { name: 'DM Sans', family: 'DM Sans', category: 'Sans Serif' },
+  { name: 'Playfair Display', family: 'Playfair Display', category: 'Serif' },
+  { name: 'Merriweather', family: 'Merriweather', category: 'Serif' },
+  { name: 'Lora', family: 'Lora', category: 'Serif' },
+  { name: 'PT Serif', family: 'PT Serif', category: 'Serif' },
+  { name: 'Crimson Text', family: 'Crimson Text', category: 'Serif' },
+  { name: 'Fira Code', family: 'Fira Code', category: 'Monospace' },
+  { name: 'JetBrains Mono', family: 'JetBrains Mono', category: 'Monospace' },
+  { name: 'Source Code Pro', family: 'Source Code Pro', category: 'Monospace' },
+  { name: 'Space Mono', family: 'Space Mono', category: 'Monospace' },
+  { name: 'Dancing Script', family: 'Dancing Script', category: 'Handwriting' },
+  { name: 'Pacifico', family: 'Pacifico', category: 'Handwriting' },
+  { name: 'Great Vibes', family: 'Great Vibes', category: 'Handwriting' },
+  { name: 'Lobster', family: 'Lobster', category: 'Display' },
+  { name: 'Bebas Neue', family: 'Bebas Neue', category: 'Display' },
+  { name: 'Righteous', family: 'Righteous', category: 'Display' }
+]
+
+// Function to load Google Fonts dynamically
+const loadGoogleFont = (fontFamily) => {
+  if (!fontFamily) return
+  
+  const existingLink = document.querySelector(`link[href*="${fontFamily.replace(/ /g, '+')}"]`)
+  if (existingLink) return
+  
+  const link = document.createElement('link')
+  link.href = `https://fonts.googleapis.com/css2?family=${fontFamily.replace(/ /g, '+')}:wght@300;400;500;600;700&display=swap`
+  link.rel = 'stylesheet'
+  document.head.appendChild(link)
+}
 
 const CustomizationPage = ({ onBack }) => {
   const { colors, isDarkMode } = useTheme()
   const [activeTab, setActiveTab] = useState('appearance') // Temporarily restored for syntax
-  const [previewMode, setPreviewMode] = useState(false)
   const [showAudioModal, setShowAudioModal] = useState(false)
+  const [showFontModal, setShowFontModal] = useState(false)
+  
+  // Discord integration
+  const { discordStatus, connecting, connectDiscord } = useDiscord()
   const [settings, setSettings] = useState({
     // Appearance
     theme: 'dark',
@@ -79,7 +125,9 @@ const CustomizationPage = ({ onBack }) => {
     useDiscordAvatar: false,
     discordAvatarDecoration: false,
     // Advanced
-    customCursor: ''
+    customCursor: '',
+    // Typography
+    textFont: ''
   })
 
   // Removed tabs array since we're using a single page layout now - temporarily uncommented to fix syntax
@@ -883,13 +931,6 @@ const CustomizationPage = ({ onBack }) => {
           </HeaderTitle>
         </HeaderLeft>
         <HeaderRight>
-          <PreviewToggle 
-            $active={previewMode} 
-            onClick={() => setPreviewMode(!previewMode)}
-          >
-            <HiEye />
-            {previewMode ? 'Edit Mode' : 'Preview'}
-          </PreviewToggle>
         </HeaderRight>
       </Header>
 
@@ -1055,7 +1096,7 @@ const CustomizationPage = ({ onBack }) => {
             </SectionHeader>
             
             <SettingsGroup>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.5rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem' }}>
                 {/* Bio */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Bio</label>
@@ -1085,20 +1126,64 @@ const CustomizationPage = ({ onBack }) => {
                 {/* Discord Presence */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Discord Presence</label>
-                  <div style={{ 
-                    padding: '0.75rem', 
-                    background: 'rgba(255,255,255,0.05)', 
-                    border: '1px solid rgba(255,255,255,0.1)', 
-                    borderRadius: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem'
-                  }}>
-                    <HiGlobeAlt style={{ color: 'rgba(255,255,255,0.5)' }} />
-                    <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>
-                      Click here to connect your Discord and unlock this feature.
-                    </span>
-                  </div>
+                  {discordStatus.connected ? (
+                    <div style={{
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '12px',
+                      padding: '1rem',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      border: '1px solid rgba(255, 255, 255, 0.1)'
+                    }}>
+                      <span style={{ color: '#ffffff', fontSize: '0.95rem' }}>Discord Presence</span>
+                      <div
+                        style={{
+                          width: '44px',
+                          height: '24px',
+                          background: settings.discordPresence ? '#58A4B0' : 'rgba(255, 255, 255, 0.2)',
+                          borderRadius: '12px',
+                          position: 'relative',
+                          cursor: 'pointer',
+                          transition: 'all 0.3s ease'
+                        }}
+                        onClick={() => {
+                          setSettings(prev => ({ ...prev, discordPresence: !prev.discordPresence }))
+                        }}
+                      >
+                        <div style={{
+                          width: '20px',
+                          height: '20px',
+                          background: '#ffffff',
+                          borderRadius: '10px',
+                          position: 'absolute',
+                          top: '2px',
+                          left: settings.discordPresence ? '22px' : '2px',
+                          transition: 'all 0.3s ease'
+                        }} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div 
+                      style={{ 
+                        padding: '0.75rem', 
+                        background: 'rgba(255,255,255,0.05)', 
+                        border: '1px solid rgba(255,255,255,0.1)', 
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s ease'
+                      }}
+                      onClick={connectDiscord}
+                    >
+                      <SimpleIconComponent iconName="discord" size={20} customColor="rgba(255,255,255,0.5)" />
+                      <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>
+                        {connecting ? 'Connecting to Discord...' : 'Click here to connect your Discord and unlock this feature.'}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Profile Opacity */}
@@ -1163,6 +1248,7 @@ const CustomizationPage = ({ onBack }) => {
                   >
                     <option value="none" style={{ background: '#1a1a1a', color: '#ffffff' }}>None</option>
                     <option value="particles" style={{ background: '#1a1a1a', color: '#ffffff' }}>Particles</option>
+                    <option value="rain" style={{ background: '#1a1a1a', color: '#ffffff' }}>Rain</option>
                     <option value="bubbles" style={{ background: '#1a1a1a', color: '#ffffff' }}>Bubbles</option>
                     <option value="lines" style={{ background: '#1a1a1a', color: '#ffffff' }}>Lines</option>
                     <option value="gradient" style={{ background: '#1a1a1a', color: '#ffffff' }}>Gradient</option>
@@ -1195,119 +1281,148 @@ const CustomizationPage = ({ onBack }) => {
                     <option value="typewriter" style={{ background: '#1a1a1a', color: '#ffffff' }}>Typewriter</option>
                   </select>
                 </div>
+
+                {/* Glow Username */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Glow Username</label>
+                  <button
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: settings.glowUsername ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
+                      border: `1px solid ${settings.glowUsername ? 'rgba(88, 164, 176, 0.3)' : 'rgba(88, 164, 176, 0.15)'}`,
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.9rem',
+                      transition: 'all 0.3s ease'
+                    }}
+                    onClick={() => {
+                      setSettings(prev => ({ ...prev, glowUsername: !prev.glowUsername }))
+                    }}
+                  >
+                    <HiSparkles style={{ color: settings.glowUsername ? '#58A4B0' : 'rgba(88, 164, 176, 0.7)' }} />
+                    {settings.glowUsername ? 'Enabled' : 'Disabled'}
+                  </button>
+                </div>
+
+                {/* Glow Socials */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Glow Socials</label>
+                  <button
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: settings.glowSocials ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
+                      border: `1px solid ${settings.glowSocials ? 'rgba(88, 164, 176, 0.3)' : 'rgba(88, 164, 176, 0.15)'}`,
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.9rem',
+                      transition: 'all 0.3s ease'
+                    }}
+                    onClick={() => {
+                      setSettings(prev => ({ ...prev, glowSocials: !prev.glowSocials }))
+                    }}
+                  >
+                    <SimpleIconComponent iconName="discord" size={20} customColor={settings.glowSocials ? '#58A4B0' : 'rgba(88, 164, 176, 0.7)'} />
+                    {settings.glowSocials ? 'Enabled' : 'Disabled'}
+                  </button>
+                </div>
+
+                {/* Glow Badges */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Glow Badges</label>
+                  <button
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: settings.glowBadges ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
+                      border: `1px solid ${settings.glowBadges ? 'rgba(88, 164, 176, 0.3)' : 'rgba(88, 164, 176, 0.15)'}`,
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.9rem',
+                      transition: 'all 0.3s ease'
+                    }}
+                    onClick={() => {
+                      setSettings(prev => ({ ...prev, glowBadges: !prev.glowBadges }))
+                    }}
+                  >
+                    <HiShieldCheck style={{ color: settings.glowBadges ? '#58A4B0' : 'rgba(88, 164, 176, 0.7)' }} />
+                    {settings.glowBadges ? 'Enabled' : 'Disabled'}
+                  </button>
+                </div>
+
+                {/* Show Badges */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Show Badges</label>
+                  <button
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: settings.showBadges ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
+                      border: `1px solid ${settings.showBadges ? 'rgba(88, 164, 176, 0.3)' : 'rgba(88, 164, 176, 0.15)'}`,
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.9rem',
+                      transition: 'all 0.3s ease'
+                    }}
+                    onClick={() => {
+                      setSettings(prev => ({ ...prev, showBadges: !prev.showBadges }))
+                    }}
+                  >
+                    <HiShieldCheck style={{ color: settings.showBadges ? '#58A4B0' : 'rgba(88, 164, 176, 0.7)' }} />
+                    {settings.showBadges ? 'Show' : 'Hide'}
+                  </button>
+                </div>
+
+                {/* Text Font */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Text Font</label>
+                  <button
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
+                      border: '1px solid rgba(88, 164, 176, 0.15)',
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.9rem',
+                      transition: 'all 0.3s ease'
+                    }}
+                    onClick={() => setShowFontModal(true)}
+                  >
+                    <HiDocumentText style={{ color: 'rgba(88, 164, 176, 0.7)' }} />
+                    {settings.textFont ? GOOGLE_FONTS.find(font => font.family === settings.textFont)?.name || settings.textFont : 'Default'}
+                  </button>
+                </div>
               </div>
             </SettingsGroup>
 
-            {/* 4. Glow Settings */}
-            <div style={{ margin: '2rem 0' }}>
-              <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'rgba(255,255,255,0.9)' }}>Glow Settings</h3>
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <button
-                  style={{
-                    padding: '0.75rem 1.5rem',
-                    background: settings.glowUsername ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
-                    border: `1px solid ${settings.glowUsername ? 'rgba(88, 164, 176, 0.3)' : 'rgba(88, 164, 176, 0.15)'}`,
-                    borderRadius: '8px',
-                    color: '#ffffff',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    fontSize: '0.9rem',
-                    transition: 'all 0.3s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.target.style.background = settings.glowUsername ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.3), rgba(88, 164, 176, 0.15))' : 'linear-gradient(145deg, rgba(88, 164, 176, 0.08), rgba(88, 164, 176, 0.03))'
-                    e.target.style.borderColor = 'rgba(88, 164, 176, 0.4)'
-                    e.target.style.transform = 'translateY(-1px)'
-                    e.target.style.boxShadow = '0 4px 12px rgba(88, 164, 176, 0.15)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.background = settings.glowUsername ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))'
-                    e.target.style.borderColor = settings.glowUsername ? 'rgba(88, 164, 176, 0.3)' : 'rgba(88, 164, 176, 0.15)'
-                    e.target.style.transform = 'translateY(0)'
-                    e.target.style.boxShadow = 'none'
-                  }}
-                  onClick={() => {
-                    // Update settings locally without triggering side effects
-                    setSettings(prev => ({ ...prev, glowUsername: !prev.glowUsername }))
-                  }}
-                >
-                  <HiSparkles style={{ color: settings.glowUsername ? '#58A4B0' : 'rgba(88, 164, 176, 0.7)' }} />
-                  Username
-                </button>
-                <button
-                  style={{
-                    padding: '0.75rem 1.5rem',
-                    background: settings.glowSocials ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
-                    border: `1px solid ${settings.glowSocials ? 'rgba(88, 164, 176, 0.3)' : 'rgba(88, 164, 176, 0.15)'}`,
-                    borderRadius: '8px',
-                    color: '#ffffff',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    fontSize: '0.9rem',
-                    transition: 'all 0.3s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.target.style.background = settings.glowSocials ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.3), rgba(88, 164, 176, 0.15))' : 'linear-gradient(145deg, rgba(88, 164, 176, 0.08), rgba(88, 164, 176, 0.03))'
-                    e.target.style.borderColor = 'rgba(88, 164, 176, 0.4)'
-                    e.target.style.transform = 'translateY(-1px)'
-                    e.target.style.boxShadow = '0 4px 12px rgba(88, 164, 176, 0.15)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.background = settings.glowSocials ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))'
-                    e.target.style.borderColor = settings.glowSocials ? 'rgba(88, 164, 176, 0.3)' : 'rgba(88, 164, 176, 0.15)'
-                    e.target.style.transform = 'translateY(0)'
-                    e.target.style.boxShadow = 'none'
-                  }}
-                  onClick={() => {
-                    // Update settings locally without triggering side effects
-                    setSettings(prev => ({ ...prev, glowSocials: !prev.glowSocials }))
-                  }}
-                >
-                  <HiGlobeAlt style={{ color: settings.glowSocials ? '#58A4B0' : 'rgba(88, 164, 176, 0.7)' }} />
-                  Socials
-                </button>
-                <button
-                  style={{
-                    padding: '0.75rem 1.5rem',
-                    background: settings.glowBadges ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))',
-                    border: `1px solid ${settings.glowBadges ? 'rgba(88, 164, 176, 0.3)' : 'rgba(88, 164, 176, 0.15)'}`,
-                    borderRadius: '8px',
-                    color: '#ffffff',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    fontSize: '0.9rem',
-                    transition: 'all 0.3s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.target.style.background = settings.glowBadges ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.3), rgba(88, 164, 176, 0.15))' : 'linear-gradient(145deg, rgba(88, 164, 176, 0.08), rgba(88, 164, 176, 0.03))'
-                    e.target.style.borderColor = 'rgba(88, 164, 176, 0.4)'
-                    e.target.style.transform = 'translateY(-1px)'
-                    e.target.style.boxShadow = '0 4px 12px rgba(88, 164, 176, 0.15)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.background = settings.glowBadges ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02))'
-                    e.target.style.borderColor = settings.glowBadges ? 'rgba(88, 164, 176, 0.3)' : 'rgba(88, 164, 176, 0.15)'
-                    e.target.style.transform = 'translateY(0)'
-                    e.target.style.boxShadow = 'none'
-                  }}
-                  onClick={() => {
-                    // Update settings locally without triggering side effects
-                    setSettings(prev => ({ ...prev, glowBadges: !prev.glowBadges }))
-                  }}
-                >
-                  <HiShieldCheck style={{ color: settings.glowBadges ? '#58A4B0' : 'rgba(88, 164, 176, 0.7)' }} />
-                  Badges
-                </button>
-              </div>
-            </div>
-
-            {/* 5. Color Customization Section */}
+            {/* 4. Color Customization Section */}
             <SectionHeader>
               <h2>Color Customization</h2>
             </SectionHeader>
@@ -1890,18 +2005,6 @@ const CustomizationPage = ({ onBack }) => {
           </TabContent>
         </MainContent>
 
-        {/* Live Preview Panel */}
-        {previewMode && (
-          <PreviewPanel>
-            <PreviewHeader>
-              <h3>Live Preview</h3>
-              <button onClick={() => setPreviewMode(false)}>
-                <HiXMark />
-              </button>
-            </PreviewHeader>
-            <LivePreview settings={settings} />
-          </PreviewPanel>
-        )}
       </ContentWrapper>
 
       {/* Unsaved Changes Dialog - Only show when explicitly triggered */}
@@ -1934,6 +2037,69 @@ const CustomizationPage = ({ onBack }) => {
           saveAudioSettings={saveAudioSettings}
           onAudioSaved={handleAudioSaved}
         />,
+        document.body
+      )}
+
+      {/* Font Selector Modal - Using Portal for proper viewport positioning */}
+      {showFontModal && createPortal(
+        <FontModal>
+          <FontModalContent>
+            <FontModalHeader>
+              <h3>Select Font</h3>
+              <button onClick={() => setShowFontModal(false)}>
+                <HiXMark />
+              </button>
+            </FontModalHeader>
+            
+            <FontModalBody>
+              <FontList>
+                {GOOGLE_FONTS.map((font) => (
+                  <FontItem
+                    key={font.name}
+                    onClick={() => {
+                      setSettings(prev => ({ ...prev, textFont: font.family }))
+                      loadGoogleFont(font.family)
+                      setShowFontModal(false)
+                    }}
+                    $isSelected={settings.textFont === font.family}
+                  >
+                    <FontPreview style={{ fontFamily: font.family }}>
+                      {font.name}
+                    </FontPreview>
+                    <FontInfo>
+                      <span className="font-name">{font.name}</span>
+                      <span className="font-category">{font.category}</span>
+                    </FontInfo>
+                  </FontItem>
+                ))}
+              </FontList>
+              
+              <FontPreviewSection>
+                <h4>Preview</h4>
+                <PreviewText 
+                  style={{ 
+                    fontFamily: settings.textFont || 'inherit',
+                    fontSize: '2rem',
+                    fontWeight: '600',
+                    color: '#ffffff',
+                    marginBottom: '1rem'
+                  }}
+                >
+                  John Doe
+                </PreviewText>
+                <PreviewText 
+                  style={{ 
+                    fontFamily: settings.textFont || 'inherit',
+                    fontSize: '1.2rem',
+                    color: 'rgba(255,255,255,0.8)'
+                  }}
+                >
+                  Frontend Developer
+                </PreviewText>
+              </FontPreviewSection>
+            </FontModalBody>
+          </FontModalContent>
+        </FontModal>,
         document.body
       )}
 
@@ -2127,28 +2293,6 @@ const HeaderRight = styled.div`
   gap: 1rem;
 `
 
-const PreviewToggle = styled.button`
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  background: ${props => props.$active ? 'rgba(88, 164, 176, 0.2)' : 'rgba(255, 255, 255, 0.1)'};
-  border: 1px solid ${props => props.$active ? 'rgba(88, 164, 176, 0.4)' : 'rgba(255, 255, 255, 0.2)'};
-  border-radius: 12px;
-  color: #ffffff;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-size: 0.9rem;
-  
-  &:hover {
-    background: rgba(88, 164, 176, 0.25);
-    border-color: rgba(88, 164, 176, 0.5);
-  }
-  
-  svg {
-    font-size: 1.1rem;
-  }
-`
 
 const SaveButton = styled.button`
   display: flex;
@@ -2780,57 +2924,6 @@ const SliderControl = styled.div`
   }
 `
 
-const PreviewPanel = styled.div`
-  width: 320px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  backdrop-filter: blur(10px);
-  height: fit-content;
-  position: sticky;
-  top: 2rem;
-  
-  @media (max-width: 1200px) {
-    display: none;
-  }
-`
-
-const PreviewHeader = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  
-  h3 {
-    font-size: 1rem;
-    color: #ffffff;
-    margin: 0;
-  }
-  
-  button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 8px;
-    color: #ffffff;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    
-    &:hover {
-      background: rgba(255, 0, 0, 0.2);
-      border-color: rgba(255, 0, 0, 0.4);
-    }
-    
-    svg {
-      font-size: 1rem;
-    }
-  }
-`
 
 const NotificationOverlay = styled.div`
   position: fixed;
@@ -3332,5 +3425,169 @@ const SaveSnackbarButton = styled.button`
   }
 `
 
+// Font Modal Styled Components
+const FontModal = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+`
+
+const FontModalContent = styled.div`
+  background: linear-gradient(145deg, rgba(15, 15, 35, 0.95), rgba(25, 25, 45, 0.95));
+  border: 1px solid rgba(88, 164, 176, 0.2);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 900px;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+`
+
+const FontModalHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px;
+  border-bottom: 1px solid rgba(88, 164, 176, 0.1);
+
+  h3 {
+    color: #ffffff;
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  button {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: #ffffff;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+
+    &:hover {
+      background: rgba(255, 77, 77, 0.2);
+      border-color: rgba(255, 77, 77, 0.3);
+      color: #ff4d4d;
+    }
+
+    svg {
+      font-size: 20px;
+    }
+  }
+`
+
+const FontModalBody = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  height: 500px;
+
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+`
+
+const FontList = styled.div`
+  padding: 20px;
+  overflow-y: auto;
+  border-right: 1px solid rgba(88, 164, 176, 0.1);
+
+  @media (max-width: 768px) {
+    border-right: none;
+    border-bottom: 1px solid rgba(88, 164, 176, 0.1);
+    max-height: 300px;
+  }
+`
+
+const FontItem = styled.div`
+  padding: 16px;
+  border: 1px solid ${props => props.$isSelected ? 'rgba(88, 164, 176, 0.4)' : 'rgba(88, 164, 176, 0.1)'};
+  border-radius: 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: ${props => props.$isSelected ? 'rgba(88, 164, 176, 0.1)' : 'transparent'};
+
+  &:hover {
+    border-color: rgba(88, 164, 176, 0.3);
+    background: rgba(88, 164, 176, 0.05);
+    transform: translateY(-2px);
+  }
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+`
+
+const FontPreview = styled.div`
+  font-size: 1.2rem;
+  color: #ffffff;
+  margin-bottom: 8px;
+  font-weight: 500;
+`
+
+const FontInfo = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  .font-name {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .font-category {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.8rem;
+    background: rgba(88, 164, 176, 0.2);
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+`
+
+const FontPreviewSection = styled.div`
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.2);
+
+  h4 {
+    color: #ffffff;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0 0 20px 0;
+  }
+
+  @media (max-width: 768px) {
+    padding: 20px;
+  }
+`
+
+const PreviewText = styled.div`
+  text-align: center;
+  padding: 20px;
+  background: rgba(88, 164, 176, 0.05);
+  border: 1px solid rgba(88, 164, 176, 0.1);
+  border-radius: 12px;
+  margin-bottom: 16px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+`
 
 export default CustomizationPage

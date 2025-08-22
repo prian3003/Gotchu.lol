@@ -64,10 +64,16 @@ const Premium = createLazyRoute(
   { chunkName: 'premium', fallbackType: 'default' }
 )
 
+const PremiumPage = createLazyRoute(
+  () => import('./components/pages/PremiumPage'),
+  { chunkName: 'pricing', fallbackType: 'default' }
+)
+
 const Templates = createLazyRoute(
   () => import('./components/pages/Templates'),
   { chunkName: 'templates', fallbackType: 'default' }
 )
+
 
 // User profile page - simplified lazy loading to fix import issues
 const UserProfile = React.lazy(() => import('./components/pages/UserProfile'))
@@ -161,6 +167,7 @@ const App = () => {
               }/>
               
               {/* Public info pages */}
+              <Route path='/pricing' element={<PremiumPage />}/>
               <Route path='/about' element={"About"}/>
               <Route path='/project' element={"Project"}/>
               <Route path='/contact' element={"Contact"}/>

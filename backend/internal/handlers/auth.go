@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/base32"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -14,6 +17,7 @@ import (
 	"gotchu-backend/pkg/redis"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pquerna/otp/totp"
 	"gorm.io/gorm"
 )
 
@@ -52,6 +56,13 @@ type LoginRequest struct {
 	Password   string `json:"password" binding:"required"`
 }
 
+// Login2FARequest represents login with 2FA request
+type Login2FARequest struct {
+	Identifier string `json:"identifier" binding:"required"` // username or email
+	Password   string `json:"password" binding:"required"`
+	TwoFACode  string `json:"twofa_code" binding:"required,min=6,max=6"`
+}
+
 // RefreshRequest represents token refresh request
 type RefreshRequest struct {
 	SessionID string `json:"session_id" binding:"required"`
@@ -82,6 +93,7 @@ type UserProfile struct {
 	IsVerified  bool      `json:"is_verified"`
 	Plan        string    `json:"plan"`
 	Theme       string    `json:"theme"`
+	MfaEnabled  bool      `json:"mfa_enabled"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -297,6 +309,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 				IsVerified:  user.IsVerified,
 				Plan:        user.Plan,
 				Theme:       user.Theme,
+				MfaEnabled:  user.MfaEnabled,
 				CreatedAt:   user.CreatedAt,
 			},
 			// No session data - user must verify email first
@@ -343,6 +356,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, AuthResponse{
 			Success: false,
 			Message: "Invalid credentials",
+		})
+		return
+	}
+
+	// Check if user has 2FA enabled
+	if user.MfaEnabled {
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"requires_2fa": true,
+			"message": "2FA verification required",
 		})
 		return
 	}
@@ -401,6 +424,133 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				IsVerified:  user.IsVerified,
 				Plan:        user.Plan,
 				Theme:       user.Theme,
+				MfaEnabled:  user.MfaEnabled,
+				CreatedAt:   user.CreatedAt,
+			},
+			SessionID: authResult.SessionID,
+			Token:     authResult.Token,
+			ExpiresAt: authResult.ExpiresAt,
+		},
+	})
+}
+
+// Login2FA handles user login with 2FA verification
+func (h *AuthHandler) Login2FA(c *gin.Context) {
+	var req Login2FARequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, AuthResponse{
+			Success: false,
+			Message: "Invalid request data",
+		})
+		return
+	}
+
+	// Normalize identifier
+	req.Identifier = strings.ToLower(strings.TrimSpace(req.Identifier))
+
+	// Find user by username or email
+	var user models.User
+	var userAuth models.UserAuth
+	
+	err := h.db.Preload("User").
+		Joins("JOIN users ON users.id = user_auth.user_id").
+		Where("users.username = ? OR users.email = ?", req.Identifier, req.Identifier).
+		Where("users.is_active = ?", true).
+		First(&userAuth).Error
+
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, AuthResponse{
+			Success: false,
+			Message: "Invalid credentials",
+		})
+		return
+	}
+
+	user = userAuth.User
+
+	// Verify password
+	if !h.authService.VerifyPassword(req.Password, userAuth.PasswordHash) {
+		c.JSON(http.StatusUnauthorized, AuthResponse{
+			Success: false,
+			Message: "Invalid credentials",
+		})
+		return
+	}
+
+	// Check if user has 2FA enabled
+	if !user.MfaEnabled || user.MfaSecret == nil {
+		c.JSON(http.StatusBadRequest, AuthResponse{
+			Success: false,
+			Message: "2FA is not enabled for this account",
+		})
+		return
+	}
+
+	// Verify 2FA code
+	valid := totp.Validate(req.TwoFACode, *user.MfaSecret)
+	if !valid {
+		c.JSON(http.StatusUnauthorized, AuthResponse{
+			Success: false,
+			Message: "Invalid 2FA code",
+		})
+		return
+	}
+
+	// Update last login
+	h.db.Model(&user).Update("last_login_at", time.Now())
+
+	// Create session
+	authResult, err := h.authService.CreateAuthResult(
+		user.ID,
+		user.Username,
+		*user.Email,
+		user.IsVerified,
+		user.Plan,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, AuthResponse{
+			Success: false,
+			Message: "Failed to create session",
+		})
+		return
+	}
+
+	// Store session in Redis
+	loginSessionData := redis.SessionData{
+		UserID:     authResult.User.UserID,
+		Username:   authResult.User.Username,
+		Email:      authResult.User.Email,
+		IsVerified: authResult.User.IsVerified,
+		Plan:       authResult.User.Plan,
+		CreatedAt:  authResult.User.CreatedAt,
+	}
+	err = h.redisClient.SetSession(authResult.SessionID, loginSessionData, h.authService.GetSessionExpiry())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, AuthResponse{
+			Success: false,
+			Message: "Failed to store session",
+		})
+		return
+	}
+
+	// Clear rate limit on successful login
+	h.authMiddleware.ClearAuthRateLimit(req.Identifier)
+
+	// Respond with success
+	c.JSON(http.StatusOK, AuthResponse{
+		Success: true,
+		Message: "Login successful",
+		Data: &AuthResponseData{
+			User: UserProfile{
+				ID:          user.ID,
+				Username:    user.Username,
+				Email:       *user.Email,
+				DisplayName: user.DisplayName,
+				AvatarURL:   user.AvatarURL,
+				IsVerified:  user.IsVerified,
+				Plan:        user.Plan,
+				Theme:       user.Theme,
+				MfaEnabled:  user.MfaEnabled,
 				CreatedAt:   user.CreatedAt,
 			},
 			SessionID: authResult.SessionID,
@@ -456,6 +606,7 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 				IsVerified:  user.IsVerified,
 				Plan:        user.Plan,
 				Theme:       user.Theme,
+				MfaEnabled:  user.MfaEnabled,
 				CreatedAt:   user.CreatedAt,
 			},
 		},
@@ -584,9 +735,255 @@ func (h *AuthHandler) CheckUsernameAvailability(c *gin.Context) {
 	})
 }
 
+// UpdateUsernameRequest represents update username request
+type UpdateUsernameRequest struct {
+	Username string `json:"username" binding:"required,min=1,max=20"`
+}
+
+// UpdateDisplayNameRequest represents update display name request
+type UpdateDisplayNameRequest struct {
+	DisplayName string `json:"displayName" binding:"max=30"`
+}
+
+// UpdateAliasRequest represents update alias request
+type UpdateAliasRequest struct {
+	Alias string `json:"alias" binding:"max=20"`
+}
+
+// UpdateUsername updates the user's username
+func (h *AuthHandler) UpdateUsername(c *gin.Context) {
+	var req UpdateUsernameRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Invalid request format",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// Get current user from context
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": "User not authenticated",
+		})
+		return
+	}
+
+	// Normalize username
+	newUsername := strings.ToLower(strings.TrimSpace(req.Username))
+
+	// Validate username format
+	if !isValidUsername(newUsername) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Username can only contain letters, numbers, and underscores (1-20 characters)",
+		})
+		return
+	}
+
+	// Check if username is already taken
+	var existingUser models.User
+	err := h.db.Where("username = ? AND id != ?", newUsername, userID).First(&existingUser).Error
+	if err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Username is already taken",
+		})
+		return
+	} else if err != gorm.ErrRecordNotFound {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "Failed to check username availability",
+		})
+		return
+	}
+
+	// Update username
+	err = h.db.Model(&models.User{}).Where("id = ?", userID).Update("username", newUsername).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "Failed to update username",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Username updated successfully",
+		"data": gin.H{
+			"username": newUsername,
+		},
+	})
+}
+
+// UpdateDisplayName updates the user's display name
+func (h *AuthHandler) UpdateDisplayName(c *gin.Context) {
+	var req UpdateDisplayNameRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Invalid request format",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// Get current user from context
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": "User not authenticated",
+		})
+		return
+	}
+
+	// Clean display name (allow empty for removal)
+	displayName := strings.TrimSpace(req.DisplayName)
+	var displayNamePtr *string
+	if displayName == "" {
+		displayNamePtr = nil
+	} else {
+		displayNamePtr = &displayName
+	}
+
+	// Update display name
+	err := h.db.Model(&models.User{}).Where("id = ?", userID).Update("display_name", displayNamePtr).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "Failed to update display name",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Display name updated successfully",
+		"data": gin.H{
+			"displayName": displayNamePtr,
+		},
+	})
+}
+
+// UpdateAlias updates the user's alias (Premium only)
+func (h *AuthHandler) UpdateAlias(c *gin.Context) {
+	var req UpdateAliasRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Invalid request format",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// Get current user from context
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": "User not authenticated",
+		})
+		return
+	}
+
+	// Get user to check premium status
+	var currentUser models.User
+	err := h.db.Where("id = ?", userID).First(&currentUser).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "Failed to fetch user data",
+		})
+		return
+	}
+
+	// Check if user has premium plan
+	if currentUser.Plan != "premium" {
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"message": "Alias feature is only available for premium users",
+		})
+		return
+	}
+
+	// Clean alias (allow empty for removal)
+	alias := strings.TrimSpace(req.Alias)
+	var aliasPtr *string
+	if alias == "" {
+		aliasPtr = nil
+	} else {
+		// Validate alias format
+		if !isValidAlias(alias) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "Alias can only contain letters, numbers, and underscores (1-20 characters)",
+			})
+			return
+		}
+
+		// Check if alias is already taken
+		var existingUser models.User
+		err := h.db.Where("alias = ? AND id != ?", alias, userID).First(&existingUser).Error
+		if err == nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "Alias is already taken",
+			})
+			return
+		} else if err != gorm.ErrRecordNotFound {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": "Failed to check alias availability",
+			})
+			return
+		}
+
+		aliasPtr = &alias
+	}
+
+	// Update alias
+	err = h.db.Model(&models.User{}).Where("id = ?", userID).Update("alias", aliasPtr).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "Failed to update alias",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Alias updated successfully",
+		"data": gin.H{
+			"alias": aliasPtr,
+		},
+	})
+}
+
+// Helper function to validate alias format
+func isValidAlias(alias string) bool {
+	if len(alias) < 1 || len(alias) > 20 {
+		return false
+	}
+	
+	// Check if alias contains only alphanumeric characters and underscores
+	for _, char := range alias {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '_') {
+			return false
+		}
+	}
+	return true
+}
+
 // Helper function to validate username format
 func isValidUsername(username string) bool {
-	if len(username) < 1 || len(username) > 30 {
+	if len(username) < 1 || len(username) > 20 {
 		return false
 	}
 	
@@ -608,6 +1005,38 @@ type VerifyEmailRequest struct {
 // ResendVerificationRequest represents resend verification request  
 type ResendVerificationRequest struct {
 	Email string `json:"email" binding:"required,email"`
+}
+
+// TwoFAGenerateRequest represents 2FA generate request
+type TwoFAGenerateRequest struct {
+	// No additional fields needed, uses authenticated user
+}
+
+// TwoFAGenerateResponse represents 2FA generate response
+type TwoFAGenerateResponse struct {
+	Success     bool     `json:"success"`
+	Message     string   `json:"message"`
+	Secret      string   `json:"secret"`
+	QRCodeURL   string   `json:"qr_code_url"`
+	BackupCodes []string `json:"backup_codes"`
+}
+
+// TwoFAVerifyRequest represents 2FA verify request
+type TwoFAVerifyRequest struct {
+	Code   string `json:"code" binding:"required,min=6,max=6"`
+	Secret string `json:"secret" binding:"required"`
+}
+
+// TwoFAVerifyResponse represents 2FA verify response
+type TwoFAVerifyResponse struct {
+	Success     bool     `json:"success"`
+	Message     string   `json:"message"`
+	BackupCodes []string `json:"backup_codes,omitempty"`
+}
+
+// TwoFADisableRequest represents 2FA disable request
+type TwoFADisableRequest struct {
+	Password string `json:"password" binding:"required"`
 }
 
 // VerifyEmail handles email verification
@@ -830,6 +1259,211 @@ func (h *AuthHandler) ResendVerification(c *gin.Context) {
 		Success: true,
 		Message: "Verification email sent successfully",
 	})
+}
+
+// Generate2FA generates a new TOTP secret and QR code for 2FA setup
+func (h *AuthHandler) Generate2FA(c *gin.Context) {
+	user, exists := middleware.GetCurrentUser(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, TwoFAGenerateResponse{
+			Success: false,
+			Message: "Not authenticated",
+		})
+		return
+	}
+
+	// Check if 2FA is already enabled
+	if user.MfaEnabled {
+		c.JSON(http.StatusBadRequest, TwoFAGenerateResponse{
+			Success: false,
+			Message: "2FA is already enabled for this account",
+		})
+		return
+	}
+
+	// Generate TOTP secret
+	secret, err := generateTOTPSecret()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, TwoFAGenerateResponse{
+			Success: false,
+			Message: "Failed to generate 2FA secret",
+		})
+		return
+	}
+
+	// Generate QR code URL
+	qrURL := generateTOTPURL(secret, *user.Email, "gotchu.lol")
+
+	// Generate backup codes
+	backupCodes := generateBackupCodes(10)
+
+	c.JSON(http.StatusOK, TwoFAGenerateResponse{
+		Success:     true,
+		Message:     "2FA secret generated successfully",
+		Secret:      secret,
+		QRCodeURL:   qrURL,
+		BackupCodes: backupCodes,
+	})
+}
+
+// Verify2FA verifies the TOTP code and enables 2FA for the user
+func (h *AuthHandler) Verify2FA(c *gin.Context) {
+	user, exists := middleware.GetCurrentUser(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, TwoFAVerifyResponse{
+			Success: false,
+			Message: "Not authenticated",
+		})
+		return
+	}
+
+	var req TwoFAVerifyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, TwoFAVerifyResponse{
+			Success: false,
+			Message: "Invalid request data",
+		})
+		return
+	}
+
+	// Verify the TOTP code
+	valid := totp.Validate(req.Code, req.Secret)
+	if !valid {
+		c.JSON(http.StatusBadRequest, TwoFAVerifyResponse{
+			Success: false,
+			Message: "Invalid verification code",
+		})
+		return
+	}
+
+	// Generate backup codes
+	backupCodes := generateBackupCodes(10)
+	backupCodesJSON, _ := json.Marshal(backupCodes)
+
+	// Update user with 2FA settings
+	mfaType := "totp"
+	err := h.db.Model(&user).Updates(map[string]interface{}{
+		"mfa_enabled": true,
+		"mfa_secret":  req.Secret,
+		"mfa_type":    &mfaType,
+		"updated_at":  time.Now(),
+	}).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, TwoFAVerifyResponse{
+			Success: false,
+			Message: "Failed to enable 2FA",
+		})
+		return
+	}
+
+	// Store backup codes (in a real app, you'd store these securely)
+	// For now, we'll return them to the user to save
+	fmt.Printf("Backup codes for user %d: %s\n", user.ID, string(backupCodesJSON))
+
+	c.JSON(http.StatusOK, TwoFAVerifyResponse{
+		Success:     true,
+		Message:     "2FA enabled successfully",
+		BackupCodes: backupCodes,
+	})
+}
+
+// Disable2FA disables 2FA for the user
+func (h *AuthHandler) Disable2FA(c *gin.Context) {
+	user, exists := middleware.GetCurrentUser(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": "Not authenticated",
+		})
+		return
+	}
+
+	var req TwoFADisableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Password is required",
+		})
+		return
+	}
+
+	// Get user auth record to verify password
+	var userAuth models.UserAuth
+	err := h.db.Where("user_id = ?", user.ID).First(&userAuth).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "Failed to verify user",
+		})
+		return
+	}
+
+	// Verify password
+	if !h.authService.VerifyPassword(req.Password, userAuth.PasswordHash) {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": "Invalid password",
+		})
+		return
+	}
+
+	// Disable 2FA
+	err = h.db.Model(&user).Updates(map[string]interface{}{
+		"mfa_enabled": false,
+		"mfa_secret":  nil,
+		"mfa_type":    nil,
+		"updated_at":  time.Now(),
+	}).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "Failed to disable 2FA",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "2FA disabled successfully",
+	})
+}
+
+// generateTOTPSecret generates a new TOTP secret
+func generateTOTPSecret() (string, error) {
+	secretBytes := make([]byte, 20)
+	_, err := rand.Read(secretBytes)
+	if err != nil {
+		return "", err
+	}
+	return base32.StdEncoding.EncodeToString(secretBytes), nil
+}
+
+// generateTOTPURL generates a TOTP URL for QR code
+func generateTOTPURL(secret, email, issuer string) string {
+	label := fmt.Sprintf("%s:%s", issuer, email)
+	return fmt.Sprintf("otpauth://totp/%s?secret=%s&issuer=%s",
+		url.QueryEscape(label),
+		secret,
+		url.QueryEscape(issuer))
+}
+
+// generateBackupCodes generates backup codes for 2FA
+func generateBackupCodes(count int) []string {
+	codes := make([]string, count)
+	chars := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // Exclude confusing characters
+
+	for i := 0; i < count; i++ {
+		code := make([]byte, 8)
+		for j := range code {
+			randBytes := make([]byte, 1)
+			rand.Read(randBytes)
+			code[j] = chars[int(randBytes[0])%len(chars)]
+		}
+		codes[i] = string(code)
+	}
+	return codes
 }
 
 // Helper function to create string pointer

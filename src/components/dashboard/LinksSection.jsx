@@ -72,6 +72,7 @@ const LinksSection = ({
   const [reorderedLinks, setReorderedLinks] = useState(safeLinks)
   const [deletingLinks, setDeletingLinks] = useState(new Set())
   const [alerts, setAlerts] = useState([])
+  const [showModeTooltip, setShowModeTooltip] = useState(false)
   const fileInputRef = useRef(null)
 
   // Helper function to check if platform already exists
@@ -476,7 +477,7 @@ const LinksSection = ({
           <SocialModalContent>
             <SocialModalHeader>
               <SocialModalTitle>
-                {selectedPlatform?.icon} {selectedPlatform?.name}
+                Add {selectedPlatform?.name} Social
               </SocialModalTitle>
               <CloseButton onClick={() => setShowLinkModal(false)}>
                 <HiXMark />
@@ -486,7 +487,19 @@ const LinksSection = ({
             <SocialModeSection>
               <SocialModeLabel>
                 Social Mode
-                <HelpIcon>?</HelpIcon>
+                <HelpIcon 
+                  onMouseEnter={() => setShowModeTooltip(true)}
+                  onMouseLeave={() => setShowModeTooltip(false)}
+                  onClick={() => setShowModeTooltip(!showModeTooltip)}
+                >
+                  ?
+                  {showModeTooltip && (
+                    <ModeTooltip>
+                      <div><strong>🔗 Link Mode:</strong> Redirects to URL</div>
+                      <div><strong>📋 Text Mode:</strong> Copies text to clipboard</div>
+                    </ModeTooltip>
+                  )}
+                </HelpIcon>
               </SocialModeLabel>
               <ModeToggleButtons>
                 <ModeButton 
@@ -1516,6 +1529,78 @@ const HelpIcon = styled.span`
   font-size: 0.7rem;
   color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
+  position: relative;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    background: rgba(88, 164, 176, 0.2);
+    color: #58A4B0;
+    transform: scale(1.1);
+  }
+`
+
+const ModeTooltip = styled.div`
+  position: absolute;
+  top: 25px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.95);
+  color: #ffffff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  z-index: 1000;
+  border: 1px solid rgba(88, 164, 176, 0.3);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  animation: tooltipFadeIn 0.2s ease-out;
+  
+  @keyframes tooltipFadeIn {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(-5px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  }
+  
+  &::before {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 5px solid rgba(0, 0, 0, 0.95);
+  }
+  
+  div {
+    margin: 2px 0;
+    
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+  
+  strong {
+    color: #58A4B0;
+    font-weight: 600;
+  }
+  
+  @media (max-width: 768px) {
+    white-space: normal;
+    width: 180px;
+    left: 0;
+    transform: translateX(-50%);
+    font-size: 0.7rem;
+  }
 `
 
 const ModeToggleButtons = styled.div`

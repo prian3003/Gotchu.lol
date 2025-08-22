@@ -2,11 +2,73 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useLocation } from 'react-router-dom'
 import styled from 'styled-components'
 import { IoEye, IoVolumeHigh, IoVolumeMute, IoPlay, IoPause } from 'react-icons/io5'
+import { Icon } from '@iconify/react'
 import ParticleBackground from '../effects/ParticleBackground'
 import RainEffect from '../background_effect/RainEffect.jsx'
 import UserLinks from '../profile/UserLinks'
 import { useTheme } from '../../contexts/ThemeContext'
 import logger from '../../utils/logger'
+
+// Custom hook for typewriter animation
+const useTypewriter = (text, speed = 100, enabled = false) => {
+  const [displayText, setDisplayText] = useState('')
+  const indexRef = useRef(0)
+  const isDeletingRef = useRef(false)
+  const timeoutRef = useRef(null)
+
+  useEffect(() => {
+    if (!enabled || !text) {
+      setDisplayText(text || '')
+      return
+    }
+
+    // Reset refs when text changes
+    indexRef.current = 0
+    isDeletingRef.current = false
+    setDisplayText('')
+
+    const typewriter = () => {
+      const currentIndex = indexRef.current
+      const isDeleting = isDeletingRef.current
+
+      if (!isDeleting && currentIndex < text.length) {
+        // Typing forward
+        indexRef.current = currentIndex + 1
+        setDisplayText(text.slice(0, currentIndex + 1))
+        timeoutRef.current = setTimeout(typewriter, speed)
+      } else if (!isDeleting && currentIndex === text.length) {
+        // Pause at full text, then start deleting
+        timeoutRef.current = setTimeout(() => {
+          isDeletingRef.current = true
+          typewriter()
+        }, 2000)
+      } else if (isDeleting && currentIndex > 1) {
+        // Deleting backwards (keep @ symbol)
+        indexRef.current = currentIndex - 1
+        setDisplayText(text.slice(0, currentIndex - 1))
+        timeoutRef.current = setTimeout(typewriter, speed / 2)
+      } else if (isDeleting && currentIndex === 1) {
+        // Reset cycle - start typing again
+        timeoutRef.current = setTimeout(() => {
+          isDeletingRef.current = false
+          indexRef.current = 1
+          typewriter()
+        }, 500)
+      }
+    }
+
+    // Start the animation
+    timeoutRef.current = setTimeout(typewriter, speed)
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+    }
+  }, [text, speed, enabled])
+
+  return displayText
+}
 
 // Audio Controller Component
 const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = true }) => {
@@ -229,16 +291,83 @@ const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = t
   )
 }
 
+// Function to load Google Fonts dynamically with Promise support
+const loadGoogleFont = (fontFamily) => {
+  return new Promise((resolve, reject) => {
+    if (!fontFamily) {
+      resolve()
+      return
+    }
+    
+    const existingLink = document.querySelector(`link[href*="${fontFamily.replace(/ /g, '+')}"]`)
+    if (existingLink) {
+      resolve()
+      return
+    }
+    
+    const link = document.createElement('link')
+    link.href = `https://fonts.googleapis.com/css2?family=${fontFamily.replace(/ /g, '+')}:wght@300;400;500;600;700;800&display=swap`
+    link.rel = 'stylesheet'
+    link.onload = resolve
+    link.onerror = reject
+    
+    // Timeout after 5 seconds
+    setTimeout(() => resolve(), 5000)
+    
+    document.head.appendChild(link)
+  })
+}
+
 const UserProfile = () => {
   const { username } = useParams()
   const location = useLocation()
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadingStatus, setLoadingStatus] = useState('Initializing...')
   const [error, setError] = useState(null)
   const [templateData, setTemplateData] = useState(null)
   const [isTemplatePreview, setIsTemplatePreview] = useState(false)
+  const [badges, setBadges] = useState([])
+  const [badgesLoading, setBadgesLoading] = useState(true)
   const { colors, isDarkMode } = useTheme()
   const videoRef = useRef(null)
+
+  // Typewriter animation for document title only (always use username for title)
+  const animatedTitle = useTypewriter(
+    user?.username ? `@${user.username}` : '', 
+    120, // Speed in ms
+    user?.customization?.animatedTitle === true
+  )
+
+  // Set document title with typewriter animation and metadata
+  useEffect(() => {
+    if (user?.username) {
+      // Always use username for document title
+      const usernameTitle = `@${user.username}`
+      if (user?.customization?.animatedTitle) {
+        document.title = animatedTitle || usernameTitle
+      } else {
+        document.title = usernameTitle
+      }
+      
+      // Set meta description (use username for consistency)
+      const metaDescription = document.querySelector('meta[name="description"]')
+      const metaContent = `Check out @${user.username}'s profile on Gotchu`
+      if (metaDescription) {
+        metaDescription.setAttribute('content', metaContent)
+      } else {
+        const newMeta = document.createElement('meta')
+        newMeta.name = 'description'
+        newMeta.content = metaContent
+        document.head.appendChild(newMeta)
+      }
+    }
+
+    return () => {
+      // Reset title when component unmounts
+      document.title = 'Gotchu'
+    }
+  }, [user?.username, animatedTitle, user?.customization?.animatedTitle])
 
   // Check for template preview parameters
   const urlParams = new URLSearchParams(location.search)
@@ -246,12 +375,39 @@ const UserProfile = () => {
   const templateId = urlParams.get('templateId')
 
   useEffect(() => {
-    fetchUserProfile()
-    
-    // If this is a template preview, also fetch template data
-    if (templatePreview && templateId) {
-      fetchTemplateData()
+    // Optimize data fetching - fetch all data in parallel and only show page when ready
+    const fetchAllData = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        setLoadingStatus('Loading profile data...')
+
+        // Fetch user profile, badges, and template data in parallel
+        const promises = [fetchUserProfile(), fetchUserBadges()]
+        
+        if (templatePreview && templateId) {
+          setLoadingStatus('Loading template preview...')
+          promises.push(fetchTemplateData())
+        }
+
+        // Wait for all data fetching to complete
+        await Promise.all(promises)
+
+        setLoadingStatus('Optimizing assets...')
+        
+        // Small delay to show the final status
+        await new Promise(resolve => setTimeout(resolve, 200))
+
+        // Only set loading to false when everything is ready
+        setLoading(false)
+      } catch (err) {
+        logger.error('Data fetching failed', err)
+        setError(err.message)
+        setLoading(false)
+      }
     }
+
+    fetchAllData()
 
     // Add global handler for unhandled promise rejections from audio
     const handleUnhandledRejection = (event) => {
@@ -303,15 +459,12 @@ const UserProfile = () => {
     }
   }, [user])
 
-  // Apply custom cursor if set - moved to top to follow Rules of Hooks
+  // Cleanup cursor on unmount
   useEffect(() => {
-    if (user?.customization?.cursorUrl) {
-      document.body.style.cursor = `url(${user.customization.cursorUrl}), auto`
-      return () => {
-        document.body.style.cursor = 'auto'
-      }
+    return () => {
+      document.body.style.cursor = 'auto'
     }
-  }, [user?.customization?.cursorUrl])
+  }, [])
 
   // Handle global background override for video backgrounds
   useEffect(() => {
@@ -451,18 +604,68 @@ const UserProfile = () => {
     console.log('✅ Final user data:', updatedUserData)
   }
 
+  // Preload critical assets for better performance
+  const preloadAssets = async (userData) => {
+    const promises = []
+    const assetNames = []
+    
+    // Preload fonts if specified
+    if (userData.customization?.textFont) {
+      promises.push(loadGoogleFont(userData.customization.textFont))
+      assetNames.push('font')
+    }
+    
+    // Preload background image if it exists
+    if (userData.customization?.backgroundUrl) {
+      promises.push(preloadImage(userData.customization.backgroundUrl))
+      assetNames.push('background')
+    }
+    
+    // Preload avatar image if it exists
+    if (userData.avatar_url) {
+      promises.push(preloadImage(userData.avatar_url))
+      assetNames.push('avatar')
+    }
+    
+    // Apply cursor immediately if set
+    if (userData.customization?.cursorUrl) {
+      document.body.style.cursor = `url(${userData.customization.cursorUrl}), auto`
+    }
+    
+    // Wait for all preloading to complete
+    try {
+      if (promises.length > 0) {
+        setLoadingStatus(`Loading assets (${assetNames.join(', ')})...`)
+        await Promise.all(promises)
+      }
+    } catch (error) {
+      console.warn('Some assets failed to preload:', error)
+      // Don't throw - preloading failure shouldn't block page display
+    }
+  }
+
+  // Helper function to preload images
+  const preloadImage = (src) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload = resolve
+      img.onerror = reject
+      img.src = src
+      
+      // Timeout after 3 seconds to prevent blocking
+      setTimeout(() => resolve(), 3000)
+    })
+  }
+
   const fetchUserProfile = async () => {
     try {
-      setLoading(true)
-      setError(null)
-      
       // Fetch real user data from backend API
       const response = await fetch(`/api/users/${username}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
       
       if (!response.ok) {
         if (response.status === 404) {
@@ -544,7 +747,10 @@ const UserProfile = () => {
           // Asset URLs
           backgroundUrl: userData.customization.background_url || '',
           audioUrl: userData.customization.audio_url || '',
-          cursorUrl: userData.customization.cursor_url || ''
+          cursorUrl: userData.customization.cursor_url || '',
+          
+          // Typography
+          textFont: userData.customization.text_font || ''
         } : {
           // Default customization if none provided
           accentColor: '#58A4B0',
@@ -569,19 +775,235 @@ const UserProfile = () => {
           volumeControl: true,
           backgroundUrl: '',
           audioUrl: '',
-          cursorUrl: ''
+          cursorUrl: '',
+          textFont: ''
         }
       }
       
-      setUser(profileData)
+      setUser(profileData);
+      
+      // Preload critical assets to improve performance
+      await preloadAssets(profileData);
       
       // Template customization will be applied in separate useEffect when templateData is ready
-      setLoading(false)
     } catch (err) {
-      logger.error('Profile fetch failed', err)
-      setError(err.message)
-      setLoading(false)
+      logger.error('Profile fetch failed', err);
+      throw err; // Re-throw to be handled by the main fetchAllData function
     }
+  }
+
+  const fetchUserBadges = async () => {
+    try {
+      setBadgesLoading(true)
+      console.log('🔍 Fetching badges for username:', username)
+      
+      // First try to get showcased badges
+      let response = await fetch(`/api/users/${username}/badges/showcased`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      })
+
+      console.log('📡 Showcased badges API response status:', response.status)
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log('📊 Showcased badges API response data:', data)
+        
+        if (data.success && data.data.badges && data.data.badges.length > 0) {
+          console.log('🎖️ Found showcased badges:', data.data.badges)
+          
+          // Convert badges to display format
+          const displayBadges = data.data.badges.map(badgeData => {
+            console.log('🔧 Processing showcased badge:', badgeData.badge)
+            const icon = getIconFromBadge(badgeData.badge)
+            console.log('🎨 Generated icon for', badgeData.badge.name, ':', icon)
+            
+            const badge = {
+              id: badgeData.badge.id,
+              name: badgeData.badge.name,
+              description: badgeData.badge.description,
+              icon: icon,
+              bgColor: getColorFromBadge(badgeData.badge),
+              rarity: badgeData.badge.rarity,
+              category: badgeData.badge.category,
+              rarityEffects: getRarityEffects(badgeData.badge.rarity)
+            }
+            console.log('✅ Final showcased badge object:', badge)
+            return badge
+          });
+          
+          console.log('🎯 Setting showcased badges:', displayBadges)
+          setBadges(displayBadges);
+          return; // Exit early if we found showcased badges
+        } else {
+          console.log('❌ No showcased badges found, trying all earned badges...')
+        }
+      }
+
+      // Fallback: try to get all earned badges if no showcased badges
+      console.log('🔄 Fetching all user badges as fallback...')
+      response = await fetch(`/api/users/${username}/badges`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      })
+
+      console.log('📡 All badges API response status:', response.status)
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log('📊 All badges API response data:', data)
+        
+        if (data.success && data.data.badges) {
+          // Filter to only earned badges and take first 3
+          const earnedBadges = data.data.badges.filter(badgeData => badgeData.is_earned)
+          console.log('🎖️ Found earned badges:', earnedBadges)
+          
+          if (earnedBadges.length > 0) {
+            // Convert badges to display format
+            const displayBadges = earnedBadges.slice(0, 3).map(badgeData => {
+              console.log('🔧 Processing earned badge:', badgeData.badge)
+              const icon = getIconFromBadge(badgeData.badge)
+              console.log('🎨 Generated icon for', badgeData.badge.name, ':', icon)
+              
+              const badge = {
+                id: badgeData.badge.id,
+                name: badgeData.badge.name,
+                description: badgeData.badge.description,
+                icon: icon,
+                bgColor: getColorFromBadge(badgeData.badge),
+                rarity: badgeData.badge.rarity,
+                category: badgeData.badge.category,
+                rarityEffects: getRarityEffects(badgeData.badge.rarity)
+              }
+              console.log('✅ Final earned badge object:', badge)
+              return badge
+            });
+            
+            console.log('🎯 Setting earned badges (fallback):', displayBadges)
+            setBadges(displayBadges);
+          } else {
+            console.log('❌ No earned badges found, adding test badge')
+            // Add a test badge to verify the rendering works
+            setBadges([
+              {
+                id: 'test-badge',
+                name: 'Test Badge',
+                description: 'Test badge for debugging',
+                icon: 'mdi:star',
+                bgColor: '#f59e0b',
+                rarity: 'COMMON',
+                category: 'TEST',
+                rarityEffects: getRarityEffects('COMMON')
+              }
+            ]);
+          }
+        } else {
+          console.log('❌ No badges found in all badges response')
+          setBadges([]);
+        }
+      } else {
+        const errorData = await response.text()
+        console.error('❌ All badges API error:', response.status, errorData)
+        setBadges([]);
+      }
+    } catch (err) {
+      console.error('💥 Failed to fetch user badges:', err)
+      setBadges([]);
+    } finally {
+      setBadgesLoading(false)
+    }
+  }
+
+  // Helper functions for badge data conversion
+  const getIconFromBadge = (badge) => {
+    console.log('🔍 getIconFromBadge called with:', badge)
+    
+    // Map badge names to Iconify icons
+    const badgeIconMap = {
+      'staff': 'mdi:star-shooting',
+      'helper': 'mdi:help-circle',
+      'premium': 'mdi:diamond',
+      'verified': 'mdi:check-decagram',
+      'donor': 'mdi:gift',
+      'og': 'mdi:trophy',
+      'gifter': 'mdi:gift-outline',
+      'server booster': 'mdi:rocket',
+      'serverbooster': 'mdi:rocket',
+      'winner': 'mdi:trophy-variant',
+      'second place': 'mdi:medal',
+      'secondplace': 'mdi:medal',
+      'third place': 'mdi:medal-outline',
+      'thirdplace': 'mdi:medal-outline',
+      'image host': 'mdi:image',
+      'imagehost': 'mdi:image',
+      'bug hunter': 'mdi:bug',
+      'bughunter': 'mdi:bug',
+      'easter 2025': 'mdi:egg-easter',
+      'easter2025': 'mdi:egg-easter',
+      'christmas 2024': 'mdi:pine-tree',
+      'christmas2024': 'mdi:pine-tree'
+    }
+    
+    // First try to match by badge name
+    const badgeName = badge.name?.toLowerCase()
+    console.log('🏷️ Badge name (lowercase):', badgeName)
+    
+    if (badgeName && badgeIconMap[badgeName]) {
+      const mappedIcon = badgeIconMap[badgeName]
+      console.log('✅ Found mapped icon:', mappedIcon)
+      return mappedIcon
+    }
+    
+    // Fallback to original logic for custom badges
+    console.log('🔄 Checking badge icon_type:', badge.icon_type)
+    console.log('🔄 Badge icon_value:', badge.icon_value)
+    
+    if (badge.icon_type === 'EMOJI') {
+      console.log('😊 Using emoji icon:', badge.icon_value)
+      return badge.icon_value
+    } else if (badge.icon_type === 'LUCIDE') {
+      const lucideIcon = `lucide:${badge.icon_value}`
+      console.log('🎨 Using lucide icon:', lucideIcon)
+      return lucideIcon
+    }
+    
+    console.log('⭐ Using default icon: mdi:star')
+    return 'mdi:star' // default icon
+  }
+
+  const getColorFromBadge = (badge) => {
+    if (badge.icon_color) return badge.icon_color
+    if (badge.gradient_from) return badge.gradient_from
+    
+    // Default colors based on rarity
+    const rarityColors = {
+      COMMON: '#6b7280',
+      UNCOMMON: '#10b981',
+      RARE: '#3b82f6',
+      EPIC: '#8b5cf6',
+      LEGENDARY: '#f59e0b',
+      MYTHIC: '#ef4444'
+    }
+    return rarityColors[badge.rarity] || '#6b7280'
+  }
+
+  // Get rarity effects for badge styling
+  const getRarityEffects = (rarity) => {
+    const effects = {
+      COMMON: { glow: 'none', animation: 'none', borderGlow: 'rgba(255, 255, 255, 0.25)' },
+      UNCOMMON: { glow: '0 0 8px rgba(16, 185, 129, 0.4)', animation: 'none', borderGlow: 'rgba(16, 185, 129, 0.5)' },
+      RARE: { glow: '0 0 10px rgba(59, 130, 246, 0.5)', animation: 'none', borderGlow: 'rgba(59, 130, 246, 0.6)' },
+      EPIC: { glow: '0 0 12px rgba(139, 92, 246, 0.6)', animation: 'pulse 2s infinite', borderGlow: 'rgba(139, 92, 246, 0.7)' },
+      LEGENDARY: { glow: '0 0 15px rgba(245, 158, 11, 0.7)', animation: 'pulse 1.5s infinite', borderGlow: 'rgba(245, 158, 11, 0.8)' },
+      MYTHIC: { glow: '0 0 18px rgba(239, 68, 68, 0.8)', animation: 'pulse 1s infinite', borderGlow: 'rgba(239, 68, 68, 0.9)' }
+    }
+    return effects[rarity] || effects.COMMON
   }
 
   const handleLinkClick = async (link) => {
@@ -647,7 +1069,7 @@ const UserProfile = () => {
             animation: 'spin 1s linear infinite',
             marginBottom: '1rem'
           }} />
-          <p>Loading profile...</p>
+          <p>{loadingStatus}</p>
         </div>
         <style>{`
           @keyframes spin {
@@ -847,16 +1269,44 @@ const UserProfile = () => {
           
           <div className="user-info">
             <div className="username-section">
-              <h1>@{user.username}</h1>
+              <h1>{user.displayName || `@${user.username}`}</h1>
+              
+              {/* Badges Section - Beside username */}
+              {badges.length > 0 && customization.showBadges !== false && (
+                <div className="user-badges-inline">
+                  {badges.slice(0, 3).map((badge) => (
+                    <div key={badge.id} className="badge-item-inline" title={`${badge.name} - ${badge.description}`}>
+                      <div 
+                        className="badge-icon-inline" 
+                        style={{ 
+                          background: badge.bgColor,
+                          border: `2px solid ${badge.rarityEffects?.borderGlow || 'rgba(255, 255, 255, 0.25)'}`,
+                          boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25)${badge.rarityEffects?.glow !== 'none' ? `, ${badge.rarityEffects.glow}` : ''}`,
+                          animation: badge.rarityEffects?.animation || 'none'
+                        }}
+                      >
+                        {typeof badge.icon === 'string' && badge.icon.length <= 2 && !badge.icon.includes(':') ? (
+                          <span className="badge-emoji">{badge.icon}</span>
+                        ) : (
+                          <Icon icon={badge.icon} />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {badges.length > 3 && (
+                    <div className="badge-item-inline" title={`+${badges.length - 3} more badges`}>
+                      <div className="badge-icon-inline badge-more">
+                        <span>+{badges.length - 3}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            
-            {user.displayName && user.displayName !== user.username && (
-              <h2 className="display-name">{user.displayName}</h2>
-            )}
             
             <p className="bio">{user.bio}</p>
             
-            {/* User Links Section - Inside the profile card, after bio */}
+            {/* User Links Section - Inside the profile card, after badges */}
             <UserLinks username={user.username} monochromeIcons={customization.monochromeIcons} />
             
           </div>
@@ -1186,7 +1636,7 @@ const ProfileWrapper = styled.div`
         width: 140px;
         height: 140px;
         border-radius: 50%;
-        border: 4px solid ${props => props.customization?.accentColor || '#58A4B0'};
+        border: none;
         object-fit: cover;
         transition: all 0.3s ease;
         ${props => props.customization?.glowUsername && `
@@ -1196,7 +1646,6 @@ const ProfileWrapper = styled.div`
         @media (max-width: 768px) {
           width: 120px;
           height: 120px;
-          border-width: 3px;
         }
       }
       
@@ -1253,7 +1702,7 @@ const ProfileWrapper = styled.div`
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 1rem;
+        gap: 1.5rem;
         margin-bottom: 1rem;
         flex-wrap: wrap;
         
@@ -1263,6 +1712,9 @@ const ProfileWrapper = styled.div`
           color: ${props => props.customization?.textColor || '#ffffff'};
           margin: 0;
           letter-spacing: -0.02em;
+          ${props => props.customization?.textFont && `
+            font-family: '${props.customization.textFont}', inherit;
+          `}
           ${props => props.customization?.glowUsername && `
             text-shadow: 0 0 25px ${props.customization.accentColor || '#58A4B0'};
           `}
@@ -1276,6 +1728,99 @@ const ProfileWrapper = styled.div`
           }
         }
         
+        .user-badges-inline {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+          
+          .badge-item-inline {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            
+            &:hover {
+              transform: translateY(-2px) scale(1.05);
+              
+              .badge-icon-inline {
+                ${props => props.customization?.glowBadges && `
+                  box-shadow: 0 0 20px currentColor, 0 4px 16px rgba(0, 0, 0, 0.3);
+                `}
+              }
+            }
+            
+            .badge-icon-inline {
+              width: 36px;
+              height: 36px;
+              border-radius: 10px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 16px;
+              color: white;
+              transition: all 0.3s ease;
+              border: 2px solid rgba(255, 255, 255, 0.25);
+              backdrop-filter: blur(10px);
+              -webkit-backdrop-filter: blur(10px);
+              box-shadow: 
+                0 4px 12px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.25);
+              
+              ${props => props.customization?.glowBadges && `
+                box-shadow: 
+                  0 4px 12px rgba(0, 0, 0, 0.3),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.25),
+                  0 0 12px currentColor;
+              `}
+              
+              &.badge-more {
+                background: linear-gradient(135deg, ${props => props.customization?.accentColor || '#58A4B0'}, ${props => props.customization?.primaryColor || '#4A8C96'}) !important;
+                font-size: 11px;
+                font-weight: 600;
+                
+                span {
+                  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+                }
+              }
+              
+              .badge-emoji {
+                font-size: 14px;
+              }
+              
+              @media (max-width: 768px) {
+                width: 32px;
+                height: 32px;
+                font-size: 14px;
+                border-radius: 8px;
+                
+                &.badge-more {
+                  font-size: 10px;
+                }
+                
+                .badge-emoji {
+                  font-size: 12px;
+                }
+              }
+            }
+          }
+          
+          @media (max-width: 768px) {
+            gap: 6px;
+          }
+        }
+        
+        @media (max-width: 768px) {
+          gap: 1rem;
+          flex-direction: column;
+          
+          .user-badges-inline {
+            order: 2;
+            margin-top: 0.5rem;
+          }
+        }
       }
       
       .display-name {
@@ -1284,6 +1829,9 @@ const ProfileWrapper = styled.div`
         color: ${props => props.customization?.accentColor ? `${props.customization.accentColor}DD` : '#a0a0a0'};
         margin: 0 0 1.5rem 0;
         letter-spacing: -0.01em;
+        ${props => props.customization?.textFont && `
+          font-family: '${props.customization.textFont}', inherit;
+        `}
         
         @media (max-width: 768px) {
           font-size: 1.5rem;
@@ -1306,6 +1854,80 @@ const ProfileWrapper = styled.div`
           line-height: 1.6;
           max-width: 500px;
         }
+      }
+    }
+    
+    .user-badges {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 1.5rem 0 2rem 0;
+      padding: 1rem 0;
+      
+      .badge-item {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        
+        &:hover {
+          transform: translateY(-2px);
+          
+          .badge-icon {
+            transform: scale(1.1);
+            ${props => props.customization?.glowBadges && `
+              box-shadow: 0 0 20px currentColor;
+            `}
+          }
+        }
+        
+        .badge-icon {
+          width: 44px;
+          height: 44px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 20px;
+          color: white;
+          transition: all 0.3s ease;
+          border: 2px solid rgba(255, 255, 255, 0.2);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          box-shadow: 
+            0 4px 16px rgba(0, 0, 0, 0.2),
+            inset 0 1px 0 rgba(255, 255, 255, 0.2);
+          
+          ${props => props.customization?.glowBadges && `
+            box-shadow: 
+              0 4px 16px rgba(0, 0, 0, 0.2),
+              inset 0 1px 0 rgba(255, 255, 255, 0.2),
+              0 0 15px currentColor;
+          `}
+          
+          .badge-emoji {
+            font-size: 18px;
+          }
+          
+          @media (max-width: 768px) {
+            width: 40px;
+            height: 40px;
+            font-size: 18px;
+            
+            .badge-emoji {
+              font-size: 16px;
+            }
+          }
+        }
+      }
+      
+      @media (max-width: 768px) {
+        gap: 10px;
+        margin: 1rem 0 1.5rem 0;
       }
     }
     
@@ -1364,6 +1986,17 @@ const ProfileWrapper = styled.div`
     }
   }
 
+  /* Typewriter cursor animation */
+  @keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
+
+  /* Badge rarity animations */
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.02); }
+  }
 
 `
 

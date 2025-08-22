@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"gotchu-backend/internal/config"
 	"gotchu-backend/internal/middleware"
 	"gotchu-backend/internal/models"
+	"gotchu-backend/pkg/analytics"
 	"gotchu-backend/pkg/redis"
 	"gotchu-backend/pkg/storage"
 
@@ -23,6 +25,7 @@ type DashboardHandler struct {
 	redisClient *redis.Client
 	storage     *storage.SupabaseStorage
 	config      *config.Config
+	geoService  *analytics.GeoLocationService
 }
 
 // NewDashboardHandler creates a new dashboard handler
@@ -33,6 +36,7 @@ func NewDashboardHandler(db *gorm.DB, redisClient *redis.Client, cfg *config.Con
 		redisClient: redisClient,
 		storage:     supabaseStorage,
 		config:      cfg,
+		geoService:  analytics.NewGeoLocationService(),
 	}
 }
 
@@ -109,16 +113,21 @@ func (h *DashboardHandler) GetDashboard(c *gin.Context) {
 		email = *user.Email
 	}
 	
-	userProfile := UserProfile{
-		ID:          user.ID,
-		Username:    user.Username,
-		Email:       email,
-		DisplayName: user.DisplayName,
-		AvatarURL:   user.AvatarURL,
-		IsVerified:  user.IsVerified,
-		Plan:        user.Plan,
-		Theme:       user.Theme,
-		CreatedAt:   user.CreatedAt,
+	userProfile := gin.H{
+		"id":           user.ID,
+		"uid":          user.ID,
+		"username":     user.Username,
+		"email":        email,
+		"display_name": user.DisplayName,
+		"alias":        user.Alias,
+		"avatar_url":   user.AvatarURL,
+		"is_verified":  user.IsVerified,
+		"is_premium":   user.Plan == "premium",
+		"plan":         user.Plan,
+		"theme":        user.Theme,
+		"created_at":   user.CreatedAt,
+		"profile_views": user.ProfileViews,
+		"profile_completion": calculateProfileCompletion(user),
 	}
 
 	response := DashboardResponse{
@@ -146,6 +155,7 @@ func (h *DashboardHandler) GetDashboard(c *gin.Context) {
 // GetUserProfile returns public user profile by username
 func (h *DashboardHandler) GetUserProfile(c *gin.Context) {
 	username := c.Param("username")
+	fmt.Printf("DEBUG: GetUserProfile called for username: '%s'\n", username)
 	if username == "" {
 		c.JSON(http.StatusBadRequest, DashboardResponse{
 			Success: false,
@@ -154,7 +164,7 @@ func (h *DashboardHandler) GetUserProfile(c *gin.Context) {
 		return
 	}
 
-	// Get user
+	// Skip cache for username pages to avoid corruption issues - always get fresh data
 	var user models.User
 	err := h.db.Where("username = ? AND is_active = ?", username, true).First(&user).Error
 	if err != nil {
@@ -167,6 +177,7 @@ func (h *DashboardHandler) GetUserProfile(c *gin.Context) {
 
 	// Check if profile is public or if viewer is the owner
 	currentUser, isAuthenticated := middleware.GetCurrentUser(c)
+	
 	if !user.IsPublic && (!isAuthenticated || currentUser.ID != user.ID) {
 		c.JSON(http.StatusForbidden, DashboardResponse{
 			Success: false,
@@ -181,10 +192,9 @@ func (h *DashboardHandler) GetUserProfile(c *gin.Context) {
 		Order("\"order\" ASC, created_at ASC").
 		Find(&links)
 
-	// Increment profile view if not viewing own profile and not already viewed recently
+	// Track unique profile view if not viewing own profile
 	if !isAuthenticated || currentUser.ID != user.ID {
-		// TODO: Track profile view with analytics (implement proper view tracking)
-		h.db.Model(&user).UpdateColumn("profile_views", gorm.Expr("profile_views + ?", 1))
+		go h.trackProfileView(c, user.ID) // Run in background to not slow down response
 	}
 
 	// Prepare public profile data with customization settings
@@ -238,6 +248,9 @@ func (h *DashboardHandler) GetUserProfile(c *gin.Context) {
 			"background_url": getStringValue(user.BackgroundURL),
 			"audio_url":      getStringValue(user.AudioURL),
 			"cursor_url":     getStringValue(user.CustomCursorURL),
+			
+			// Typography
+			"text_font":      getStringValue(user.TextFont),
 		},
 	}
 
@@ -342,6 +355,11 @@ func validateCustomizationSettings(settings *CustomizationSettings) error {
 		return fmt.Errorf("invalid username_effect: %s", settings.UsernameEffect)
 	}
 
+	// Validate text font length
+	if len(settings.TextFont) > 100 {
+		return fmt.Errorf("text_font length cannot exceed 100 characters")
+	}
+
 	return nil
 }
 
@@ -393,6 +411,9 @@ type CustomizationSettings struct {
 	// Profile Information
 	Description   string `json:"description"`
 	Bio           string `json:"bio"`
+	
+	// Typography
+	TextFont      string `json:"text_font"`
 }
 
 // SaveCustomizationSettings saves user customization preferences
@@ -467,6 +488,14 @@ func (h *DashboardHandler) SaveCustomizationSettings(c *gin.Context) {
 		// Profile Information
 		"description": settings.Description,
 		"bio":         settings.Bio,
+		
+		// Typography
+		"text_font": func() interface{} {
+			if settings.TextFont != "" {
+				return settings.TextFont
+			}
+			return nil
+		}(),
 		
 		// Timestamps
 		"updated_at": time.Now(),
@@ -1012,4 +1041,606 @@ func getFileType(assetType string) models.FileType {
 	default:
 		return models.FileTypeOther
 	}
+}
+
+// AnalyticsData represents analytics data for a user
+type AnalyticsData struct {
+	TotalLinkClicks     int                `json:"total_link_clicks"`
+	ClickRate           float64            `json:"click_rate"`
+	ProfileViews        int                `json:"profile_views"`
+	AverageDailyViews   int                `json:"average_daily_views"`
+	ProfileViewsChart   []DailyViews       `json:"profile_views_chart"`
+	Devices             DeviceBreakdown    `json:"devices"`
+	TopSocials          []SocialClick      `json:"top_socials"`
+	TopReferrers        []Referrer         `json:"top_referrers"`
+	TopCountries        []CountryView      `json:"top_countries"`
+}
+
+type DailyViews struct {
+	Day   string `json:"day"`
+	Views int    `json:"views"`
+}
+
+type DeviceBreakdown struct {
+	Mobile  float64 `json:"mobile"`
+	Desktop float64 `json:"desktop"`
+	Tablet  float64 `json:"tablet"`
+}
+
+type SocialClick struct {
+	Name  string `json:"name"`
+	Clicks int   `json:"clicks"`
+	Icon  string `json:"icon"`
+}
+
+type Referrer struct {
+	Source string  `json:"source"`
+	Visits float64 `json:"visits"`
+	Icon   string  `json:"icon"`
+}
+
+type CountryView struct {
+	Name       string  `json:"name"`
+	Views      int     `json:"views"`
+	Percentage float64 `json:"percentage"`
+	Code       string  `json:"code"`
+}
+
+// GetAnalytics returns analytics data for authenticated user
+func (h *DashboardHandler) GetAnalytics(c *gin.Context) {
+	user, exists := middleware.GetCurrentUser(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, DashboardResponse{
+			Success: false,
+			Message: "Authentication required",
+		})
+		return
+	}
+
+	// TEMPORARY: Skip cache to force fresh analytics calculation
+	// cacheKey := fmt.Sprintf("analytics:user:%d", user.ID)
+	/*
+	if h.redisClient != nil {
+		var cachedData AnalyticsData
+		err := h.redisClient.Get(cacheKey, &cachedData)
+		if err == nil {
+			fmt.Printf("Analytics cache hit for user %d\n", user.ID)
+			c.JSON(http.StatusOK, DashboardResponse{
+				Success: true,
+				Message: "Analytics data retrieved successfully",
+				Data:    cachedData,
+			})
+			return
+		}
+	}
+	*/
+
+	fmt.Printf("Analytics cache miss for user %d, calculating from database\n", user.ID)
+
+	// Get total link clicks from user's links
+	var totalClicks int64
+	h.db.Model(&models.Link{}).Where("user_id = ? AND is_active = ?", user.ID, true).
+		Select("COALESCE(SUM(clicks), 0)").Scan(&totalClicks)
+
+	// Get total profile views from ProfileView records (real-time count)
+	var realProfileViews int64
+	h.db.Model(&models.ProfileView{}).Where("user_id = ?", user.ID).Count(&realProfileViews)
+	profileViews := int(realProfileViews)
+	
+	fmt.Printf("DEBUG: Analytics calculation - UserID: %d, ProfileViews from user table: %d, Real ProfileViews from records: %d, TotalClicks: %d\n", 
+		user.ID, user.ProfileViews, profileViews, totalClicks)
+
+	// Calculate click rate (clicks per view)
+	var clickRate float64
+	if profileViews > 0 {
+		clickRate = (float64(totalClicks) / float64(profileViews)) * 100
+	}
+
+	// Calculate average daily views (last 30 days)
+	avgDailyViews := profileViews / 30
+	if avgDailyViews < 1 {
+		avgDailyViews = 1
+	}
+
+	// Get real profile views data for the last 7 days
+	profileViewsChart := h.getProfileViewsChart(user.ID)
+	
+	// Get real device breakdown from profile views
+	deviceBreakdown := h.getDeviceBreakdown(user.ID)
+	
+	// Get real country breakdown from profile views  
+	countryBreakdown := h.getCountryBreakdown(user.ID)
+	
+	// Get real referrer breakdown from profile views
+	referrerBreakdown := h.getReferrerBreakdown(user.ID)
+
+	// Get top clicked links as "social" data
+	var topLinks []models.Link
+	h.db.Where("user_id = ? AND is_active = ?", user.ID, true).
+		Order("clicks DESC").
+		Limit(5).
+		Find(&topLinks)
+
+	// Common social platforms that Simple Icons supports
+	socialPlatforms := []string{
+		"instagram", "twitter", "x", "linkedin", "youtube", "tiktok", 
+		"spotify", "pinterest", "github", "discord", "telegram", 
+		"soundcloud", "facebook", "snapchat", "twitch", "reddit",
+		"behance", "dribbble", "medium", "patreon", "onlyfans",
+		"cashapp", "venmo", "paypal", "kofi", "buymeacoffee",
+		"etsy", "shopify", "amazon", "ebay", "gumroad",
+		"steam", "xbox", "playstation", "nintendo", "epicgames",
+		"wordpress", "blogger", "substack", "notion", "figma",
+		"adobe", "canva", "unsplash", "500px", "flickr",
+	}
+
+	topSocials := make([]SocialClick, 0)
+	for _, link := range topLinks {
+		icon := "link" // default fallback
+		linkText := strings.ToLower(link.Title)
+		linkURL := ""
+		if link.URL != nil {
+			linkURL = strings.ToLower(*link.URL)
+		}
+		
+		// Check against all known social platforms
+		for _, platform := range socialPlatforms {
+			if strings.Contains(linkText, platform) || strings.Contains(linkURL, platform) {
+				// Special case for Twitter/X
+				if platform == "twitter" || strings.Contains(linkURL, "x.com") {
+					icon = "x"
+				} else {
+					icon = platform
+				}
+				break
+			}
+		}
+		
+		topSocials = append(topSocials, SocialClick{
+			Name:   link.Title,
+			Clicks: link.Clicks,
+			Icon:   icon,
+		})
+	}
+	
+	// Ensure we always have at least empty arrays for the frontend
+	if topSocials == nil {
+		topSocials = make([]SocialClick, 0)
+	}
+
+	// Use real analytics data
+	analytics := AnalyticsData{
+		TotalLinkClicks:   int(totalClicks),
+		ClickRate:         clickRate,
+		ProfileViews:      profileViews,
+		AverageDailyViews: avgDailyViews,
+		ProfileViewsChart: profileViewsChart,
+		Devices:           deviceBreakdown,
+		TopSocials:        topSocials,
+		TopReferrers:      referrerBreakdown,
+		TopCountries:      countryBreakdown,
+	}
+
+	// TEMPORARY: Disable analytics caching to force fresh data
+	/*
+	if h.redisClient != nil {
+		err := h.redisClient.Set(cacheKey, analytics, 1*time.Hour)
+		if err == nil {
+			fmt.Printf("Analytics data cached for user %d\n", user.ID)
+		} else {
+			fmt.Printf("Failed to cache analytics data for user %d: %v\n", user.ID, err)
+		}
+	}
+	*/
+
+	c.JSON(http.StatusOK, DashboardResponse{
+		Success: true,
+		Message: "Analytics data retrieved successfully",
+		Data:    analytics,
+	})
+}
+
+// trackProfileView records a unique profile view with analytics data
+func (h *DashboardHandler) trackProfileView(c *gin.Context, userID uint) {
+	// Extract request data immediately while context is valid
+	ipAddress := analytics.GetClientIP(c.Request)
+	userAgent := c.GetHeader("User-Agent")
+	referer := c.GetHeader("Referer")
+	sessionID := c.GetHeader("X-Session-ID")
+	
+	fmt.Printf("DEBUG: trackProfileView - UserID: %d, IP: %s, UserAgent: %s\n", userID, ipAddress, userAgent)
+	
+	// For localhost/development, use a mock IP for testing geolocation
+	testIP := ipAddress
+	if ipAddress == "::1" || ipAddress == "127.0.0.1" || ipAddress == "localhost" {
+		testIP = "8.8.8.8" // Use Google DNS IP for testing geolocation
+		fmt.Printf("DEBUG: Using test IP %s for localhost geolocation testing\n", testIP)
+	}
+	
+	// Use Redis for quick deduplication check
+	dedupeKey := fmt.Sprintf("view_dedupe:%d:%s", userID, ipAddress)
+	fmt.Printf("DEBUG: Checking deduplication key: %s\n", dedupeKey)
+	if h.redisClient != nil {
+		// Check if we've already tracked this IP for this user recently
+		exists, err := h.redisClient.Exists(dedupeKey)
+		if err == nil && exists {
+			fmt.Printf("DEBUG: View already tracked recently for this IP, skipping\n")
+			return // Already tracked recently
+		}
+		
+		// Set deduplication key with 24-hour expiry
+		h.redisClient.Set(dedupeKey, "1", 24*time.Hour)
+		fmt.Printf("DEBUG: Set deduplication key, proceeding with tracking\n")
+	} else {
+		// Fallback to database check if Redis unavailable
+		var existingView models.ProfileView
+		twentyFourHoursAgo := time.Now().Add(-24 * time.Hour)
+		
+		err := h.db.Where("user_id = ? AND ip_address = ? AND created_at > ?", 
+			userID, ipAddress, twentyFourHoursAgo).First(&existingView).Error
+		
+		if err == nil {
+			return // Already viewed within 24 hours
+		}
+	}
+	
+	// Process analytics data in background
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("Recovered from panic in trackProfileView: %v\n", r)
+			}
+		}()
+		
+		// Detect device and browser information
+		deviceInfo := analytics.DetectDevice(userAgent)
+		
+		// Get geolocation data (this can be slow, so it's now truly async)
+		var country, city *string
+		if geoLocation, err := h.geoService.GetLocation(testIP); err == nil {
+			fmt.Printf("DEBUG: Geolocation - IP: %s, Country: %s, City: %s\n", testIP, geoLocation.Country, geoLocation.City)
+			if geoLocation.Country != "Unknown" {
+				country = &geoLocation.Country
+				city = &geoLocation.City
+			}
+		} else {
+			fmt.Printf("DEBUG: Geolocation failed - IP: %s, Error: %v\n", testIP, err)
+		}
+		
+		// Create profile view record
+		profileView := models.ProfileView{
+			UserID:    userID,
+			IPAddress: &ipAddress,
+			UserAgent: &userAgent,
+			Referer:   &referer,
+			Country:   country,
+			City:      city,
+			Device:    &deviceInfo.Device,
+			Browser:   &deviceInfo.Browser,
+			SessionID: &sessionID,
+		}
+		
+		// Save to database with timeout context
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		
+		if err := h.db.WithContext(ctx).Create(&profileView).Error; err != nil {
+			fmt.Printf("Failed to save profile view for user %d: %v\n", userID, err)
+			// Remove deduplication key on failure so it can be retried
+			if h.redisClient != nil {
+				h.redisClient.Delete(dedupeKey)
+			}
+			return
+		} else {
+			fmt.Printf("DEBUG: Profile view saved successfully - ID: %d, UserID: %d, Country: %v\n", profileView.ID, profileView.UserID, profileView.Country)
+		}
+		
+		// Update user's total profile views count
+		h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).
+			UpdateColumn("profile_views", gorm.Expr("profile_views + ?", 1))
+		
+		// Clear analytics cache to force refresh
+		if h.redisClient != nil {
+			cacheKey := fmt.Sprintf("analytics:user:%d", userID)
+			h.redisClient.Delete(cacheKey)
+		}
+		
+		fmt.Printf("Recorded unique profile view for user %d from IP %s (%s, %s)\n", 
+			userID, ipAddress, deviceInfo.Device, getStringValue(country))
+	}()
+}
+
+// getProfileViewsChart returns daily profile views for the last 7 days
+func (h *DashboardHandler) getProfileViewsChart(userID uint) []DailyViews {
+	sevenDaysAgo := time.Now().AddDate(0, 0, -7)
+	
+	var results []struct {
+		Date  time.Time `json:"date"`
+		Count int       `json:"count"`
+	}
+	
+	err := h.db.Model(&models.ProfileView{}).
+		Select("DATE(created_at) as date, COUNT(*) as count").
+		Where("user_id = ? AND created_at >= ?", userID, sevenDaysAgo).
+		Group("DATE(created_at)").
+		Order("date ASC").
+		Scan(&results).Error
+	
+	if err != nil {
+		fmt.Printf("Failed to get profile views chart for user %d: %v\n", userID, err)
+		return []DailyViews{}
+	}
+	
+	// Create map of existing data
+	dataMap := make(map[string]int)
+	for _, result := range results {
+		dateStr := result.Date.Weekday().String()[:3] // Get first 3 letters of weekday
+		dataMap[dateStr] = result.Count
+	}
+	
+	// Generate chart data for last 7 days
+	chart := make([]DailyViews, 7)
+	for i := 0; i < 7; i++ {
+		date := time.Now().AddDate(0, 0, -6+i)
+		dayName := date.Weekday().String()[:3]
+		
+		chart[i] = DailyViews{
+			Day:   dayName,
+			Views: dataMap[dayName], // Will be 0 if no data exists
+		}
+	}
+	
+	return chart
+}
+
+// getDeviceBreakdown returns device usage percentages
+func (h *DashboardHandler) getDeviceBreakdown(userID uint) DeviceBreakdown {
+	var results []struct {
+		Device string `json:"device"`
+		Count  int    `json:"count"`
+	}
+	
+	err := h.db.Model(&models.ProfileView{}).
+		Select("device, COUNT(*) as count").
+		Where("user_id = ? AND device IS NOT NULL", userID).
+		Group("device").
+		Scan(&results).Error
+	
+	if err != nil {
+		fmt.Printf("Failed to get device breakdown for user %d: %v\n", userID, err)
+		return DeviceBreakdown{Mobile: 0, Desktop: 0, Tablet: 0}
+	}
+	
+	var total int
+	deviceCounts := make(map[string]int)
+	
+	for _, result := range results {
+		deviceCounts[result.Device] = result.Count
+		total += result.Count
+	}
+	
+	if total == 0 {
+		return DeviceBreakdown{Mobile: 0, Desktop: 0, Tablet: 0}
+	}
+	
+	return DeviceBreakdown{
+		Mobile:  float64(deviceCounts["mobile"]) / float64(total) * 100,
+		Desktop: float64(deviceCounts["desktop"]) / float64(total) * 100,
+		Tablet:  float64(deviceCounts["tablet"]) / float64(total) * 100,
+	}
+}
+
+// getCountryBreakdown returns top countries by views
+func (h *DashboardHandler) getCountryBreakdown(userID uint) []CountryView {
+	var results []struct {
+		Country string `json:"country"`
+		Count   int    `json:"count"`
+	}
+	
+	err := h.db.Model(&models.ProfileView{}).
+		Select("country, COUNT(*) as count").
+		Where("user_id = ? AND country IS NOT NULL", userID).
+		Group("country").
+		Order("count DESC").
+		Limit(6).
+		Scan(&results).Error
+	
+	if err != nil {
+		fmt.Printf("Failed to get country breakdown for user %d: %v\n", userID, err)
+		return []CountryView{}
+	}
+	
+	// Get total views for percentage calculation
+	var total int
+	for _, result := range results {
+		total += result.Count
+	}
+	
+	if total == 0 {
+		return []CountryView{}
+	}
+	
+	// Convert to CountryView format
+	countries := make([]CountryView, len(results))
+	for i, result := range results {
+		// Simple country code mapping (you might want to expand this)
+		countryCode := getCountryCode(result.Country)
+		
+		countries[i] = CountryView{
+			Name:       result.Country,
+			Views:      result.Count,
+			Percentage: float64(result.Count) / float64(total) * 100,
+			Code:       countryCode,
+		}
+	}
+	
+	return countries
+}
+
+// getReferrerBreakdown returns top referrer sources
+func (h *DashboardHandler) getReferrerBreakdown(userID uint) []Referrer {
+	var results []struct {
+		Referer string `json:"referer"`
+		Count   int    `json:"count"`
+	}
+	
+	err := h.db.Raw(`
+		SELECT 
+			CASE 
+				WHEN referer IS NULL OR referer = '' THEN 'direct'
+				WHEN referer LIKE '%google%' THEN 'google'
+				WHEN referer LIKE '%twitter%' OR referer LIKE '%x.com%' THEN 'twitter'
+				WHEN referer LIKE '%instagram%' THEN 'instagram'
+				WHEN referer LIKE '%linkedin%' THEN 'linkedin'
+				WHEN referer LIKE '%youtube%' THEN 'youtube'
+				WHEN referer LIKE '%facebook%' THEN 'facebook'
+				ELSE 'other'
+			END as referer,
+			COUNT(*) as count
+		FROM profile_views 
+		WHERE user_id = ? 
+		GROUP BY referer
+		ORDER BY count DESC
+		LIMIT 5
+	`, userID).Scan(&results).Error
+	
+	if err != nil {
+		fmt.Printf("Failed to get referrer breakdown for user %d: %v\n", userID, err)
+		return []Referrer{}
+	}
+	
+	// Get total for percentage calculation
+	var total int
+	for _, result := range results {
+		total += result.Count
+	}
+	
+	if total == 0 {
+		return []Referrer{}
+	}
+	
+	// Convert to Referrer format with icons
+	referrers := make([]Referrer, len(results))
+	for i, result := range results {
+		icon := getReferrerIcon(result.Referer)
+		
+		referrers[i] = Referrer{
+			Source: result.Referer,
+			Visits: float64(result.Count) / float64(total) * 100,
+			Icon:   icon,
+		}
+	}
+	
+	return referrers
+}
+
+// getCountryCode returns a simple country code mapping
+func getCountryCode(country string) string {
+	countryMap := map[string]string{
+		"United States": "US",
+		"Germany":       "DE",
+		"United Kingdom": "GB",
+		"France":        "FR", 
+		"Canada":        "CA",
+		"Australia":     "AU",
+		"Japan":         "JP",
+		"Brazil":        "BR",
+		"India":         "IN",
+		"China":         "CN",
+		"Russia":        "RU",
+		"Spain":         "ES",
+		"Italy":         "IT",
+		"Netherlands":   "NL",
+		"Sweden":        "SE",
+		"Norway":        "NO",
+		"Denmark":       "DK",
+		"Finland":       "FI",
+	}
+	
+	if code, exists := countryMap[country]; exists {
+		return code
+	}
+	
+	return "XX" // Unknown country
+}
+
+// getReferrerIcon returns appropriate icon for referrer source
+func getReferrerIcon(source string) string {
+	iconMap := map[string]string{
+		"direct":    "🔗",
+		"google":    "🔍",
+		"twitter":   "🐦",
+		"instagram": "📷",
+		"linkedin":  "💼",
+		"youtube":   "📺",
+		"facebook":  "📘",
+		"other":     "🌐",
+	}
+	
+	if icon, exists := iconMap[source]; exists {
+		return icon
+	}
+	
+	return "🌐"
+}
+
+// calculateProfileCompletion calculates the profile completion percentage
+func calculateProfileCompletion(user *models.User) int {
+	completion := 0
+	total := 10 // Total possible points
+	
+	// Required fields (higher weight)
+	if user.Username != "" {
+		completion += 2
+	}
+	if user.Email != nil && *user.Email != "" {
+		completion += 2
+	}
+	
+	// Optional fields
+	if user.DisplayName != nil && *user.DisplayName != "" {
+		completion += 1
+	}
+	if user.Bio != nil && *user.Bio != "" {
+		completion += 1
+	}
+	if user.AvatarURL != nil && *user.AvatarURL != "" {
+		completion += 1
+	}
+	if user.Location != nil && *user.Location != "" {
+		completion += 1
+	}
+	
+	// Social links
+	socialCount := 0
+	if user.TwitterURL != nil && *user.TwitterURL != "" {
+		socialCount++
+	}
+	if user.GithubURL != nil && *user.GithubURL != "" {
+		socialCount++
+	}
+	if user.InstagramURL != nil && *user.InstagramURL != "" {
+		socialCount++
+	}
+	if user.LinkedinURL != nil && *user.LinkedinURL != "" {
+		socialCount++
+	}
+	if user.WebsiteURL != nil && *user.WebsiteURL != "" {
+		socialCount++
+	}
+	
+	// Give points based on social links (0-2 points)
+	if socialCount >= 2 {
+		completion += 2
+	} else if socialCount == 1 {
+		completion += 1
+	}
+	
+	// Calculate percentage (completion out of total possible points: 10)
+	percentage := (completion * 100) / total
+	if percentage > 100 {
+		percentage = 100
+	}
+	
+	return percentage
 }
