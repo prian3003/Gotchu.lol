@@ -15,6 +15,7 @@ import (
 	"gotchu-backend/pkg/auth"
 	"gotchu-backend/pkg/database"
 	"gotchu-backend/pkg/discord"
+	"gotchu-backend/pkg/discordbot"
 	"gotchu-backend/pkg/email"
 	"gotchu-backend/pkg/redis"
 	"gotchu-backend/pkg/storage"
@@ -108,15 +109,34 @@ func main() {
 		log.Println("⚠️ Warning: Discord integration not configured")
 	}
 
+	// Initialize Discord Bot service for real-time presence tracking
+	var discordBotService *discordbot.DiscordBotService
+	var discordBotHandler *handlers.DiscordBotHandler
+	if cfg.DiscordBotToken != "" && cfg.DiscordGuildID != "" {
+		discordBotService = discordbot.NewDiscordBotService(cfg.DiscordBotToken, cfg.DiscordGuildID, db)
+		discordBotHandler = handlers.NewDiscordBotHandler(discordBotService)
+		
+		// Start the bot service
+		go func() {
+			if err := discordBotService.Start(); err != nil {
+				log.Printf("❌ Failed to start Discord bot: %v", err)
+			}
+		}()
+		
+		log.Println("🤖 Discord Bot service initialized for presence tracking")
+	} else {
+		log.Println("⚠️ Warning: Discord Bot service not configured (missing bot token or guild ID)")
+	}
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, authService, redisClient, authMiddleware, emailService, cfg.SiteURL)
-	dashboardHandler := handlers.NewDashboardHandler(db, redisClient, cfg)
+	dashboardHandler := handlers.NewDashboardHandler(db, redisClient, cfg, discordBotService)
 	linkHandler := handlers.NewLinkHandler(db, redisClient)
 	templateHandler := handlers.NewTemplateHandler(db, redisClient, supabaseStorage)
 	badgesHandler := handlers.NewBadgesHandler(db)
 
 	// Setup router
-	router := setupRouter(cfg, authMiddleware, rateLimiter, badgeMiddleware, authHandler, dashboardHandler, linkHandler, templateHandler, badgesHandler, discordHandler)
+	router := setupRouter(cfg, authMiddleware, rateLimiter, badgeMiddleware, authHandler, dashboardHandler, linkHandler, templateHandler, badgesHandler, discordHandler, discordBotHandler)
 
 	// Serve uploaded files
 	router.Static("/uploads", "./uploads")
@@ -156,6 +176,12 @@ func main() {
 		log.Printf("Server forced to shutdown: %v", err)
 	}
 
+	// Stop Discord bot service
+	if discordBotService != nil {
+		log.Println("🤖 Stopping Discord Bot service...")
+		discordBotService.Stop()
+	}
+
 	// Close database connection
 	if err := database.Close(db); err != nil {
 		log.Printf("Failed to close database: %v", err)
@@ -180,6 +206,7 @@ func setupRouter(
 	templateHandler *handlers.TemplateHandler,
 	badgesHandler *handlers.BadgesHandler,
 	discordHandler *handlers.DiscordHandler,
+	discordBotHandler *handlers.DiscordBotHandler,
 ) *gin.Engine {
 	router := gin.New()
 
@@ -389,6 +416,25 @@ func setupRouter(
 					discordProtected.GET("/status", discordHandler.GetDiscordStatus)
 					discordProtected.POST("/disconnect", discordHandler.DisconnectDiscord)
 					discordProtected.POST("/refresh", discordHandler.RefreshDiscordData)
+				}
+			}
+		}
+
+		// Discord Bot routes
+		if discordBotHandler != nil {
+			discordBot := api.Group("/discord-bot")
+			{
+				// Public presence viewing endpoints (no auth required)
+				discordBot.GET("/presence/:userID", discordBotHandler.GetUserPresence)
+				
+				// Protected endpoints (authentication required)
+				discordBotProtected := discordBot.Group("")
+				discordBotProtected.Use(authMiddleware.RequireAuth())
+				{
+					discordBotProtected.GET("/presences", discordBotHandler.GetAllPresences)
+					discordBotProtected.GET("/status", discordBotHandler.GetBotStatus)
+					discordBotProtected.POST("/start", discordBotHandler.StartBot)
+					discordBotProtected.POST("/stop", discordBotHandler.StopBot)
 				}
 			}
 		}

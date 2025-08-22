@@ -57,7 +57,7 @@ export const useDiscord = () => {
       setDisconnecting(true)
       await discordService.disconnectDiscord()
       
-      // Update status to reflect disconnection
+      // Immediately update status to reflect disconnection
       setDiscordStatus(prev => ({
         ...prev,
         connected: false,
@@ -71,6 +71,11 @@ export const useDiscord = () => {
         avatar_decoration: false,
         error: null
       }))
+
+      // Also fetch fresh status from server to ensure consistency
+      setTimeout(() => {
+        fetchDiscordStatus()
+      }, 100)
     } catch (error) {
       console.error('Failed to disconnect Discord:', error)
       setDiscordStatus(prev => ({ 
@@ -80,7 +85,7 @@ export const useDiscord = () => {
     } finally {
       setDisconnecting(false)
     }
-  }, [])
+  }, [fetchDiscordStatus])
 
   // Refresh Discord data
   const refreshDiscordData = useCallback(async () => {

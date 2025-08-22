@@ -84,7 +84,7 @@ const CustomizationPage = ({ onBack }) => {
   const [showFontModal, setShowFontModal] = useState(false)
   
   // Discord integration
-  const { discordStatus, connecting, connectDiscord } = useDiscord()
+  const { discordStatus, connecting, connectDiscord, disconnectDiscord, disconnecting } = useDiscord()
   const [settings, setSettings] = useState({
     // Appearance
     theme: 'dark',
@@ -1123,68 +1123,6 @@ const CustomizationPage = ({ onBack }) => {
                   </div>
                 </div>
 
-                {/* Discord Presence */}
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Discord Presence</label>
-                  {discordStatus.connected ? (
-                    <div style={{
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      borderRadius: '12px',
-                      padding: '1rem',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      border: '1px solid rgba(255, 255, 255, 0.1)'
-                    }}>
-                      <span style={{ color: '#ffffff', fontSize: '0.95rem' }}>Discord Presence</span>
-                      <div
-                        style={{
-                          width: '44px',
-                          height: '24px',
-                          background: settings.discordPresence ? '#58A4B0' : 'rgba(255, 255, 255, 0.2)',
-                          borderRadius: '12px',
-                          position: 'relative',
-                          cursor: 'pointer',
-                          transition: 'all 0.3s ease'
-                        }}
-                        onClick={() => {
-                          setSettings(prev => ({ ...prev, discordPresence: !prev.discordPresence }))
-                        }}
-                      >
-                        <div style={{
-                          width: '20px',
-                          height: '20px',
-                          background: '#ffffff',
-                          borderRadius: '10px',
-                          position: 'absolute',
-                          top: '2px',
-                          left: settings.discordPresence ? '22px' : '2px',
-                          transition: 'all 0.3s ease'
-                        }} />
-                      </div>
-                    </div>
-                  ) : (
-                    <div 
-                      style={{ 
-                        padding: '0.75rem', 
-                        background: 'rgba(255,255,255,0.05)', 
-                        border: '1px solid rgba(255,255,255,0.1)', 
-                        borderRadius: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        cursor: 'pointer',
-                        transition: 'all 0.3s ease'
-                      }}
-                      onClick={connectDiscord}
-                    >
-                      <SimpleIconComponent iconName="discord" size={20} customColor="rgba(255,255,255,0.5)" />
-                      <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>
-                        {connecting ? 'Connecting to Discord...' : 'Click here to connect your Discord and unlock this feature.'}
-                      </span>
-                    </div>
-                  )}
-                </div>
 
                 {/* Profile Opacity */}
                 <div>
@@ -1428,7 +1366,7 @@ const CustomizationPage = ({ onBack }) => {
             </SectionHeader>
             
             <SettingsGroup>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.5rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem' }}>
                 {/* Accent Color */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Accent Color</label>
@@ -1744,6 +1682,234 @@ const CustomizationPage = ({ onBack }) => {
               </div>
             )}
 
+            {/* 5. Discord Customization Section */}
+            <SectionHeader style={{ marginTop: '2rem' }}>
+              <h2>Discord Customization</h2>
+            </SectionHeader>
+            
+            <SettingsGroup>
+              {/* Discord Presence */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Discord Presence</label>
+                {discordStatus.connected ? (
+                  <div>
+                    {/* Discord User Info */}
+                    <div style={{
+                      background: 'rgba(88, 101, 242, 0.1)',
+                      border: '1px solid rgba(88, 101, 242, 0.2)',
+                      borderRadius: '12px',
+                      padding: '1rem',
+                      marginBottom: '1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem'
+                    }}>
+                      {discordStatus.avatar_url ? (
+                        <img 
+                          src={discordStatus.avatar_url} 
+                          alt="Discord Avatar"
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            objectFit: 'cover'
+                          }}
+                        />
+                      ) : (
+                        <div style={{
+                          width: '36px',
+                          height: '36px',
+                          borderRadius: '50%',
+                          background: 'rgba(88, 101, 242, 0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <SimpleIconComponent iconName="discord" size={20} customColor="rgba(88,101,242,0.8)" />
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 }}>
+                        <span style={{ color: '#ffffff', fontWeight: '600', fontSize: '0.9rem' }}>
+                          {discordStatus.discord_username || 'Discord User'}
+                        </span>
+                        {discordStatus.is_booster && (
+                          <span style={{ color: '#f093fb', fontSize: '0.75rem', fontWeight: '500' }}>
+                            Server Booster
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={disconnectDiscord}
+                        disabled={disconnecting}
+                        style={{
+                          background: 'rgba(220, 53, 69, 0.1)',
+                          border: '1px solid rgba(220, 53, 69, 0.3)',
+                          borderRadius: '8px',
+                          color: '#dc3545',
+                          padding: '0.5rem 0.75rem',
+                          fontSize: '0.75rem',
+                          fontWeight: '500',
+                          cursor: disconnecting ? 'not-allowed' : 'pointer',
+                          opacity: disconnecting ? 0.6 : 1,
+                          transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!disconnecting) {
+                            e.target.style.background = 'rgba(220, 53, 69, 0.15)'
+                            e.target.style.borderColor = 'rgba(220, 53, 69, 0.4)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!disconnecting) {
+                            e.target.style.background = 'rgba(220, 53, 69, 0.1)'
+                            e.target.style.borderColor = 'rgba(220, 53, 69, 0.3)'
+                          }
+                        }}
+                      >
+                        {disconnecting ? 'Disconnecting...' : 'Disconnect'}
+                      </button>
+                    </div>
+                    
+                    {/* Discord Presence Toggle */}
+                    <div style={{
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '12px',
+                      padding: '1rem',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      marginBottom: '1rem'
+                    }}>
+                      <span style={{ color: '#ffffff', fontSize: '0.95rem' }}>Discord Presence</span>
+                      <div
+                        style={{
+                          width: '44px',
+                          height: '24px',
+                          background: settings.discordPresence ? '#58A4B0' : 'rgba(255, 255, 255, 0.2)',
+                          borderRadius: '12px',
+                          position: 'relative',
+                          cursor: 'pointer',
+                          transition: 'all 0.3s ease'
+                        }}
+                        onClick={() => {
+                          setSettings(prev => ({ ...prev, discordPresence: !prev.discordPresence }))
+                        }}
+                      >
+                        <div style={{
+                          width: '20px',
+                          height: '20px',
+                          background: '#ffffff',
+                          borderRadius: '10px',
+                          position: 'absolute',
+                          top: '2px',
+                          left: settings.discordPresence ? '22px' : '2px',
+                          transition: 'all 0.3s ease'
+                        }} />
+                      </div>
+                    </div>
+
+                    {/* Use Discord Avatar */}
+                    <div style={{
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '12px',
+                      padding: '1rem',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      marginBottom: '1rem'
+                    }}>
+                      <span style={{ color: '#ffffff', fontSize: '0.95rem' }}>Use Discord Avatar</span>
+                      <div
+                        style={{
+                          width: '44px',
+                          height: '24px',
+                          background: settings.useDiscordAvatar ? '#58A4B0' : 'rgba(255, 255, 255, 0.2)',
+                          borderRadius: '12px',
+                          position: 'relative',
+                          cursor: 'pointer',
+                          transition: 'all 0.3s ease'
+                        }}
+                        onClick={() => {
+                          setSettings(prev => ({ ...prev, useDiscordAvatar: !prev.useDiscordAvatar }))
+                        }}
+                      >
+                        <div style={{
+                          width: '20px',
+                          height: '20px',
+                          background: '#ffffff',
+                          borderRadius: '10px',
+                          position: 'absolute',
+                          top: '2px',
+                          left: settings.useDiscordAvatar ? '22px' : '2px',
+                          transition: 'all 0.3s ease'
+                        }} />
+                      </div>
+                    </div>
+
+                    {/* Discord Avatar Decoration */}
+                    <div style={{
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      borderRadius: '12px',
+                      padding: '1rem',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      border: '1px solid rgba(255, 255, 255, 0.1)'
+                    }}>
+                      <span style={{ color: '#ffffff', fontSize: '0.95rem' }}>Discord Avatar Decoration</span>
+                      <div
+                        style={{
+                          width: '44px',
+                          height: '24px',
+                          background: settings.discordAvatarDecoration ? '#58A4B0' : 'rgba(255, 255, 255, 0.2)',
+                          borderRadius: '12px',
+                          position: 'relative',
+                          cursor: 'pointer',
+                          transition: 'all 0.3s ease'
+                        }}
+                        onClick={() => {
+                          setSettings(prev => ({ ...prev, discordAvatarDecoration: !prev.discordAvatarDecoration }))
+                        }}
+                      >
+                        <div style={{
+                          width: '20px',
+                          height: '20px',
+                          background: '#ffffff',
+                          borderRadius: '10px',
+                          position: 'absolute',
+                          top: '2px',
+                          left: settings.discordAvatarDecoration ? '22px' : '2px',
+                          transition: 'all 0.3s ease'
+                        }} />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      background: 'rgba(88, 101, 242, 0.1)',
+                      border: '1px solid rgba(88, 101, 242, 0.2)',
+                      borderRadius: '12px',
+                      padding: '1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s ease'
+                    }}
+                    onClick={connectDiscord}
+                  >
+                    <SimpleIconComponent iconName="discord" size={20} customColor="rgba(255,255,255,0.5)" />
+                    <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>
+                      {connecting ? 'Connecting to Discord...' : 'Click here to connect your Discord and unlock this feature.'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </SettingsGroup>
+
             {/* 6. Other Customization Section */}
             <div style={{ marginTop: '2rem' }}>
               <h2 style={{ 
@@ -1924,83 +2090,6 @@ const CustomizationPage = ({ onBack }) => {
                 </div>
               </div>
 
-              {/* Use Discord Avatar */}
-              <div style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '12px',
-                padding: '1rem',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                border: '1px solid rgba(255, 255, 255, 0.1)'
-              }}>
-                <span style={{ color: '#ffffff', fontSize: '0.95rem' }}>Use Discord Avatar</span>
-                <div
-                  style={{
-                    width: '44px',
-                    height: '24px',
-                    background: settings.useDiscordAvatar ? '#58A4B0' : 'rgba(255, 255, 255, 0.2)',
-                    borderRadius: '12px',
-                    position: 'relative',
-                    cursor: 'pointer',
-                    transition: 'all 0.3s ease'
-                  }}
-                  onClick={() => {
-                    // Update settings locally without triggering side effects
-                    setSettings(prev => ({ ...prev, useDiscordAvatar: !prev.useDiscordAvatar }))
-                  }}
-                >
-                  <div style={{
-                    width: '20px',
-                    height: '20px',
-                    background: '#ffffff',
-                    borderRadius: '10px',
-                    position: 'absolute',
-                    top: '2px',
-                    left: settings.useDiscordAvatar ? '22px' : '2px',
-                    transition: 'all 0.3s ease'
-                  }} />
-                </div>
-              </div>
-
-              {/* Discord Avatar Decoration */}
-              <div style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                borderRadius: '12px',
-                padding: '1rem',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                border: '1px solid rgba(255, 255, 255, 0.1)'
-              }}>
-                <span style={{ color: '#ffffff', fontSize: '0.95rem' }}>Discord Avatar Decoration</span>
-                <div
-                  style={{
-                    width: '44px',
-                    height: '24px',
-                    background: settings.discordAvatarDecoration ? '#58A4B0' : 'rgba(255, 255, 255, 0.2)',
-                    borderRadius: '12px',
-                    position: 'relative',
-                    cursor: 'pointer',
-                    transition: 'all 0.3s ease'
-                  }}
-                  onClick={() => {
-                    // Update settings locally without triggering side effects
-                    setSettings(prev => ({ ...prev, discordAvatarDecoration: !prev.discordAvatarDecoration }))
-                  }}
-                >
-                  <div style={{
-                    width: '20px',
-                    height: '20px',
-                    background: '#ffffff',
-                    borderRadius: '10px',
-                    position: 'absolute',
-                    top: '2px',
-                    left: settings.discordAvatarDecoration ? '22px' : '2px',
-                    transition: 'all 0.3s ease'
-                  }} />
-                </div>
-              </div>
             </div>
           </TabContent>
         </MainContent>

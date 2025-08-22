@@ -23,6 +23,7 @@ type User struct {
 	IsActive                bool      `json:"is_active" gorm:"default:true"`
 	DiscordID               *string   `json:"discord_id,omitempty" gorm:"uniqueIndex;size:50"`
 	DiscordUsername         *string   `json:"discord_username,omitempty" gorm:"size:100"`
+	DiscordAvatar           *string   `json:"discord_avatar,omitempty" gorm:"size:100"`
 	TwitterURL              *string   `json:"twitter_url,omitempty" gorm:"size:500"`
 	GithubURL               *string   `json:"github_url,omitempty" gorm:"size:500"`
 	InstagramURL            *string   `json:"instagram_url,omitempty" gorm:"size:500"`

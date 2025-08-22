@@ -12,6 +12,7 @@ import (
 	"gotchu-backend/internal/middleware"
 	"gotchu-backend/internal/models"
 	"gotchu-backend/pkg/analytics"
+	"gotchu-backend/pkg/discordbot"
 	"gotchu-backend/pkg/redis"
 	"gotchu-backend/pkg/storage"
 
@@ -26,10 +27,11 @@ type DashboardHandler struct {
 	storage     *storage.SupabaseStorage
 	config      *config.Config
 	geoService  *analytics.GeoLocationService
+	discordBot  *discordbot.DiscordBotService
 }
 
 // NewDashboardHandler creates a new dashboard handler
-func NewDashboardHandler(db *gorm.DB, redisClient *redis.Client, cfg *config.Config) *DashboardHandler {
+func NewDashboardHandler(db *gorm.DB, redisClient *redis.Client, cfg *config.Config, discordBot *discordbot.DiscordBotService) *DashboardHandler {
 	supabaseStorage := storage.NewSupabaseStorage(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey, cfg.SupabaseAnonKey)
 	return &DashboardHandler{
 		db:          db,
@@ -37,6 +39,7 @@ func NewDashboardHandler(db *gorm.DB, redisClient *redis.Client, cfg *config.Con
 		storage:     supabaseStorage,
 		config:      cfg,
 		geoService:  analytics.NewGeoLocationService(),
+		discordBot:  discordBot,
 	}
 }
 
@@ -210,8 +213,28 @@ func (h *DashboardHandler) GetUserProfile(c *gin.Context) {
 		"created_at":    user.CreatedAt,
 		"links":         links,
 		
-		// Include customization settings for public profile styling
-		"customization": gin.H{
+		// Discord data
+		"discord_id":       user.DiscordID,
+		"discord_username": user.DiscordUsername,
+		"discord_avatar":   user.DiscordAvatar,
+		"is_booster":       user.IsBooster,
+		"boosting_since":   user.BoostingSince,
+	}
+
+	// Add Discord presence data if available and user has Discord connected
+	if user.DiscordID != nil && h.discordBot != nil && h.discordBot.IsRunning() {
+		if presence, err := h.discordBot.GetUserPresence(*user.DiscordID); err == nil && presence != nil {
+			profileData["discord_presence"] = gin.H{
+				"status":      presence.Status,
+				"activities":  presence.Activities,
+				"last_seen":   presence.LastSeen,
+				"updated_at":  presence.UpdatedAt,
+			}
+		}
+	}
+	
+	// Add customization settings
+	profileData["customization"] = gin.H{
 			// Colors & Theme
 			"accent_color":     user.AccentColor,
 			"text_color":       user.TextColor,
@@ -244,6 +267,11 @@ func (h *DashboardHandler) GetUserProfile(c *gin.Context) {
 			"volume_level":   user.VolumeLevel,
 			"volume_control": user.VolumeControl,
 			
+			// Discord Integration
+			"discord_presence":          user.DiscordPresence,
+			"use_discord_avatar":        user.UseDiscordAvatar,
+			"discord_avatar_decoration": user.DiscordAvatarDecoration,
+			
 			// Asset URLs (public)
 			"background_url": getStringValue(user.BackgroundURL),
 			"audio_url":      getStringValue(user.AudioURL),
@@ -251,7 +279,6 @@ func (h *DashboardHandler) GetUserProfile(c *gin.Context) {
 			
 			// Typography
 			"text_font":      getStringValue(user.TextFont),
-		},
 	}
 
 	// Add private data if viewing own profile

@@ -743,6 +743,58 @@ const MainContent = styled.main`
         font-size: 1.1rem;
       }
     }
+    
+    .discord-connected {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .discord-user {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      background: rgba(88, 101, 242, 0.1);
+      border: 1px solid rgba(88, 101, 242, 0.2);
+      border-radius: 8px;
+    }
+    
+    .discord-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 2px solid rgba(88, 101, 242, 0.3);
+    }
+    
+    .discord-avatar-fallback {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(88, 101, 242, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid rgba(88, 101, 242, 0.3);
+    }
+    
+    .discord-info {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    
+    .discord-username {
+      color: #ffffff;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    
+    .booster-badge {
+      color: #f093fb;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
   }
 
   /* Analytics Section Styles */

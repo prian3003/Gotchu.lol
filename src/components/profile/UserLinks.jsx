@@ -147,7 +147,9 @@ const IconsGrid = styled.div`
   }
 `
 
-const IconButton = styled.button`
+const IconButton = styled.button.withConfig({
+  shouldForwardProp: (prop) => prop !== 'linkType'
+})`
   display: flex;
   align-items: center;
   justify-content: center;

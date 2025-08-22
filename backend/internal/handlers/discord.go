@@ -3,12 +3,14 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"time"
 
 	"gotchu-backend/internal/middleware"
 	"gotchu-backend/internal/models"
 	"gotchu-backend/pkg/discord"
+	"gotchu-backend/pkg/badges"
 
 	"github.com/gin-gonic/gin"
 	"gotchu-backend/pkg/redis"
@@ -20,6 +22,7 @@ type DiscordHandler struct {
 	db            *gorm.DB
 	redisClient   *redis.Client
 	discordService *discord.Service
+	badgeService  *badges.Service
 }
 
 // NewDiscordHandler creates a new Discord handler
@@ -28,6 +31,7 @@ func NewDiscordHandler(db *gorm.DB, redisClient *redis.Client, discordService *d
 		db:            db,
 		redisClient:   redisClient,
 		discordService: discordService,
+		badgeService:  badges.NewService(db),
 	}
 }
 
@@ -158,6 +162,7 @@ func (h *DiscordHandler) DiscordCallback(c *gin.Context) {
 	// Update Discord fields
 	user.DiscordID = &discordUser.ID
 	user.DiscordUsername = &discordUser.Username
+	user.DiscordAvatar = &discordUser.Avatar
 	user.DiscordLoginEnabled = true
 	user.IsBooster = isBooster
 	if boostingSince != nil {
@@ -175,6 +180,13 @@ func (h *DiscordHandler) DiscordCallback(c *gin.Context) {
 		return
 	}
 
+	// Check and award badges after Discord connection
+	go func() {
+		if err := h.badgeService.CheckAndAwardBadges(user.ID); err != nil {
+			fmt.Printf("Error checking badges after Discord connection for user %d: %v\n", user.ID, err)
+		}
+	}()
+
 	// Redirect to frontend with success
 	frontendURL := "http://localhost:5173/dashboard?discord_connected=true"
 	c.Redirect(http.StatusFound, frontendURL)
@@ -191,10 +203,11 @@ func (h *DiscordHandler) DisconnectDiscord(c *gin.Context) {
 		return
 	}
 
-	// Clear Discord fields
-	err := h.db.Model(&user).Updates(models.User{
+	// Clear Discord fields - use Select to ensure nil values are updated
+	err := h.db.Model(&user).Select("discord_id", "discord_username", "discord_avatar", "discord_login_enabled", "is_booster", "boosting_since", "use_discord_avatar", "discord_avatar_decoration", "discord_presence").Updates(models.User{
 		DiscordID:            nil,
 		DiscordUsername:      nil,
+		DiscordAvatar:        nil,
 		DiscordLoginEnabled:  false,
 		IsBooster:            false,
 		BoostingSince:        nil,
@@ -212,6 +225,12 @@ func (h *DiscordHandler) DisconnectDiscord(c *gin.Context) {
 		return
 	}
 
+	// Debug: Verify the fields were cleared
+	var updatedUser models.User
+	h.db.First(&updatedUser, user.ID)
+	fmt.Printf("DEBUG: After disconnect - User %d DiscordID: %v, Username: %v\n", 
+		updatedUser.ID, updatedUser.DiscordID, updatedUser.DiscordUsername)
+
 	c.JSON(http.StatusOK, DiscordResponse{
 		Success: true,
 		Message: "Discord account disconnected successfully",
@@ -220,7 +239,7 @@ func (h *DiscordHandler) DisconnectDiscord(c *gin.Context) {
 
 // GetDiscordStatus returns the current Discord connection status
 func (h *DiscordHandler) GetDiscordStatus(c *gin.Context) {
-	user, exists := middleware.GetCurrentUser(c)
+	contextUser, exists := middleware.GetCurrentUser(c)
 	if !exists {
 		c.JSON(http.StatusUnauthorized, DiscordResponse{
 			Success: false,
@@ -229,15 +248,32 @@ func (h *DiscordHandler) GetDiscordStatus(c *gin.Context) {
 		return
 	}
 
+	// Fetch fresh user data from database to get latest Discord info
+	var user models.User
+	err := h.db.First(&user, contextUser.ID).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, DiscordResponse{
+			Success: false,
+			Message: "Failed to fetch user data",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Debug logging
+	fmt.Printf("DEBUG: Discord status for user %d: DiscordID=%v, Username=%v, LoginEnabled=%v\n", 
+		user.ID, user.DiscordID, user.DiscordUsername, user.DiscordLoginEnabled)
+
 	var avatarURL *string
 	if user.DiscordID != nil {
-		// Get avatar URL if Discord is connected
-		// We need to fetch the avatar from Discord API or construct URL
-		// For now, we'll construct a basic URL
-		if user.UseDiscordAvatar {
-			url := h.discordService.GetAvatarURL(*user.DiscordID, "", 128)
-			avatarURL = &url
+		// Always provide Discord avatar URL when connected (regardless of UseDiscordAvatar setting)
+		// The UseDiscordAvatar setting controls whether it's used as profile avatar, not whether we can access it
+		avatarHash := ""
+		if user.DiscordAvatar != nil {
+			avatarHash = *user.DiscordAvatar
 		}
+		url := h.discordService.GetAvatarURL(*user.DiscordID, avatarHash, 128)
+		avatarURL = &url
 	}
 
 	c.JSON(http.StatusOK, DiscordResponse{
@@ -304,6 +340,13 @@ func (h *DiscordHandler) RefreshDiscordData(c *gin.Context) {
 		})
 		return
 	}
+
+	// Check and award badges after Discord data refresh
+	go func() {
+		if err := h.badgeService.CheckAndAwardBadges(user.ID); err != nil {
+			fmt.Printf("Error checking badges after Discord refresh for user %d: %v\n", user.ID, err)
+		}
+	}()
 
 	c.JSON(http.StatusOK, DiscordResponse{
 		Success: true,

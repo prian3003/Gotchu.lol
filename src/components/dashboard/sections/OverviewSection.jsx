@@ -306,30 +306,46 @@ const OverviewSection = ({ user, setUser }) => {
 
           <div className="connections">
             <h3>Connections</h3>
-            <p>
-              {discordStatus.connected 
-                ? `Connected as ${discordStatus.discord_username || 'Discord User'}${discordStatus.is_booster ? ' 🚀 Server Booster' : ''}`
-                : 'Link your Discord account to gotchu.lol'
-              }
-            </p>
             {discordStatus.connected ? (
-              <button 
-                className="connect-button disconnect" 
-                onClick={disconnectDiscord}
-                disabled={disconnecting}
-              >
-                <SimpleIconComponent iconName="discord" size={20} customColor="#ffffff" />
-                {disconnecting ? 'Disconnecting...' : 'Disconnect Discord'}
-              </button>
+              <div className="discord-connected">
+                <div className="discord-user">
+                  {discordStatus.avatar_url ? (
+                    <img 
+                      src={discordStatus.avatar_url} 
+                      alt="Discord Avatar"
+                      className="discord-avatar"
+                    />
+                  ) : (
+                    <div className="discord-avatar-fallback">
+                      <SimpleIconComponent iconName="discord" size={24} customColor="#5865f2" />
+                    </div>
+                  )}
+                  <div className="discord-info">
+                    <span className="discord-username">{discordStatus.discord_username || 'Discord User'}</span>
+                    {discordStatus.is_booster && <span className="booster-badge">🚀 Server Booster</span>}
+                  </div>
+                </div>
+                <button 
+                  className="connect-button disconnect" 
+                  onClick={disconnectDiscord}
+                  disabled={disconnecting}
+                >
+                  <SimpleIconComponent iconName="discord" size={20} customColor="#ffffff" />
+                  {disconnecting ? 'Disconnecting...' : 'Disconnect'}
+                </button>
+              </div>
             ) : (
-              <button 
-                className="connect-button" 
-                onClick={connectDiscord}
-                disabled={connecting}
-              >
-                <SimpleIconComponent iconName="discord" size={20} customColor="#ffffff" />
-                {connecting ? 'Connecting...' : 'Connect Discord'}
-              </button>
+              <>
+                <p>Link your Discord account to gotchu.lol</p>
+                <button 
+                  className="connect-button" 
+                  onClick={connectDiscord}
+                  disabled={connecting}
+                >
+                  <SimpleIconComponent iconName="discord" size={20} customColor="#ffffff" />
+                  {connecting ? 'Connecting...' : 'Connect Discord'}
+                </button>
+              </>
             )}
           </div>
         </div>

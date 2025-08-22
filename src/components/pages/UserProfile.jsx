@@ -7,7 +7,9 @@ import ParticleBackground from '../effects/ParticleBackground'
 import RainEffect from '../background_effect/RainEffect.jsx'
 import UserLinks from '../profile/UserLinks'
 import { useTheme } from '../../contexts/ThemeContext'
+import { SimpleIconComponent } from '../../utils/simpleIconsHelper.jsx'
 import logger from '../../utils/logger'
+import { useDiscordPresence } from '../../hooks/useDiscordPresence'
 
 // Custom hook for typewriter animation
 const useTypewriter = (text, speed = 100, enabled = false) => {
@@ -698,6 +700,17 @@ const UserProfile = () => {
         uid: userData.id.toString(),
         joinedDate: userData.created_at,
         profileViews: userData.profile_views || 0,
+        // Discord data
+        discord: {
+          connected: userData.discord_id !== null && userData.discord_id !== undefined,
+          discord_id: userData.discord_id,
+          discord_username: userData.discord_username,
+          is_booster: userData.is_booster || false,
+          boosting_since: userData.boosting_since,
+          avatar_url: (userData.discord_avatar && userData.discord_id) 
+            ? `https://cdn.discordapp.com/avatars/${userData.discord_id}/${userData.discord_avatar}.png?size=128` 
+            : null
+        },
         links: userData.links ? userData.links.map(link => ({
           id: link.id,
           title: link.title,
@@ -744,6 +757,11 @@ const UserProfile = () => {
           volumeLevel: userData.customization.volume_level || 50,
           volumeControl: userData.customization.volume_control ?? true,
           
+          // Discord Integration
+          discordPresence: userData.customization.discord_presence || false,
+          useDiscordAvatar: userData.customization.use_discord_avatar || false,
+          discordAvatarDecoration: userData.customization.discord_avatar_decoration || false,
+          
           // Asset URLs
           backgroundUrl: userData.customization.background_url || '',
           audioUrl: userData.customization.audio_url || '',
@@ -773,6 +791,9 @@ const UserProfile = () => {
           swapBoxColors: false,
           volumeLevel: 50,
           volumeControl: true,
+          discordPresence: false,
+          useDiscordAvatar: false,
+          discordAvatarDecoration: false,
           backgroundUrl: '',
           audioUrl: '',
           cursorUrl: '',
@@ -1258,12 +1279,18 @@ const UserProfile = () => {
       }}>
         {/* Header Section */}
         <div className="profile-header">
-          {user.avatar_url && (
+          {(user.avatar_url || (customization.useDiscordAvatar && user.discord?.avatar_url)) && (
             <div className="avatar-section">
-              <img src={user.avatar_url} alt={user.username} className="avatar" />
-              {user.is_verified && (
-                <div className="verified-badge">✓</div>
-              )}
+              <img 
+                src={customization.useDiscordAvatar && user.discord?.avatar_url ? user.discord.avatar_url : user.avatar_url} 
+                alt={user.username} 
+                className="avatar" 
+                style={{
+                  border: customization.discordAvatarDecoration && customization.useDiscordAvatar && user.discord?.avatar_url 
+                    ? '3px solid #5865f2' 
+                    : undefined
+                }}
+              />
             </div>
           )}
           
@@ -1305,6 +1332,14 @@ const UserProfile = () => {
             </div>
             
             <p className="bio">{user.bio}</p>
+            
+            {/* Discord Presence Section */}
+            {customization.discordPresence && user.discord?.connected && (
+              <DiscordPresenceSection 
+                user={user} 
+                customization={customization} 
+              />
+            )}
             
             {/* User Links Section - Inside the profile card, after badges */}
             <UserLinks username={user.username} monochromeIcons={customization.monochromeIcons} />
@@ -1855,6 +1890,192 @@ const ProfileWrapper = styled.div`
           max-width: 500px;
         }
       }
+      
+      .discord-presence {
+        background: rgba(88, 101, 242, 0.1);
+        border: 1px solid rgba(88, 101, 242, 0.2);
+        border-radius: 16px;
+        padding: 1.25rem;
+        margin-bottom: 2rem;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        transition: all 0.3s ease;
+        
+        &:hover {
+          background: rgba(88, 101, 242, 0.15);
+          border-color: rgba(88, 101, 242, 0.3);
+        }
+        
+        .discord-presence-header {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          margin-bottom: 1rem;
+          
+          .discord-presence-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #5865f2;
+          }
+          
+          .presence-loading {
+            color: #5865f2;
+            animation: blink 1s infinite;
+          }
+        }
+        
+        .discord-user-info {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.75rem;
+          
+          .discord-avatar-container {
+            position: relative;
+            display: inline-block;
+            
+            .discord-avatar-small {
+              width: 40px;
+              height: 40px;
+              border-radius: 50%;
+              border: 2px solid #5865f2;
+              object-fit: cover;
+              transition: all 0.3s ease;
+            }
+            
+            .discord-status-indicator {
+              position: absolute;
+              bottom: -2px;
+              right: -2px;
+              width: 14px;
+              height: 14px;
+              border-radius: 50%;
+              border: 3px solid rgba(0, 0, 0, 0.8);
+              transition: all 0.3s ease;
+              
+              &.online {
+                background-color: #43b581;
+              }
+              
+              &.idle {
+                background-color: #faa61a;
+              }
+              
+              &.dnd {
+                background-color: #f04747;
+              }
+              
+              &.offline {
+                background-color: #747f8d;
+              }
+            }
+          }
+          
+          .discord-user-details {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            flex: 1;
+            
+            .discord-username-row {
+              display: flex;
+              align-items: center;
+              gap: 0.5rem;
+              flex-wrap: wrap;
+              
+              .discord-username {
+                font-size: 0.95rem;
+                font-weight: 600;
+                color: ${props => props.customization?.textColor || '#ffffff'};
+              }
+              
+              .discord-status-text {
+                font-size: 0.8rem;
+                font-weight: 500;
+                opacity: 0.9;
+              }
+            }
+            
+            .discord-activity {
+              display: flex;
+              align-items: center;
+              gap: 0.3rem;
+              font-size: 0.85rem;
+              color: ${props => props.customization?.textColor ? `${props.customization.textColor}CC` : 'rgba(255, 255, 255, 0.8)'};
+              
+              .activity-prefix {
+                font-weight: 500;
+              }
+              
+              .activity-name {
+                font-weight: 600;
+                color: ${props => props.customization?.textColor || '#ffffff'};
+              }
+            }
+            
+            .discord-booster-badge {
+              font-size: 0.8rem;
+              color: #f093fb;
+              font-weight: 500;
+            }
+            
+            .discord-last-seen {
+              font-size: 0.75rem;
+              color: ${props => props.customization?.textColor ? `${props.customization.textColor}99` : 'rgba(255, 255, 255, 0.6)'};
+              font-style: italic;
+            }
+          }
+        }
+        
+        @media (max-width: 768px) {
+          padding: 1rem;
+          margin-bottom: 1.5rem;
+          
+          .discord-presence-header {
+            .discord-presence-title {
+              font-size: 0.9rem;
+            }
+          }
+          
+          .discord-user-info {
+            .discord-avatar-container {
+              .discord-avatar-small {
+                width: 36px;
+                height: 36px;
+              }
+              
+              .discord-status-indicator {
+                width: 12px;
+                height: 12px;
+                border-width: 2px;
+              }
+            }
+            
+            .discord-user-details {
+              .discord-username-row {
+                .discord-username {
+                  font-size: 0.85rem;
+                }
+                
+                .discord-status-text {
+                  font-size: 0.75rem;
+                }
+              }
+              
+              .discord-activity {
+                font-size: 0.8rem;
+              }
+              
+              .discord-booster-badge {
+                font-size: 0.75rem;
+              }
+              
+              .discord-last-seen {
+                font-size: 0.7rem;
+              }
+            }
+          }
+        }
+      }
     }
     
     .user-badges {
@@ -1999,5 +2220,92 @@ const ProfileWrapper = styled.div`
   }
 
 `
+
+// Discord Presence Component with Real-time Status
+const DiscordPresenceSection = ({ user, customization }) => {
+  // Use Discord presence hook for real-time status updates
+  const {
+    presence,
+    loading,
+    error,
+    getStatusDisplay,
+    getActivityDisplay,
+    formatLastSeen,
+    isPresenceRecent
+  } = useDiscordPresence(user.discord?.discord_id)
+
+  // Get status display information
+  const statusDisplay = presence?.status ? getStatusDisplay(presence.status) : null
+  const activity = presence?.activities?.[0] // Get primary activity
+  const activityDisplay = activity ? getActivityDisplay(activity) : null
+  const isOnline = presence?.status && presence.status !== 'offline'
+  const isRecent = presence?.updated_at ? isPresenceRecent(presence.updated_at) : false
+
+  return (
+    <div className="discord-presence">
+      <div className="discord-presence-header">
+        <SimpleIconComponent iconName="discord" size={20} customColor="#5865f2" />
+        <span className="discord-presence-title">Discord Presence</span>
+        {loading && <span className="presence-loading">•</span>}
+      </div>
+      
+      <div className="discord-user-info">
+        <div className="discord-avatar-container">
+          {user.discord.avatar_url && (
+            <img 
+              src={user.discord.avatar_url} 
+              alt="Discord Avatar" 
+              className="discord-avatar-small"
+            />
+          )}
+          {/* Status Indicator */}
+          {statusDisplay && (
+            <div 
+              className={`discord-status-indicator ${presence.status}`}
+              style={{ 
+                backgroundColor: statusDisplay.color,
+                boxShadow: isRecent ? `0 0 8px ${statusDisplay.color}` : 'none'
+              }}
+              title={`${statusDisplay.text} - ${statusDisplay.description}`}
+            />
+          )}
+        </div>
+        
+        <div className="discord-user-details">
+          <div className="discord-username-row">
+            <span className="discord-username">{user.discord.discord_username}</span>
+            {statusDisplay && (
+              <span className="discord-status-text" style={{ color: statusDisplay.color }}>
+                {statusDisplay.text}
+              </span>
+            )}
+          </div>
+          
+          {/* Activity Display */}
+          {activityDisplay && isOnline && (
+            <div className="discord-activity">
+              <span className="activity-prefix">{activityDisplay.prefix}</span>
+              <span className="activity-name">{activityDisplay.name}</span>
+            </div>
+          )}
+          
+          {/* Server Booster Badge */}
+          {user.discord.is_booster && (
+            <span className="discord-booster-badge">
+              🚀 Server Booster
+            </span>
+          )}
+          
+          {/* Last Seen for Offline Users */}
+          {presence?.status === 'offline' && presence?.last_seen && (
+            <span className="discord-last-seen">
+              Last seen {formatLastSeen(presence.last_seen)}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default UserProfile
