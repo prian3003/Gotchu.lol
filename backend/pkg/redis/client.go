@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -25,16 +26,19 @@ type SessionData struct {
 }
 
 type UserCache struct {
-	ID          uint      `json:"id"`
-	Username    string    `json:"username"`
-	Email       string    `json:"email"`
-	DisplayName *string   `json:"display_name"`
-	AvatarURL   *string   `json:"avatar_url"`
-	IsVerified  bool      `json:"is_verified"`
-	Plan        string    `json:"plan"`
-	Theme       string    `json:"theme"`
-	IsActive    bool      `json:"is_active"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID           uint      `json:"id"`
+	Username     string    `json:"username"`
+	Email        string    `json:"email"`
+	DisplayName  *string   `json:"display_name"`
+	AvatarURL    *string   `json:"avatar_url"`
+	IsVerified   bool      `json:"is_verified"`
+	Plan         string    `json:"plan"`
+	Theme        string    `json:"theme"`
+	IsActive     bool      `json:"is_active"`
+	ProfileViews int       `json:"profile_views"`
+	TotalClicks  int       `json:"total_clicks"`
+	MfaEnabled   bool      `json:"mfa_enabled"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type RateLimitResult struct {
@@ -44,7 +48,7 @@ type RateLimitResult struct {
 	Exceeded  bool `json:"exceeded"`
 }
 
-// NewClient creates a new Redis client
+// NewClient creates a new Redis client (traditional Redis)
 func NewClient(host, port, password, username string, db int) (*Client, error) {
 	portInt, err := strconv.Atoi(port)
 	if err != nil {
@@ -70,6 +74,41 @@ func NewClient(host, port, password, username string, db int) (*Client, error) {
 	_, err = rdb.Ping(ctx).Result()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Redis: %v", err)
+	}
+
+	return &Client{
+		rdb: rdb,
+		ctx: ctx,
+	}, nil
+}
+
+// NewUpstashClient creates a new Upstash Redis client
+func NewUpstashClient(redisURL, token string) (*Client, error) {
+	// Parse Upstash Redis URL to extract connection details
+	// Upstash URL format: https://your-endpoint.upstash.io
+	// We'll use redis-go with TLS and authentication
+	
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     redisURL[8:] + ":6379", // Remove https:// and add port
+		Password: token,
+		DB:       0,
+		TLSConfig: &tls.Config{
+			ServerName: redisURL[8:], // Remove https://
+		},
+		MaxRetries:   3,
+		DialTimeout:  10 * time.Second,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
+		PoolSize:     20,
+		MinIdleConns: 5,
+	})
+
+	ctx := context.Background()
+
+	// Test connection
+	_, err := rdb.Ping(ctx).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Upstash Redis: %v", err)
 	}
 
 	return &Client{

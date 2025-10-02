@@ -2,6 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import logger from '../../utils/logger'
 
+// Global flag to prevent multiple concurrent dashboard fetches
+let globalDashboardFetching = false
+
 export const useDashboard = (defaultSection = 'profile') => {
   const { logout } = useAuth()
   
@@ -41,98 +44,13 @@ export const useDashboard = (defaultSection = 'profile') => {
     setActiveSection(defaultSection)
   }, [defaultSection])
   
-  // Fetch dashboard data on mount
-  useEffect(() => {
-    fetchDashboardData()
-  }, [])
-  
-  const fetchDashboardData = async () => {
+  // Define fetchLinks with useCallback to avoid dependency issues
+  const fetchLinks = useCallback(async () => {
     try {
-      setIsLoading(true)
-      setError(null)
-      
-      const token = localStorage.getItem('token')
-      const sessionId = localStorage.getItem('sessionId')
-      
-      if (!token && !sessionId) {
-        throw new Error('No authentication found')
-      }
-
-      // Fetch real dashboard data from backend API
-      const response = await fetch('/api/dashboard', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || '',
-        },
-      })
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Clear auth tokens and redirect to login
-          localStorage.removeItem('token')
-          localStorage.removeItem('sessionId')
-          window.location.href = '/signin'
-          return
-        }
-        throw new Error('Failed to load dashboard data')
-      }
-
-      const data = await response.json()
-      
-      if (!data.success) {
-        throw new Error(data.message || 'Failed to load dashboard data')
-      }
-
-      const { user: userData } = data.data
-
-      // Map API response to expected format
-      const mappedUser = {
-        id: userData.id,
-        username: userData.username || 'User',
-        email: userData.email,
-        displayName: userData.display_name,
-        alias: userData.alias,
-        uid: userData.uid || userData.id,
-        profileViews: userData.profile_views || 0,
-        profileCompletion: userData.profile_completion || 50,
-        joinedDate: userData.created_at,
-        isPremium: userData.is_premium || false,
-        plan: userData.plan || 'free',
-        settings: userData.settings || {}
-      }
-
-      setUser(mappedUser)
-      setIsLoading(false)
-    } catch (error) {
-      logger.error('Error fetching dashboard data:', error)
-      setError(error.message)
-      setIsLoading(false)
-      
-      if (error.message === 'No authentication found') {
-        window.location.href = '/signin'
-      }
-    }
-  }
-  
-  // Fetch links when links section is active
-  useEffect(() => {
-    if (activeSection === 'links') {
-      fetchLinks()
-    }
-  }, [activeSection])
-  
-  const fetchLinks = async () => {
-    try {
-      const token = localStorage.getItem('token')
-      const sessionId = localStorage.getItem('sessionId')
-      
       const response = await fetch('http://localhost:8080/api/links', {
+        credentials: 'include', // Use httpOnly cookies for auth
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || ''
+          'Content-Type': 'application/json'
         }
       })
       
@@ -149,29 +67,121 @@ export const useDashboard = (defaultSection = 'profile') => {
     } catch (error) {
       logger.error('Error fetching links:', error)
     }
+  }, [])
+
+  // Fetch dashboard data on mount
+  useEffect(() => {
+    fetchDashboardData()
+    fetchLinks() // Also fetch links on mount for profile completion
+  }, [fetchLinks])
+  
+  const fetchDashboardData = async () => {
+    if (globalDashboardFetching) return // Prevent multiple concurrent calls
+    
+    try {
+      globalDashboardFetching = true
+      setIsLoading(true)
+      setError(null)
+
+      // Fetch real dashboard data from backend API using cookies
+      const response = await fetch('http://localhost:8080/api/dashboard', {
+        method: 'GET',
+        credentials: 'include', // Use httpOnly cookies for auth
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Redirect to login for unauthorized access
+          logout()
+          return
+        }
+        throw new Error('Failed to load dashboard data')
+      }
+
+      const data = await response.json()
+      
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to load dashboard data')
+      }
+
+      const { user: userData } = data.data
+      
+      // Debug: Log the raw user data from backend
+      console.log('Raw userData from backend:', userData)
+      console.log('MFA enabled from backend:', userData.mfa_enabled)
+
+      // Map API response to expected format
+      const mappedUser = {
+        id: userData.id,
+        username: userData.username || 'User',
+        email: userData.email,
+        displayName: userData.display_name,
+        bio: userData.bio,
+        alias: userData.alias,
+        avatarUrl: userData.avatar_url,
+        avatar_url: userData.avatar_url,
+        uid: userData.uid || userData.id,
+        profileViews: userData.profile_views || 0,
+        profileCompletion: userData.profile_completion || 50,
+        joinedDate: userData.created_at,
+        isPremium: userData.is_premium || false,
+        plan: userData.plan || 'free',
+        mfaEnabled: userData.mfa_enabled || false,
+        twoFactorEnabled: userData.mfa_enabled || false,
+        settings: userData.settings || {},
+        // Discord data
+        discord: {
+          connected: !!userData.discord_id,
+          discord_id: userData.discord_id,
+          discord_username: userData.discord_username,
+          discord_avatar: userData.discord_avatar,
+          avatar_url: userData.discord_id && userData.discord_avatar ? 
+            `https://cdn.discordapp.com/avatars/${userData.discord_id}/${userData.discord_avatar}.png?size=128` : 
+            userData.discord_id ? `https://cdn.discordapp.com/embed/avatars/${(parseInt(userData.discord_id) % 5)}.png` : null,
+          is_booster: userData.is_booster || false,
+          boosting_since: userData.boosting_since || null,
+          presence: userData.discord_presence || null
+        }
+      }
+
+      setUser(mappedUser)
+      setIsLoading(false)
+    } catch (error) {
+      logger.error('Error fetching dashboard data:', error)
+      setError(error.message)
+      setIsLoading(false)
+      
+      if (error.message === 'No authentication found') {
+        logout()
+      }
+    } finally {
+      globalDashboardFetching = false
+    }
   }
+  
+  // Fetch links when links section is active
+  useEffect(() => {
+    if (activeSection === 'links') {
+      fetchLinks()
+    }
+  }, [activeSection, fetchLinks])
   
   // Handle account logout
   const handleLogout = useCallback(async () => {
     try {
-      const sessionId = localStorage.getItem('sessionId')
-      const authToken = localStorage.getItem('token')
-      
-      if (sessionId) {
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`,
-            'X-Session-ID': sessionId
-          }
-        })
-      }
+      await fetch('http://localhost:8080/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include', // Use httpOnly cookies for auth
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
     } catch (error) {
       logger.error('Logout request failed:', error)
     } finally {
-      localStorage.removeItem('sessionId')
-      localStorage.removeItem('token')
       logout()
     }
   }, [logout])
@@ -201,11 +211,11 @@ export const useDashboard = (defaultSection = 'profile') => {
     if (!window.confirm('Are you sure you want to delete this link?')) return
     
     try {
-      const sessionId = localStorage.getItem('sessionId')
-      const response = await fetch(`/api/links/${linkId}`, {
+      const response = await fetch(`http://localhost:8080/api/links/${linkId}`, {
         method: 'DELETE',
+        credentials: 'include', // Use httpOnly cookies for auth
         headers: {
-          'X-Session-ID': sessionId
+          'Content-Type': 'application/json'
         }
       })
       
@@ -226,12 +236,11 @@ export const useDashboard = (defaultSection = 'profile') => {
       const link = userLinks.find(l => l.id === linkId)
       if (!link) return
       
-      const sessionId = localStorage.getItem('sessionId')
-      const response = await fetch(`/api/links/${linkId}`, {
+      const response = await fetch(`http://localhost:8080/api/links/${linkId}`, {
         method: 'PUT',
+        credentials: 'include', // Use httpOnly cookies for auth
         headers: {
-          'Content-Type': 'application/json',
-          'X-Session-ID': sessionId
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           ...link,
@@ -259,15 +268,14 @@ export const useDashboard = (defaultSection = 'profile') => {
     }
     
     try {
-      const sessionId = localStorage.getItem('sessionId')
       const method = editingLink ? 'PUT' : 'POST'
-      const url = editingLink ? `/api/links/${editingLink.id}` : '/api/links'
+      const url = editingLink ? `http://localhost:8080/api/links/${editingLink.id}` : 'http://localhost:8080/api/links'
       
       const response = await fetch(url, {
         method,
+        credentials: 'include', // Use httpOnly cookies for auth
         headers: {
-          'Content-Type': 'application/json',
-          'X-Session-ID': sessionId
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(currentLink)
       })
@@ -314,12 +322,9 @@ export const useDashboard = (defaultSection = 'profile') => {
     formData.append('file', file)
     
     try {
-      const sessionId = localStorage.getItem('sessionId')
-      const response = await fetch('/api/upload/icon', {
+      const response = await fetch('http://localhost:8080/api/upload/icon', {
         method: 'POST',
-        headers: {
-          'X-Session-ID': sessionId
-        },
+        credentials: 'include', // Use httpOnly cookies for auth
         body: formData
       })
       
@@ -382,6 +387,7 @@ export const useDashboard = (defaultSection = 'profile') => {
     handleCloseModal,
     handleIconUpload,
     handlePreviewLink,
-    fetchLinks
+    fetchLinks,
+    fetchDashboardData
   }
 }

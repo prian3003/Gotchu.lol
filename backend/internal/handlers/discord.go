@@ -182,7 +182,7 @@ func (h *DiscordHandler) DiscordCallback(c *gin.Context) {
 
 	// Check and award badges after Discord connection
 	go func() {
-		if err := h.badgeService.CheckAndAwardBadges(user.ID); err != nil {
+		if _, err := h.badgeService.CheckAndMarkClaimable(user.ID); err != nil {
 			fmt.Printf("Error checking badges after Discord connection for user %d: %v\n", user.ID, err)
 		}
 	}()
@@ -343,7 +343,7 @@ func (h *DiscordHandler) RefreshDiscordData(c *gin.Context) {
 
 	// Check and award badges after Discord data refresh
 	go func() {
-		if err := h.badgeService.CheckAndAwardBadges(user.ID); err != nil {
+		if _, err := h.badgeService.CheckAndMarkClaimable(user.ID); err != nil {
 			fmt.Printf("Error checking badges after Discord refresh for user %d: %v\n", user.ID, err)
 		}
 	}()

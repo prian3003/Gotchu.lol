@@ -3,7 +3,7 @@ import styled from 'styled-components'
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import { HiBars3 } from 'react-icons/hi2'
 import { RiDashboardLine, RiBrushLine, RiLinksLine, RiVipCrownLine, RiAppsLine } from 'react-icons/ri'
-import { HiHome, HiChartBar, HiShieldCheck, HiAdjustmentsHorizontal } from 'react-icons/hi2'
+import { HiHome, HiChartBar, HiShieldCheck, HiAdjustmentsHorizontal, HiQuestionMarkCircle } from 'react-icons/hi2'
 
 // Components
 import ParticleBackground from '../effects/ParticleBackground'
@@ -53,8 +53,14 @@ const Dashboard = ({ defaultSection = 'overview' }) => {
     
     // Actions
     handleLogout,
-    fetchLinks
+    fetchLinks,
+    fetchDashboardData
   } = useDashboard(currentSection)
+
+  // Function to refresh user data after MFA operations
+  const refreshUserData = useCallback(() => {
+    fetchDashboardData()
+  }, [fetchDashboardData])
 
   // Function to handle section changes with URL updates
   const handleSectionChange = useCallback((sectionId) => {
@@ -199,7 +205,7 @@ const Dashboard = ({ defaultSection = 'overview' }) => {
         
         {/* Content Sections */}
         {activeSection === 'overview' && (
-          <OverviewSection user={user} setUser={setUser} />
+          <OverviewSection user={user} setUser={setUser} userLinks={userLinks} />
         )}
 
         {activeSection === 'customize' && (
@@ -231,7 +237,7 @@ const Dashboard = ({ defaultSection = 'overview' }) => {
         )}
 
         {activeSection === 'settings' && (
-          <SettingsSection user={user} />
+          <SettingsSection user={user} onUserUpdate={refreshUserData} />
         )}
       </MainContent>
 

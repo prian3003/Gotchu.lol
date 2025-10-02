@@ -38,6 +38,7 @@ type UserBadgeDisplay struct {
 	ID            string                 `json:"id"`
 	Badge         BadgeInfo              `json:"badge"`
 	IsEarned      bool                   `json:"is_earned"`
+	IsClaimable   bool                   `json:"is_claimable"`
 	Progress      float64                `json:"progress"`
 	CurrentValue  float64                `json:"current_value"`
 	TargetValue   float64                `json:"target_value"`
@@ -120,6 +121,7 @@ func (h *BadgesHandler) GetUserBadges(c *gin.Context) {
 		displayBadges[i] = UserBadgeDisplay{
 			ID:            ub.ID,
 			IsEarned:      ub.IsEarned,
+			IsClaimable:   ub.IsClaimable,
 			Progress:      ub.Progress,
 			CurrentValue:  ub.CurrentValue,
 			TargetValue:   ub.TargetValue,
@@ -217,6 +219,7 @@ func (h *BadgesHandler) GetShowcasedBadges(c *gin.Context) {
 		displayBadges[i] = UserBadgeDisplay{
 			ID:            ub.ID,
 			IsEarned:      ub.IsEarned,
+			IsClaimable:   ub.IsClaimable,
 			Progress:      ub.Progress,
 			CurrentValue:  ub.CurrentValue,
 			TargetValue:   ub.TargetValue,
@@ -461,7 +464,7 @@ func countEarnedBadges(badges []UserBadgeDisplay) int {
 	return count
 }
 
-// CheckBadges triggers badge checking for the current user
+// CheckBadges triggers badge checking for the current user (now marks as claimable instead of auto-awarding)
 func (h *BadgesHandler) CheckBadges(c *gin.Context) {
 	user, exists := middleware.GetCurrentUser(c)
 	if !exists {
@@ -472,8 +475,9 @@ func (h *BadgesHandler) CheckBadges(c *gin.Context) {
 		return
 	}
 
-	// Check and award badges for this user
-	if err := h.badgeService.CheckAndAwardBadges(user.ID); err != nil {
+	// Check and mark badges as claimable for this user
+	claimableCount, err := h.badgeService.CheckAndMarkClaimable(user.ID)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, BadgeResponse{
 			Success: false,
 			Message: "Failed to check badges",
@@ -485,6 +489,46 @@ func (h *BadgesHandler) CheckBadges(c *gin.Context) {
 	c.JSON(http.StatusOK, BadgeResponse{
 		Success: true,
 		Message: "Badges checked successfully",
+		Data: gin.H{
+			"claimable_count": claimableCount,
+		},
+	})
+}
+
+// ClaimBadge allows a user to claim a badge they've met the requirements for
+func (h *BadgesHandler) ClaimBadge(c *gin.Context) {
+	user, exists := middleware.GetCurrentUser(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, BadgeResponse{
+			Success: false,
+			Message: "Authentication required",
+		})
+		return
+	}
+
+	badgeID := c.Param("badgeId")
+	if badgeID == "" {
+		c.JSON(http.StatusBadRequest, BadgeResponse{
+			Success: false,
+			Message: "Badge ID is required",
+		})
+		return
+	}
+
+	// Claim the badge
+	err := h.badgeService.ClaimBadge(user.ID, badgeID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, BadgeResponse{
+			Success: false,
+			Message: "Failed to claim badge",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, BadgeResponse{
+		Success: true,
+		Message: "Badge claimed successfully",
 	})
 }
 

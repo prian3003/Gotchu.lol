@@ -3,14 +3,13 @@ package database
 import (
 	"fmt"
 	"log"
-	"os"
 	"time"
 
+	"gotchu-backend/internal/middleware"
 	"gotchu-backend/internal/models"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 // Config represents database configuration
@@ -26,26 +25,21 @@ type Config struct {
 
 // NewConnection creates a new database connection
 func NewConnection(databaseURL string) (*gorm.DB, error) {
-	// Configure GORM logger
-	newLogger := logger.New(
-		log.New(os.Stdout, "\r\n", log.LstdFlags),
-		logger.Config{
-			SlowThreshold:             time.Second,
-			LogLevel:                  logger.Warn, // Only show warnings and errors
-			IgnoreRecordNotFoundError: true,
-			Colorful:                  true,
-		},
-	)
+	// Initialize performance monitoring
+	middleware.InitializePerformanceLogging()
+	
+	// Configure performance monitoring logger
+	performanceLogger := middleware.NewPerformanceMonitor(100 * time.Millisecond)
 
-	// Configure PostgreSQL connection to disable prepared statement caching
+	// Configure PostgreSQL connection for maximum performance
 	config := postgres.Config{
 		DSN:                  databaseURL,
-		PreferSimpleProtocol: true, // Disable prepared statements
+		PreferSimpleProtocol: false, // Enable prepared statements for performance
 	}
 
-	// Open database connection
+	// Open database connection with performance monitoring
 	db, err := gorm.Open(postgres.New(config), &gorm.Config{
-		Logger: newLogger,
+		Logger: performanceLogger, // Use performance monitoring logger
 		NowFunc: func() time.Time {
 			return time.Now().UTC()
 		},
@@ -61,11 +55,11 @@ func NewConnection(databaseURL string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to get underlying sql.DB: %v", err)
 	}
 
-	// Set connection pool settings optimized for Supabase
-	sqlDB.SetMaxIdleConns(5)      // Reduced for pgbouncer
-	sqlDB.SetMaxOpenConns(20)     // Reduced for pgbouncer
-	sqlDB.SetConnMaxLifetime(5 * time.Minute) // Shorter lifetime for pooled connections
-	sqlDB.SetConnMaxIdleTime(2 * time.Minute) // Close idle connections faster
+	// Set connection pool settings optimized for production performance
+	sqlDB.SetMaxIdleConns(25)     // Increased for better performance
+	sqlDB.SetMaxOpenConns(100)    // Increased for high throughput
+	sqlDB.SetConnMaxLifetime(30 * time.Minute) // Longer lifetime for efficiency
+	sqlDB.SetConnMaxIdleTime(15 * time.Minute) // Balanced idle timeout
 
 	// Test connection
 	if err := sqlDB.Ping(); err != nil {
@@ -127,6 +121,25 @@ func AutoMigrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to migrate badge models: %v", err)
 	}
 
+	// Payment models - drop and recreate tables to fix constraints
+	db.Exec("DROP TABLE IF EXISTS payment_refunds CASCADE;")
+	db.Exec("DROP TABLE IF EXISTS payment_webhooks CASCADE;")
+	db.Exec("DROP TABLE IF EXISTS subscriptions CASCADE;")
+	db.Exec("DROP TABLE IF EXISTS pricing_plans CASCADE;")
+	db.Exec("DROP TABLE IF EXISTS payments CASCADE;")
+	
+	// Drop the old unique index if it exists
+	db.Exec("DROP INDEX IF EXISTS idx_payments_payment_id;")
+	
+	err = db.AutoMigrate(
+		&models.Payment{},
+		&models.PaymentHistory{},
+		&models.PaymentWebhook{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to migrate payment models: %v", err)
+	}
+
 	// Create indexes for better performance
 	err = createIndexes(db)
 	if err != nil {
@@ -145,6 +158,8 @@ func createIndexes(db *gorm.DB) error {
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_email_lower ON users (LOWER(email));",
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_created_at_desc ON users (created_at DESC);",
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_plan_active ON users (plan, is_active);",
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_username_alias_active ON users (username, alias, is_active);",
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_alias_active ON users (alias, is_active) WHERE alias IS NOT NULL;",
 
 		// Link indexes
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_links_user_active_order ON links (user_id, is_active, \"order\");",
@@ -171,6 +186,16 @@ func createIndexes(db *gorm.DB) error {
 		// Badge indexes
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_badges_user_earned ON user_badges (user_id, is_earned);",
 		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_badges_earned_at_desc ON user_badges (earned_at DESC);",
+
+		// Payment indexes
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_payments_user_status_created ON payments (user_id, status, created_at DESC);",
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_payments_order_id ON payments (order_id);",
+		"CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_payments_payment_id_unique ON payments (payment_id) WHERE payment_id != '' AND payment_id IS NOT NULL;",
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_payments_status_created ON payments (status, created_at DESC);",
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_payment_webhooks_payment_id ON payment_webhooks (payment_id);",
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_subscriptions_user_active ON subscriptions (user_id, status);",
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_subscriptions_expires_at ON subscriptions (expires_at);",
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_subscriptions_plan_status ON subscriptions (plan_type, status);",
 	}
 
 	for _, indexSQL := range indexes {
@@ -289,7 +314,7 @@ func seedBadges(db *gorm.DB) error {
 		{
 			ID:              "staff",
 			Name:            "Staff",
-			Description:     "Be a part of the guns.lol staff team.",
+			Description:     "Be a part of the gotchu.lol staff team.",
 			Category:        models.BadgeCategoryStaff,
 			Rarity:          models.BadgeRarityLegendary,
 			IconType:        models.BadgeIconTypeLucide,
@@ -357,7 +382,7 @@ func seedBadges(db *gorm.DB) error {
 		{
 			ID:              "donor",
 			Name:            "Donor",
-			Description:     "Donate atleast 10€ to guns.lol.",
+			Description:     "Donate atleast 10€ to gotchu.lol.",
 			Category:        models.BadgeCategoryAchievement,
 			Rarity:          models.BadgeRarityRare,
 			IconType:        models.BadgeIconTypeLucide,
@@ -374,7 +399,7 @@ func seedBadges(db *gorm.DB) error {
 		{
 			ID:              "og",
 			Name:            "OG",
-			Description:     "Be an early supporter of guns.lol.",
+			Description:     "Be an early supporter of gotchu.lol.",
 			Category:        models.BadgeCategoryMilestone,
 			Rarity:          models.BadgeRarityLegendary,
 			IconType:        models.BadgeIconTypeLucide,
@@ -391,7 +416,7 @@ func seedBadges(db *gorm.DB) error {
 		{
 			ID:              "gifter",
 			Name:            "Gifter",
-			Description:     "Gift a guns.lol product to another user.",
+			Description:     "Gift a gotchu.lol product to another user.",
 			Category:        models.BadgeCategorySocial,
 			Rarity:          models.BadgeRarityUncommon,
 			IconType:        models.BadgeIconTypeLucide,
@@ -408,7 +433,7 @@ func seedBadges(db *gorm.DB) error {
 		{
 			ID:              "serverbooster",
 			Name:            "Server Booster",
-			Description:     "Boost the guns.lol discord server.",
+			Description:     "Boost the gotchu.lol discord server.",
 			Category:        models.BadgeCategorySocial,
 			Rarity:          models.BadgeRarityEpic,
 			IconType:        models.BadgeIconTypeLucide,
@@ -425,7 +450,7 @@ func seedBadges(db *gorm.DB) error {
 		{
 			ID:              "winner",
 			Name:            "Winner",
-			Description:     "Win a guns.lol event.",
+			Description:     "Win a gotchu.lol event.",
 			Category:        models.BadgeCategoryAchievement,
 			Rarity:          models.BadgeRarityEpic,
 			IconType:        models.BadgeIconTypeLucide,
@@ -442,7 +467,7 @@ func seedBadges(db *gorm.DB) error {
 		{
 			ID:              "secondplace",
 			Name:            "Second Place",
-			Description:     "Get second place in a guns.lol event.",
+			Description:     "Get second place in a gotchu.lol event.",
 			Category:        models.BadgeCategoryAchievement,
 			Rarity:          models.BadgeRarityRare,
 			IconType:        models.BadgeIconTypeLucide,
@@ -459,7 +484,7 @@ func seedBadges(db *gorm.DB) error {
 		{
 			ID:              "thirdplace",
 			Name:            "Third Place",
-			Description:     "Get third place in a guns.lol event.",
+			Description:     "Get third place in a gotchu.lol event.",
 			Category:        models.BadgeCategoryAchievement,
 			Rarity:          models.BadgeRarityRare,
 			IconType:        models.BadgeIconTypeLucide,
@@ -493,7 +518,7 @@ func seedBadges(db *gorm.DB) error {
 		{
 			ID:              "bughunter",
 			Name:            "Bug Hunter",
-			Description:     "Report a bug to the guns.lol team.",
+			Description:     "Report a bug to the gotchu.lol team.",
 			Category:        models.BadgeCategoryAchievement,
 			Rarity:          models.BadgeRarityUncommon,
 			IconType:        models.BadgeIconTypeLucide,
@@ -542,30 +567,32 @@ func seedBadges(db *gorm.DB) error {
 			IsLimited:       true,
 		},
 		
-		// Additional common badges
+		// Additional common badges (using existing UUIDs from database)
 		{
-			ID:              "welcome",
+			ID:              "53b134ed-63d0-4279-9df2-3e0255b08945",
 			Name:            "Welcome",
-			Description:     "Welcome to guns.lol! Awarded when you create your account.",
+			Description:     "Welcome to gotchu.lol! Awarded when you create your account.",
 			Category:        models.BadgeCategoryMilestone,
 			Rarity:          models.BadgeRarityCommon,
-			IconType:        models.BadgeIconTypeEmoji,
-			IconValue:       "👋",
+			IconType:        models.BadgeIconTypeLucide,
+			IconValue:       "user-plus",
+			IconColor:       stringPtr("#10b981"),
 			RequirementType: models.RequirementTypeManual,
-			RequirementData: `{"type": "account_created"}`,
+			RequirementData: `{"welcome": true}`,
 			PointsAwarded:   10,
 			DisplayOrder:    16,
 			IsActive:        true,
 		},
 		
 		{
-			ID:              "firstlink",
+			ID:              "4b228ac5-e068-457d-92d0-56257b647d05",
 			Name:            "First Link",
 			Description:     "Added your first link to your profile.",
 			Category:        models.BadgeCategoryMilestone,
 			Rarity:          models.BadgeRarityCommon,
-			IconType:        models.BadgeIconTypeEmoji,
-			IconValue:       "🔗",
+			IconType:        models.BadgeIconTypeLucide,
+			IconValue:       "link",
+			IconColor:       stringPtr("#3b82f6"),
 			RequirementType: models.RequirementTypeLinkCount,
 			RequirementData: `{"threshold": 1}`,
 			PointsAwarded:   15,
@@ -574,17 +601,34 @@ func seedBadges(db *gorm.DB) error {
 		},
 		
 		{
-			ID:              "popular",
+			ID:              "3587abfa-a4f2-49eb-a7c7-ba1bc84179c2",
 			Name:            "Popular",
 			Description:     "Your profile has been viewed 100 times.",
 			Category:        models.BadgeCategoryEngagement,
 			Rarity:          models.BadgeRarityUncommon,
-			IconType:        models.BadgeIconTypeEmoji,
-			IconValue:       "👀",
+			IconType:        models.BadgeIconTypeLucide,
+			IconValue:       "eye",
+			IconColor:       stringPtr("#f59e0b"),
 			RequirementType: models.RequirementTypeProfileViews,
 			RequirementData: `{"threshold": 100}`,
 			PointsAwarded:   50,
 			DisplayOrder:    18,
+			IsActive:        true,
+		},
+		
+		{
+			ID:              "a637c430-3482-4408-839a-9c8fb64f7286",
+			Name:            "Verified",
+			Description:     "Your account has been verified.",
+			Category:        models.BadgeCategoryAchievement,
+			Rarity:          models.BadgeRarityRare,
+			IconType:        models.BadgeIconTypeLucide,
+			IconValue:       "badge-check",
+			IconColor:       stringPtr("#06b6d4"),
+			RequirementType: models.RequirementTypeManual,
+			RequirementData: `{"verified": true}`,
+			PointsAwarded:   200,
+			DisplayOrder:    4,
 			IsActive:        true,
 		},
 	}

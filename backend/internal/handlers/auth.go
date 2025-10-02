@@ -5,11 +5,13 @@ import (
 	"encoding/base32"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"gotchu-backend/internal/config"
 	"gotchu-backend/internal/middleware"
 	"gotchu-backend/internal/models"
 	"gotchu-backend/pkg/auth"
@@ -18,6 +20,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/pquerna/otp/totp"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"gorm.io/gorm"
 )
 
@@ -29,10 +33,11 @@ type AuthHandler struct {
 	authMiddleware *middleware.AuthMiddleware
 	emailService   *email.Service
 	siteURL        string
+	config         *config.Config
 }
 
 // NewAuthHandler creates a new auth handler
-func NewAuthHandler(db *gorm.DB, authService *auth.Service, redisClient *redis.Client, authMiddleware *middleware.AuthMiddleware, emailService *email.Service, siteURL string) *AuthHandler {
+func NewAuthHandler(db *gorm.DB, authService *auth.Service, redisClient *redis.Client, authMiddleware *middleware.AuthMiddleware, emailService *email.Service, siteURL string, cfg *config.Config) *AuthHandler {
 	return &AuthHandler{
 		db:             db,
 		authService:    authService,
@@ -40,7 +45,17 @@ func NewAuthHandler(db *gorm.DB, authService *auth.Service, redisClient *redis.C
 		authMiddleware: authMiddleware,
 		emailService:   emailService,
 		siteURL:        siteURL,
+		config:         cfg,
 	}
+}
+
+// InitOAuthConfig initializes OAuth configurations with values from config
+func InitOAuthConfig(googleClientID, googleClientSecret, discordClientID, discordClientSecret string) {
+	googleOAuthConfig.ClientID = googleClientID
+	googleOAuthConfig.ClientSecret = googleClientSecret
+	
+	discordOAuthConfig.ClientID = discordClientID
+	discordOAuthConfig.ClientSecret = discordClientSecret
 }
 
 // RegisterRequest represents registration request
@@ -321,12 +336,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		fmt.Printf("Login JSON binding failed: %v, Content-Type: %s, Content-Length: %d\n", 
+			err, c.GetHeader("Content-Type"), c.Request.ContentLength)
 		c.JSON(http.StatusBadRequest, AuthResponse{
 			Success: false,
-			Message: "Invalid request data",
+			Message: "Invalid request data: " + err.Error(),
 		})
 		return
 	}
+
+	// Login request received
 
 	// Normalize identifier
 	req.Identifier = strings.ToLower(strings.TrimSpace(req.Identifier))
@@ -410,6 +429,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Clear rate limit on successful login
 	h.authMiddleware.ClearAuthRateLimit(req.Identifier)
 
+	// Set secure session cookie
+	h.setSecureCookie(c, "sessionId", authResult.SessionID, int(h.authService.GetSessionExpiry()))
+
 	// Respond with success
 	c.JSON(http.StatusOK, AuthResponse{
 		Success: true,
@@ -427,9 +449,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				MfaEnabled:  user.MfaEnabled,
 				CreatedAt:   user.CreatedAt,
 			},
-			SessionID: authResult.SessionID,
-			Token:     authResult.Token,
-			ExpiresAt: authResult.ExpiresAt,
 		},
 	})
 }
@@ -536,6 +555,9 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 	// Clear rate limit on successful login
 	h.authMiddleware.ClearAuthRateLimit(req.Identifier)
 
+	// Set secure session cookie
+	h.setSecureCookie(c, "sessionId", authResult.SessionID, int(h.authService.GetSessionExpiry()))
+
 	// Respond with success
 	c.JSON(http.StatusOK, AuthResponse{
 		Success: true,
@@ -562,18 +584,19 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 
 // Logout handles user logout
 func (h *AuthHandler) Logout(c *gin.Context) {
-	sessionID := c.GetHeader("X-Session-ID")
-	
-	// Also try to get from current session context
-	if sessionID == "" {
-		if _, exists := middleware.GetCurrentSession(c); exists {
-			sessionID = c.GetHeader("X-Session-ID") // This would need to be stored in session
-		}
+	// Get session ID from cookie
+	sessionID, err := c.Cookie("sessionId")
+	if err != nil || sessionID == "" {
+		// Fallback to header for backward compatibility
+		sessionID = c.GetHeader("X-Session-ID")
 	}
 
 	if sessionID != "" {
 		h.redisClient.DeleteSession(sessionID)
 	}
+
+	// Clear the session cookie securely
+	h.setSecureCookie(c, "sessionId", "", -1)
 
 	c.JSON(http.StatusOK, AuthResponse{
 		Success: true,
@@ -600,7 +623,12 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 			"user": UserProfile{
 				ID:          user.ID,
 				Username:    user.Username,
-				Email:       *user.Email,
+				Email:       func() string {
+					if user.Email != nil {
+						return *user.Email
+					}
+					return ""
+				}(),
 				DisplayName: user.DisplayName,
 				AvatarURL:   user.AvatarURL,
 				IsVerified:  user.IsVerified,
@@ -927,9 +955,9 @@ func (h *AuthHandler) UpdateAlias(c *gin.Context) {
 			return
 		}
 
-		// Check if alias is already taken
+		// Check if alias is already taken (check both alias and username columns)
 		var existingUser models.User
-		err := h.db.Where("alias = ? AND id != ?", alias, userID).First(&existingUser).Error
+		err := h.db.Where("(alias = ? OR username = ?) AND id != ?", alias, alias, userID).First(&existingUser).Error
 		if err == nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"success": false,
@@ -1272,16 +1300,25 @@ func (h *AuthHandler) Generate2FA(c *gin.Context) {
 		return
 	}
 
-	// Check if 2FA is already enabled
-	if user.MfaEnabled {
-		c.JSON(http.StatusBadRequest, TwoFAGenerateResponse{
-			Success: false,
-			Message: "2FA is already enabled for this account",
+	// If 2FA is already enabled, return current setup info for reconfiguration
+	if user.MfaEnabled && user.MfaSecret != nil {
+		// Generate QR code URL with existing secret for reconfiguration
+		qrURL := generateTOTPURL(*user.MfaSecret, *user.Email, "gotchu.lol")
+		
+		// Generate new backup codes
+		backupCodes := generateBackupCodes(10)
+
+		c.JSON(http.StatusOK, TwoFAGenerateResponse{
+			Success:     true,
+			Message:     "2FA is already enabled. You can reconfigure or generate new backup codes.",
+			Secret:      *user.MfaSecret,
+			QRCodeURL:   qrURL,
+			BackupCodes: backupCodes,
 		})
 		return
 	}
 
-	// Generate TOTP secret
+	// Generate TOTP secret for new setup
 	secret, err := generateTOTPSecret()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, TwoFAGenerateResponse{
@@ -1357,6 +1394,15 @@ func (h *AuthHandler) Verify2FA(c *gin.Context) {
 		return
 	}
 
+	// Clear dashboard cache to force refresh of user data
+	if h.redisClient != nil {
+		dashboardCacheKey := fmt.Sprintf("dashboard:user:%d", user.ID)
+		customizationCacheKey := fmt.Sprintf("customization:user:%d", user.ID)
+		h.redisClient.Delete(dashboardCacheKey)
+		h.redisClient.Delete(customizationCacheKey)
+		fmt.Printf("Cleared dashboard and customization cache for user %d after enabling 2FA\n", user.ID)
+	}
+
 	// Store backup codes (in a real app, you'd store these securely)
 	// For now, we'll return them to the user to save
 	fmt.Printf("Backup codes for user %d: %s\n", user.ID, string(backupCodesJSON))
@@ -1424,6 +1470,15 @@ func (h *AuthHandler) Disable2FA(c *gin.Context) {
 		return
 	}
 
+	// Clear dashboard cache to force refresh of user data
+	if h.redisClient != nil {
+		dashboardCacheKey := fmt.Sprintf("dashboard:user:%d", user.ID)
+		customizationCacheKey := fmt.Sprintf("customization:user:%d", user.ID)
+		h.redisClient.Delete(dashboardCacheKey)
+		h.redisClient.Delete(customizationCacheKey)
+		fmt.Printf("Cleared dashboard and customization cache for user %d after disabling 2FA\n", user.ID)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "2FA disabled successfully",
@@ -1464,6 +1519,730 @@ func generateBackupCodes(count int) []string {
 		codes[i] = string(code)
 	}
 	return codes
+}
+
+// ChangePasswordRequest represents change password request
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required"`
+	NewPassword     string `json:"new_password" binding:"required,min=8"`
+}
+
+// ChangePassword handles password change
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	user, exists := middleware.GetCurrentUser(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": "Not authenticated",
+		})
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Invalid request data",
+		})
+		return
+	}
+
+	// Validate new password strength
+	if err := h.authService.ValidatePassword(req.NewPassword); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Check if new password is different from current
+	if req.CurrentPassword == req.NewPassword {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "New password must be different from current password",
+		})
+		return
+	}
+
+	// Get user auth record to verify current password
+	var userAuth models.UserAuth
+	err := h.db.Where("user_id = ?", user.ID).First(&userAuth).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "Failed to verify user",
+		})
+		return
+	}
+
+	// Verify current password
+	if !h.authService.VerifyPassword(req.CurrentPassword, userAuth.PasswordHash) {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": "Current password is incorrect",
+		})
+		return
+	}
+
+	// Hash new password
+	hashedPassword, err := h.authService.HashPassword(req.NewPassword)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "Failed to process new password",
+		})
+		return
+	}
+
+	// Generate new salt
+	salt, err := h.authService.GenerateSalt()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "Failed to generate security data",
+		})
+		return
+	}
+
+	// Update password and salt
+	err = h.db.Model(&userAuth).Updates(map[string]interface{}{
+		"password_hash": hashedPassword,
+		"salt":         salt,
+		"updated_at":   time.Now(),
+	}).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "Failed to update password",
+		})
+		return
+	}
+
+	// Log password change
+	fmt.Printf("Password changed for user %d (%s)\n", user.ID, user.Username)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Password changed successfully",
+	})
+}
+
+// OAuth Configuration
+var (
+	googleOAuthConfig = &oauth2.Config{
+		ClientID:     "",  // Will be set from environment
+		ClientSecret: "",  // Will be set from environment
+		RedirectURL:  "http://localhost:8080/api/auth/oauth/google/callback",
+		Scopes: []string{
+			"https://www.googleapis.com/auth/userinfo.email",
+			"https://www.googleapis.com/auth/userinfo.profile",
+		},
+		Endpoint: google.Endpoint,
+	}
+
+	discordOAuthConfig = &oauth2.Config{
+		ClientID:     "",  // Will be set from environment
+		ClientSecret: "",  // Will be set from environment
+		RedirectURL:  "http://localhost:8080/api/auth/oauth/discord/callback",
+		Scopes:       []string{"identify", "email"},
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "https://discord.com/api/oauth2/authorize",
+			TokenURL: "https://discord.com/api/oauth2/token",
+		},
+	}
+)
+
+// OAuth User Info structures
+type GoogleUserInfo struct {
+	ID            string `json:"id"`
+	Email         string `json:"email"`
+	Name          string `json:"name"`
+	Picture       string `json:"picture"`
+	GivenName     string `json:"given_name"`
+	FamilyName    string `json:"family_name"`
+	VerifiedEmail bool   `json:"verified_email"`
+}
+
+type DiscordUserInfo struct {
+	ID            string `json:"id"`
+	Username      string `json:"username"`
+	Discriminator string `json:"discriminator"`
+	Avatar        string `json:"avatar"`
+	Email         string `json:"email"`
+	Verified      bool   `json:"verified"`
+	GlobalName    string `json:"global_name"`
+}
+
+// InitiateOAuth initiates OAuth flow for Google or Discord
+func (h *AuthHandler) InitiateOAuth(c *gin.Context) {
+	provider := c.Param("provider")
+	state := c.Query("state")
+	
+	if state == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Missing state parameter",
+		})
+		return
+	}
+
+	// Store state in Redis for verification (expires in 10 minutes)
+	stateKey := fmt.Sprintf("oauth_state:%s", state)
+	err := h.redisClient.Set(stateKey, provider, 10*time.Minute)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "Failed to initiate OAuth",
+		})
+		return
+	}
+
+	var authURL string
+	switch provider {
+	case "google":
+		authURL = googleOAuthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	case "discord":
+		authURL = discordOAuthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Unsupported OAuth provider",
+		})
+		return
+	}
+
+	c.Redirect(http.StatusTemporaryRedirect, authURL)
+}
+
+// HandleOAuthCallback handles OAuth callback from Google or Discord
+func (h *AuthHandler) HandleOAuthCallback(c *gin.Context) {
+	provider := c.Param("provider")
+	code := c.Query("code")
+	state := c.Query("state")
+	
+	fmt.Printf("OAuth callback received - Provider: %s, Code: %s, State: %s\n", provider, code[:10]+"...", state)
+
+	if code == "" || state == "" {
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/signin?error=oauth_failed")
+		return
+	}
+
+	// Verify state parameter
+	stateKey := fmt.Sprintf("oauth_state:%s", state)
+	var storedProvider string
+	err := h.redisClient.Get(stateKey, &storedProvider)
+	if err != nil || storedProvider != provider {
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/signin?error=invalid_state")
+		return
+	}
+
+	// Delete used state
+	h.redisClient.Delete(stateKey)
+
+	var config *oauth2.Config
+	switch provider {
+	case "google":
+		config = googleOAuthConfig
+	case "discord":
+		config = discordOAuthConfig
+	default:
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/signin?error=unsupported_provider")
+		return
+	}
+
+	// Exchange code for token
+	token, err := config.Exchange(c.Request.Context(), code)
+	if err != nil {
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/signin?error=token_exchange_failed")
+		return
+	}
+
+	// Get user info
+	var userInfo interface{}
+	var email, username, avatarURL string
+	var isVerified bool
+
+	switch provider {
+	case "google":
+		googleUser, err := h.getGoogleUserInfo(token.AccessToken)
+		if err != nil {
+			c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/signin?error=user_info_failed")
+			return
+		}
+		userInfo = googleUser
+		email = googleUser.Email
+		username = strings.Split(email, "@")[0] // Use email prefix as initial username
+		avatarURL = googleUser.Picture
+		isVerified = googleUser.VerifiedEmail
+
+	case "discord":
+		discordUser, err := h.getDiscordUserInfo(token.AccessToken)
+		if err != nil {
+			c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/signin?error=user_info_failed")
+			return
+		}
+		userInfo = discordUser
+		email = discordUser.Email
+		username = discordUser.Username
+		if discordUser.Avatar != "" {
+			avatarURL = fmt.Sprintf("https://cdn.discordapp.com/avatars/%s/%s.png", discordUser.ID, discordUser.Avatar)
+		}
+		isVerified = discordUser.Verified
+	}
+
+	// Find or create user
+	user, isNewUser, err := h.findOrCreateOAuthUser(provider, userInfo, email, username, avatarURL, isVerified)
+	if err != nil {
+		fmt.Printf("OAuth user creation failed: %v\n", err)
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/signin?error=user_creation_failed")
+		return
+	}
+	
+	fmt.Printf("OAuth user result - ID: %d, Username: %s, IsNewUser: %t\n", user.ID, user.Username, isNewUser)
+
+	// Create session ID
+	sessionID := h.authService.GenerateSessionID()
+	fmt.Printf("OAuth: Generated session ID: %s\n", sessionID)
+
+	// Store session in Redis using proper SessionData format
+	userEmail := email
+	if user.Email != nil {
+		userEmail = *user.Email
+	}
+	
+	sessionData := redis.SessionData{
+		UserID:     user.ID,
+		Username:   user.Username,
+		Email:      userEmail,
+		IsVerified: user.IsVerified,
+		Plan:       user.Plan,
+		CreatedAt:  user.CreatedAt,
+	}
+	
+	err = h.redisClient.SetSession(sessionID, sessionData, h.authService.GetSessionExpiry())
+	if err != nil {
+		c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/signin?error=session_creation_failed")
+		return
+	}
+
+	// Parse original redirect from state
+	stateData := make(map[string]interface{})
+	stateBytes, err := json.Marshal(state)
+	if err == nil {
+		json.Unmarshal(stateBytes, &stateData)
+	}
+	
+	// Set secure session cookie before redirect
+	h.setSecureCookie(c, "sessionId", sessionID, int(h.authService.GetSessionExpiry()))
+
+	// Redirect to frontend OAuth callback handler (no sensitive data in URL)
+	redirectURL := "http://localhost:5173/auth/callback"
+	redirectURL += fmt.Sprintf("?provider=%s", provider)
+	if isNewUser {
+		redirectURL += "&new_user=true"
+		redirectURL += "&needs_setup=true"
+		redirectURL += fmt.Sprintf("&suggested_username=%s", url.QueryEscape(username))
+	}
+
+	fmt.Printf("OAuth redirect URL: %s\n", redirectURL)
+	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+}
+
+// getGoogleUserInfo fetches user information from Google API
+func (h *AuthHandler) getGoogleUserInfo(accessToken string) (*GoogleUserInfo, error) {
+	resp, err := http.Get("https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + accessToken)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var userInfo GoogleUserInfo
+	err = json.Unmarshal(body, &userInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	return &userInfo, nil
+}
+
+// getDiscordUserInfo fetches user information from Discord API
+func (h *AuthHandler) getDiscordUserInfo(accessToken string) (*DiscordUserInfo, error) {
+	req, err := http.NewRequest("GET", "https://discord.com/api/users/@me", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var userInfo DiscordUserInfo
+	err = json.Unmarshal(body, &userInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	return &userInfo, nil
+}
+
+// findOrCreateOAuthUser finds existing user or creates new one for OAuth login
+func (h *AuthHandler) findOrCreateOAuthUser(provider string, userInfo interface{}, email, username, avatarURL string, isVerified bool) (*models.User, bool, error) {
+	var user models.User
+	var isNewUser bool
+	var found bool
+
+	// Strategy 1: Try to find user by provider-specific ID first (most reliable)
+	if provider == "discord" {
+		if discordUser, ok := userInfo.(*DiscordUserInfo); ok {
+			result := h.db.Where("discord_id = ?", discordUser.ID).First(&user)
+			if result.Error == nil {
+				found = true
+				fmt.Printf("Found existing user by Discord ID: %s\n", discordUser.ID)
+			}
+		}
+	}
+	// Add similar logic for other providers if needed
+
+	// Strategy 2: If not found by provider ID, try by email
+	if !found {
+		result := h.db.Where("email = ?", email).First(&user)
+		if result.Error == nil {
+			found = true
+			fmt.Printf("Found existing user by email: %s\n", email)
+		}
+	}
+
+	// Strategy 3: If not found by email, try by username (least reliable)
+	if !found {
+		result := h.db.Where("username = ?", username).First(&user)
+		if result.Error == nil {
+			found = true
+			fmt.Printf("Found existing user by username: %s\n", username)
+		}
+	}
+
+	// If user exists, update their OAuth info and login
+	if found {
+		needsOAuthSetup := false
+		
+		if provider == "discord" {
+			// If user doesn't have Discord ID set, they need OAuth setup
+			needsOAuthSetup = user.DiscordID == nil
+		} else if provider == "google" {
+			// For Google OAuth, determine if user needs setup based on their current username
+			// If username looks like an email address or contains '@', they likely need a proper username
+			needsOAuthSetup = strings.Contains(user.Username, "@") || strings.Contains(user.Username, ".")
+			
+			// Also check if user was created via traditional auth and this is their first OAuth login
+			if !needsOAuthSetup {
+				var userAuth models.UserAuth
+				authResult := h.db.Where("user_id = ?", user.ID).First(&userAuth)
+				// If they have password auth AND username suggests they need a better username, setup needed
+				if authResult.Error == nil && (len(user.Username) > 20 || user.Username == email) {
+					needsOAuthSetup = true
+				}
+			}
+		}
+		
+		// Update OAuth info
+		updates := map[string]interface{}{
+			"last_login_at": time.Now(),
+		}
+		
+		// Only update avatar if user doesn't already have one
+		if user.AvatarURL == nil || *user.AvatarURL == "" {
+			updates["avatar_url"] = avatarURL
+		}
+		
+		if provider == "discord" {
+			if discordUser, ok := userInfo.(*DiscordUserInfo); ok {
+				updates["discord_id"] = discordUser.ID
+				updates["discord_username"] = discordUser.Username
+				updates["discord_avatar"] = discordUser.Avatar
+			}
+		}
+		
+		if isVerified && !user.EmailVerified {
+			updates["email_verified"] = true
+			updates["email_verified_at"] = time.Now()
+		}
+
+		err := h.db.Model(&user).Updates(updates).Error
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to update user: %w", err)
+		}
+		
+		// Reload user to get updated data
+		h.db.First(&user, user.ID)
+		
+		fmt.Printf("Successfully updated existing user: %s (ID: %d)\n", user.Username, user.ID)
+		return &user, needsOAuthSetup, nil
+	}
+
+	// User doesn't exist, create new one
+	isNewUser = true
+	fmt.Printf("Creating new user for %s OAuth: %s (%s)\n", provider, username, email)
+	
+	// Ensure username is unique
+	baseUsername := username
+	counter := 1
+	for {
+		var existingUser models.User
+		result := h.db.Where("username = ?", username).First(&existingUser)
+		if result.Error != nil {
+			// Username is available
+			break
+		}
+		// Username taken, try with counter
+		username = fmt.Sprintf("%s%d", baseUsername, counter)
+		counter++
+		
+		// Safety check to prevent infinite loop
+		if counter > 1000 {
+			return nil, false, fmt.Errorf("unable to generate unique username after 1000 attempts")
+		}
+	}
+
+	user = models.User{
+		Username:        username,
+		Email:           &email,
+		EmailVerified:   isVerified,
+		DisplayName:     &username,
+		AvatarURL:       &avatarURL,
+		IsActive:        true,
+		Plan:            "free",
+		Theme:           "dark",
+		IsPublic:        true,
+		ShowAnalytics:   true,
+		LastLoginAt:     &time.Time{},
+	}
+
+	if isVerified {
+		now := time.Now()
+		user.EmailVerifiedAt = &now
+	}
+
+	// Set provider-specific fields
+	if provider == "discord" {
+		if discordUser, ok := userInfo.(*DiscordUserInfo); ok {
+			user.DiscordID = &discordUser.ID
+			user.DiscordUsername = &discordUser.Username
+			user.DiscordAvatar = &discordUser.Avatar
+		}
+	}
+
+	// Attempt to create user with retry logic for potential race conditions
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		err := h.db.Create(&user).Error
+		if err == nil {
+			fmt.Printf("Successfully created new user: %s (ID: %d)\n", user.Username, user.ID)
+			return &user, isNewUser, nil
+		}
+		
+		// Check if it's a duplicate key constraint error
+		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+			if strings.Contains(err.Error(), "discord_id") {
+				// Discord ID already exists - this shouldn't happen with our lookup logic
+				return nil, false, fmt.Errorf("discord account already linked to another user")
+			}
+			if strings.Contains(err.Error(), "username") {
+				// Username conflict - try with a different one
+				username = fmt.Sprintf("%s%d", baseUsername, counter)
+				counter++
+				user.Username = username
+				continue
+			}
+			if strings.Contains(err.Error(), "email") {
+				// Email conflict - this shouldn't happen with our lookup logic
+				return nil, false, fmt.Errorf("email already registered with another account")
+			}
+		}
+		
+		// For other errors, return immediately
+		if attempt == maxRetries {
+			return nil, false, fmt.Errorf("failed to create user after %d attempts: %w", maxRetries, err)
+		}
+		
+		// Small delay before retry
+		time.Sleep(time.Millisecond * 100)
+	}
+
+	return &user, isNewUser, nil
+}
+
+// CompleteOAuthSetup handles OAuth user setup completion
+func (h *AuthHandler) CompleteOAuthSetup(c *gin.Context) {
+	var req struct {
+		Username    string `json:"username" binding:"required"`
+		DisplayName string `json:"displayName"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, AuthResponse{
+			Success: false,
+			Message: "Invalid request data",
+		})
+		return
+	}
+
+	// Get user from session
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, AuthResponse{
+			Success: false,
+			Message: "User not authenticated",
+		})
+		return
+	}
+
+	// Validate username
+	if len(req.Username) < 3 || len(req.Username) > 20 {
+		c.JSON(http.StatusBadRequest, AuthResponse{
+			Success: false,
+			Message: "Username must be between 3 and 20 characters",
+		})
+		return
+	}
+
+	// Check if username is available
+	var existingUser models.User
+	result := h.db.Where("username = ? AND id != ?", req.Username, userID).First(&existingUser)
+	if result.Error == nil {
+		c.JSON(http.StatusConflict, AuthResponse{
+			Success: false,
+			Message: "Username is already taken",
+		})
+		return
+	}
+
+	// Update user
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, AuthResponse{
+			Success: false,
+			Message: "User not found",
+		})
+		return
+	}
+
+	// Update username and display name
+	updates := map[string]interface{}{
+		"username": req.Username,
+	}
+
+	if req.DisplayName != "" {
+		updates["display_name"] = req.DisplayName
+	} else {
+		updates["display_name"] = req.Username
+	}
+
+	if err := h.db.Model(&user).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, AuthResponse{
+			Success: false,
+			Message: "Failed to update user profile",
+		})
+		return
+	}
+
+	// Get updated user data
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, AuthResponse{
+			Success: false,
+			Message: "Failed to retrieve updated user data",
+		})
+		return
+	}
+
+	// Update session with new username
+	sessionID, exists := c.Get("session_id")
+	if exists {
+		userEmail := ""
+		if user.Email != nil {
+			userEmail = *user.Email
+		}
+		
+		sessionData := redis.SessionData{
+			UserID:     user.ID,
+			Username:   user.Username,
+			Email:      userEmail,
+			IsVerified: user.IsVerified,
+			Plan:       user.Plan,
+			CreatedAt:  user.CreatedAt,
+		}
+		h.redisClient.SetSession(sessionID.(string), sessionData, h.authService.GetSessionExpiry())
+	}
+
+	c.JSON(http.StatusOK, AuthResponse{
+		Success: true,
+		Message: "Profile setup completed successfully",
+		Data: &AuthResponseData{
+			User: UserProfile{
+				ID:          user.ID,
+				Username:    user.Username,
+				Email:       *user.Email,
+				DisplayName: user.DisplayName,
+				AvatarURL:   user.AvatarURL,
+				IsVerified:  user.IsVerified,
+				Plan:        user.Plan,
+				Theme:       user.Theme,
+				MfaEnabled:  user.MfaEnabled,
+				CreatedAt:   user.CreatedAt,
+			},
+		},
+	})
+}
+
+
+// setSecureCookie sets a session cookie with proper security settings
+func (h *AuthHandler) setSecureCookie(c *gin.Context, name, value string, maxAge int) {
+	// Determine security settings based on environment
+	secure := h.config.GinMode == "release" // Secure only in production
+	sameSite := http.SameSiteStrictMode
+	domain := ""
+	
+	if h.config.GinMode == "debug" {
+		sameSite = http.SameSiteLaxMode
+		domain = "localhost" // Allow cross-port in development
+	}
+
+	c.SetCookie(
+		name,
+		value,
+		maxAge,
+		"/",        // path
+		domain,     // domain
+		secure,     // secure
+		true,       // httpOnly
+	)
+	
+	// Additional security header
+	c.Header("Set-Cookie", fmt.Sprintf("%s=%s; Path=/; HttpOnly; SameSite=%s%s%s",
+		name, value,
+		map[http.SameSite]string{
+			http.SameSiteStrictMode: "Strict",
+			http.SameSiteLaxMode:    "Lax",
+			http.SameSiteNoneMode:   "None",
+		}[sameSite],
+		func() string { if secure { return "; Secure" }; return "" }(),
+		func() string { if maxAge > 0 { return fmt.Sprintf("; Max-Age=%d", maxAge) }; return "" }(),
+	))
 }
 
 // Helper function to create string pointer

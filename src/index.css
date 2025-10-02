@@ -955,37 +955,264 @@ html.light-mode .typewriter-line-3 {
   width: 120px;
 }
 
+/* Modern Range Slider Styles */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, 
+    rgba(255, 255, 255, 0.15) 0%, 
+    rgba(255, 255, 255, 0.15) 100%);
+  outline: none;
+  transition: all 0.3s ease;
+}
+
+input[type="range"]:hover {
+  background: linear-gradient(to right, 
+    rgba(255, 255, 255, 0.2) 0%, 
+    rgba(255, 255, 255, 0.2) 100%);
+}
+
+/* WebKit Slider Thumb */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  background: linear-gradient(135deg, #58A4B0, #4A9BAA);
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(88, 164, 176, 0.4), 0 0 0 1px rgba(88, 164, 176, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(88, 164, 176, 0.6), 0 0 0 2px rgba(88, 164, 176, 0.2);
+  background: linear-gradient(135deg, #6BB5C1, #58A4B0);
+}
+
+/* Mozilla Slider Thumb */
+input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: linear-gradient(135deg, #58A4B0, #4A9BAA);
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(88, 164, 176, 0.4);
+  transition: all 0.3s ease;
+}
+
+input[type="range"]::-moz-range-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(88, 164, 176, 0.6);
+  background: linear-gradient(135deg, #6BB5C1, #58A4B0);
+}
+
+/* Mozilla Slider Track */
+input[type="range"]::-moz-range-track {
+  background: linear-gradient(to right, 
+    rgba(255, 255, 255, 0.15) 0%, 
+    rgba(255, 255, 255, 0.15) 100%);
+  height: 6px;
+  border-radius: 3px;
+  border: none;
+}
+
 .toggle-switch {
   position: relative;
-  width: 50px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
+  width: 54px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 15px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.toggle-switch.active {
-  background: linear-gradient(90deg, #A9CC3E 0%, rgba(169, 204, 62, 0.8) 100%);
-  border-color: #A9CC3E;
-}
-
-.toggle-switch::before {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  background: #ffffff;
-  border-radius: 50%;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
 }
 
-.toggle-switch.active::before {
-  transform: translateX(26px);
+.toggle-switch:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.toggle-switch.enabled {
+  background: linear-gradient(135deg, #58A4B0, #4A9BAA);
+  border-color: #58A4B0;
+  box-shadow: 0 2px 12px rgba(88, 164, 176, 0.3);
+}
+
+.toggle-switch.enabled:hover {
+  background: linear-gradient(135deg, #6BB5C1, #58A4B0);
+  box-shadow: 0 4px 16px rgba(88, 164, 176, 0.4);
+  transform: translateY(-2px);
+}
+
+.toggle-switch.disabled {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  background: linear-gradient(135deg, #ffffff, #f8fafc);
+  border-radius: 50%;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), 0 1px 4px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-thumb::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  transition: all 0.3s ease;
+}
+
+.toggle-thumb.enabled {
+  transform: translateX(24px);
+  background: linear-gradient(135deg, #ffffff, #f0f9ff);
+  box-shadow: 0 3px 12px rgba(88, 164, 176, 0.3), 0 1px 6px rgba(0, 0, 0, 0.1);
+}
+
+.toggle-thumb.enabled::before {
+  background: rgba(88, 164, 176, 0.2);
+}
+
+/* Password Modal Styles */
+.password-form {
+  margin: 20px 0;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #58A4B0;
+  background: rgba(88, 164, 176, 0.1);
+  box-shadow: 0 0 0 3px rgba(88, 164, 176, 0.1);
+}
+
+.form-group input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.form-group input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.password-requirements {
+  margin-top: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.password-requirements p {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.password-requirements ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.password-requirements li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  transition: all 0.3s ease;
+}
+
+.password-requirements li::before {
+  content: '•';
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(88, 164, 176, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  color: rgba(88, 164, 176, 0.8);
+}
+
+.password-icon {
+  color: #58A4B0;
+  font-size: 20px;
+}
+
+.primary-button {
+  background: linear-gradient(135deg, #58A4B0, #4A9BAA);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #6BB5C1, #58A4B0);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(88, 164, 176, 0.3);
+}
+
+.primary-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .upload-area {

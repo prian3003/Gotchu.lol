@@ -48,9 +48,11 @@ export const ThemeProvider = ({ children }) => {
       background: '#131515',
       text: '#ffffff',
       textSecondary: '#ffffff80',
+      primary: '#A9CC3E',
       accent: '#A9CC3E',
       accentHover: '#A9CC3E',
       border: '#ffffff20',
+      surface: '#ffffff10',
       cardBg: '#ffffff',
       cardText: '#000000',
       particle: '#ffffff',
@@ -66,9 +68,11 @@ export const ThemeProvider = ({ children }) => {
       background: '#ffffff',
       text: '#131515', // Dark text for readability on light background
       textSecondary: '#13151580',
+      primary: '#A9CC3E',
       accent: '#A9CC3E', // Accent remains green for hover effects
       accentHover: '#8fb532',
       border: '#A9CC3E20',
+      surface: '#f5f5f5',
       cardBg: '#131515', // Cards become dark
       cardText: '#ffffff', // Card text becomes white
       particle: '#A9CC3E',

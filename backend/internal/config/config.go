@@ -19,12 +19,16 @@ type Config struct {
 	DatabaseURL string
 	DirectURL   string
 
-	// Redis
+	// Redis - Traditional
 	RedisHost     string
 	RedisPort     string
 	RedisPassword string
 	RedisUsername string
 	RedisDB       int
+	
+	// Redis - Upstash (alternative to traditional Redis)
+	UpstashRedisURL   string
+	UpstashRedisToken string
 
 	// JWT
 	JWTSecret string
@@ -50,6 +54,10 @@ type Config struct {
 	DiscordRedirectURI  string
 	DiscordGuildID      string
 
+	// Google OAuth (optional)
+	GoogleClientID     string
+	GoogleClientSecret string
+
 	// Email (optional)
 	ResendAPIKey string
 	EmailFrom    string
@@ -60,6 +68,14 @@ type Config struct {
 
 	// Site
 	SiteURL string
+
+	// OxaPay Payment Gateway
+	OxaPayMerchantKey string
+	OxaPayAPIKey      string
+	
+	// URLs
+	BaseURL     string
+	FrontendURL string
 }
 
 // Load loads configuration from environment variables
@@ -78,12 +94,16 @@ func Load() *Config {
 		DatabaseURL: getEnvRequired("DATABASE_URL"),
 		DirectURL:   getEnv("DIRECT_URL", ""),
 
-		// Redis
-		RedisHost:     getEnvRequired("REDIS_HOST"),
-		RedisPort:     getEnvRequired("REDIS_PORT"),
+		// Redis - Traditional (fallback if Upstash not available)
+		RedisHost:     getEnv("REDIS_HOST", ""),
+		RedisPort:     getEnv("REDIS_PORT", ""),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 		RedisUsername: getEnv("REDIS_USERNAME", "default"),
 		RedisDB:       getEnvAsInt("REDIS_DB", 0),
+		
+		// Redis - Upstash (preferred)
+		UpstashRedisURL:   getEnv("UPSTASH_REDIS_REST_URL", ""),
+		UpstashRedisToken: getEnv("UPSTASH_REDIS_REST_TOKEN", ""),
 
 		// JWT
 		JWTSecret: getEnvRequired("JWT_SECRET"),
@@ -109,6 +129,10 @@ func Load() *Config {
 		DiscordRedirectURI:  getEnv("DISCORD_REDIRECT_URI", ""),
 		DiscordGuildID:      getEnv("DISCORD_GUILD_ID", ""),
 
+		// Google OAuth
+		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
+
 		// Email
 		ResendAPIKey: getEnv("RESEND_API_KEY", ""),
 		EmailFrom:    getEnv("EMAIL_FROM", "noreply@gotchu.lol"),
@@ -119,6 +143,14 @@ func Load() *Config {
 
 		// Site
 		SiteURL: getEnv("SITE_URL", "http://localhost:5173"),
+
+		// OxaPay Payment Gateway
+		OxaPayMerchantKey: getEnv("OXAPAY_MERCHANT_KEY", ""),
+		OxaPayAPIKey:      getEnv("OXAPAY_API_KEY", ""),
+		
+		// URLs
+		BaseURL:     getEnv("BASE_URL", "http://localhost:8080"),
+		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:5173"),
 	}
 
 	return config

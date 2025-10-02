@@ -365,6 +365,14 @@ const SliderSetting = styled.div`
     outline: none;
     appearance: none;
     cursor: pointer;
+    background: transparent;
+    
+    &::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: transparent;
+    }
     
     &::-webkit-slider-thumb {
       appearance: none;
@@ -374,6 +382,21 @@ const SliderSetting = styled.div`
       background: #58A4B0;
       cursor: pointer;
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+      margin-top: -7px;
+      transition: all 0.3s ease;
+      
+      &:hover {
+        transform: scale(1.1);
+        box-shadow: 0 4px 12px rgba(88, 164, 176, 0.6);
+      }
+    }
+    
+    &::-moz-range-track {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: transparent;
+      border: none;
     }
     
     &::-moz-range-thumb {

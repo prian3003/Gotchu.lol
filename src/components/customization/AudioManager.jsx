@@ -34,21 +34,12 @@ const AudioManager = ({
   // Get user ID from dashboard API
   const fetchUserId = async () => {
     try {
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-      
-      if (!token && !sessionId) {
-        console.error('No authentication found')
-        return null
-      }
-
       const response = await fetch('/api/dashboard', {
         method: 'GET',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || '',
+          'Content-Type': 'application/json'
         },
+        credentials: 'include', // Use httpOnly cookies for auth
       })
 
       if (!response.ok) {
@@ -73,18 +64,14 @@ const AudioManager = ({
   const loadAudioFiles = async () => {
     setLoading(true)
     try {
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-      
       console.log('Loading audio files from backend API...')
       
       const response = await fetch('/api/audio/list', {
         method: 'GET',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || '',
+          'Content-Type': 'application/json'
         },
+        credentials: 'include', // Use httpOnly cookies for auth
       })
 
       if (!response.ok) {
@@ -259,16 +246,12 @@ const AudioManager = ({
   const handleDeleteAudio = async (audioFile) => {
     setDeleteLoading(true)
     try {
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-      
       const response = await fetch('/api/assets/delete', {
         method: 'DELETE',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || '',
+          'Content-Type': 'application/json'
         },
+        credentials: 'include', // Use httpOnly cookies for auth
         body: JSON.stringify({
           filePath: audioFile.filePath,
           assetType: 'audio'

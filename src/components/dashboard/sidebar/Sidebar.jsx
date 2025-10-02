@@ -113,7 +113,10 @@ const DashboardSidebar = ({
           <>
             <div className="help-section">
               <p className="help-text">Have a question or need support?</p>
-              <button className="help-button">
+              <button 
+                className="help-button"
+                onClick={() => navigate && navigate('/help')}
+              >
                 <HiQuestionMarkCircle className="help-icon" />
                 <span>Help Center</span>
               </button>
@@ -134,18 +137,34 @@ const DashboardSidebar = ({
         
         {/* User Section */}
         <div className="user-section">
-          {!sidebarCollapsed && user && (
+          {user && (
             <div className="user-info">
               <div className="user-avatar">
-                {user.username?.charAt(0)?.toUpperCase() || 'U'}
+                {user.avatarUrl || user.avatar_url ? (
+                  <img 
+                    src={user.avatarUrl || user.avatar_url} 
+                    alt={user.displayName || user.username} 
+                    className="avatar-image"
+                  />
+                ) : (
+                  <span className="avatar-text">
+                    {(user.displayName || user.username)?.charAt(0)?.toUpperCase() || 'U'}
+                  </span>
+                )}
               </div>
-              <div className="user-details">
-                <span className="user-name">{user.username}</span>
-                <span className="user-email">{user.email}</span>
-              </div>
+              {!sidebarCollapsed && (
+                <div className="user-details">
+                  <span className="user-name">{user.displayName || user.username}</span>
+                  <span className="user-email">{user.email}</span>
+                </div>
+              )}
             </div>
           )}
-          <button className="user-menu-button" onClick={handleLogout}>
+          <button 
+            className="user-menu-button" 
+            onClick={handleLogout}
+            title={sidebarCollapsed ? 'Logout' : ''}
+          >
             <HiArrowRightOnRectangle />
           </button>
         </div>
@@ -224,8 +243,26 @@ const Sidebar = styled.div`
         display: none;
       }
       
-      .user-section .user-info {
-        display: none;
+      .user-section {
+        flex-direction: column;
+        gap: 0.5rem;
+        padding: 0.75rem 0.5rem;
+        align-items: center;
+        
+        .user-info {
+          flex: none;
+          gap: 0;
+          
+          .user-details {
+            display: none;
+          }
+        }
+        
+        .user-menu-button {
+          width: 28px;
+          height: 28px;
+          margin: 0;
+        }
       }
     }
   }
@@ -550,6 +587,20 @@ const Sidebar = styled.div`
           color: white;
           font-weight: 600;
           font-size: 0.85rem;
+          overflow: hidden;
+          flex-shrink: 0;
+          
+          .avatar-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+          }
+          
+          .avatar-text {
+            font-weight: 600;
+            font-size: 0.85rem;
+          }
         }
 
         .user-details {

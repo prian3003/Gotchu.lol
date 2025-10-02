@@ -6,6 +6,7 @@ import QueryProvider from './providers/QueryProvider'
 import ErrorProvider, { NetworkStatus } from './providers/ErrorProvider'
 import PerformanceProvider from './providers/PerformanceProvider'
 import { RouteErrorBoundary } from './components/error/ErrorBoundary'
+import { ToastProvider } from './components/ui/Toast'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 import PublicRoute from './components/auth/PublicRoute'
 import { createLazyRoute } from './utils/lazyLoad.jsx'
@@ -17,9 +18,9 @@ const Navbar = createLazyRoute(
   { chunkName: 'navbar', fallbackType: 'default' }
 )
 
-const Home = createLazyRoute(
-  () => import('./components/layout/Home'),
-  { chunkName: 'home', fallbackType: 'default' }
+const LandingPage = createLazyRoute(
+  () => import('./components/pages/LandingPage'),
+  { chunkName: 'landing', fallbackType: 'default' }
 )
 
 // Auth pages
@@ -40,6 +41,16 @@ const EmailVerification = createLazyRoute(
 
 const VerifyEmail = createLazyRoute(
   () => import('./components/auth/VerifyEmail'),
+  { chunkName: 'auth', fallbackType: 'auth' }
+)
+
+const OAuthCallback = createLazyRoute(
+  () => import('./components/auth/OAuthCallback'),
+  { chunkName: 'auth', fallbackType: 'auth' }
+)
+
+const OAuthOnboarding = createLazyRoute(
+  () => import('./components/auth/OAuthOnboarding'),
   { chunkName: 'auth', fallbackType: 'auth' }
 )
 
@@ -74,6 +85,10 @@ const Templates = createLazyRoute(
   { chunkName: 'templates', fallbackType: 'default' }
 )
 
+const HelpCenter = createLazyRoute(
+  () => import('./components/pages/HelpCenter'),
+  { chunkName: 'help', fallbackType: 'default' }
+)
 
 // User profile page - simplified lazy loading to fix import issues
 const UserProfile = React.lazy(() => import('./components/pages/UserProfile'))
@@ -86,7 +101,7 @@ import Loader from './components/ui/Loader'
 
 const NavbarWrapper = () => {
   const location = useLocation()
-  const hideNavbarRoutes = ['/signin', '/signup', '/email-verification', '/verify-email', '/dashboard', '/customize', '/links', '/premium', '/templates', '/test-customization']
+  const hideNavbarRoutes = ['/signin', '/signup', '/email-verification', '/verify-email', '/dashboard', '/customize', '/links', '/premium', '/templates', '/help', '/test-customization']
   
   // Also hide navbar for username profile pages
   const isProfilePage = /^\/[a-zA-Z0-9_]+$/.test(location.pathname)
@@ -104,8 +119,9 @@ const App = () => {
     <ErrorProvider>
       <PerformanceProvider>
         <ThemeProvider>
-          <QueryProvider>
-            <AuthProvider>
+          <ToastProvider>
+            <QueryProvider>
+              <AuthProvider>
         <main>
           <NetworkStatus />
           <Router>
@@ -115,7 +131,8 @@ const App = () => {
             <RouteErrorBoundary name="routes">
               <Routes>
               {/* Public routes */}
-              <Route path='/' element={<Home />}/>
+              <Route path='/' element={<LandingPage />}/>
+              <Route path='/auth' element={<LandingPage />}/>
               
               {/* Auth routes - redirect to dashboard if already logged in */}
               <Route path='/signin' element={
@@ -137,6 +154,12 @@ const App = () => {
                 <PublicRoute>
                   <VerifyEmail />
                 </PublicRoute>
+              }/>
+              <Route path='/auth/callback' element={
+                <OAuthCallback />
+              }/>
+              <Route path='/auth/onboarding' element={
+                <OAuthOnboarding />
               }/>
               
               {/* Protected routes - require authentication */}
@@ -165,6 +188,11 @@ const App = () => {
                   <Templates />
                 </ProtectedRoute>
               }/>
+              <Route path='/help' element={
+                <ProtectedRoute>
+                  <HelpCenter />
+                </ProtectedRoute>
+              }/>
               
               {/* Public info pages */}
               <Route path='/pricing' element={<PremiumPage />}/>
@@ -186,8 +214,9 @@ const App = () => {
           </Router>
           <PerformanceToggle />
         </main>
-            </AuthProvider>
-          </QueryProvider>
+              </AuthProvider>
+            </QueryProvider>
+          </ToastProvider>
         </ThemeProvider>
       </PerformanceProvider>
     </ErrorProvider>

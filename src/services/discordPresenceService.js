@@ -4,25 +4,26 @@ class DiscordPresenceService {
     this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api'
   }
 
-  // Get authorization headers
+  // Get authorization headers for httpOnly cookie authentication
   getAuthHeaders() {
-    const token = localStorage.getItem('authToken')
-    const sessionId = localStorage.getItem('sessionId')
-    
     return {
-      'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : '',
-      'X-Session-ID': sessionId || ''
+      'Content-Type': 'application/json'
+    }
+  }
+  
+  // Get fetch options with credentials for httpOnly cookies
+  getFetchOptions(method = 'GET') {
+    return {
+      method,
+      credentials: 'include', // Include httpOnly cookies
+      headers: this.getAuthHeaders()
     }
   }
 
   // Get presence status for a specific Discord user ID
   async getUserPresence(discordUserID) {
     try {
-      const response = await fetch(`${this.baseURL}/discord-bot/presence/${discordUserID}`, {
-        method: 'GET',
-        headers: this.getAuthHeaders()
-      })
+      const response = await fetch(`${this.baseURL}/discord-bot/presence/${discordUserID}`, this.getFetchOptions('GET'))
 
       const data = await response.json()
 
@@ -40,10 +41,7 @@ class DiscordPresenceService {
   // Get all tracked presences (admin function)
   async getAllPresences() {
     try {
-      const response = await fetch(`${this.baseURL}/discord-bot/presences`, {
-        method: 'GET',
-        headers: this.getAuthHeaders()
-      })
+      const response = await fetch(`${this.baseURL}/discord-bot/presences`, this.getFetchOptions('GET'))
 
       const data = await response.json()
 
@@ -160,6 +158,106 @@ class DiscordPresenceService {
     const diffMinutes = Math.floor(diffMs / (1000 * 60))
     
     return diffMinutes < 5
+  }
+
+  // Get Discord badges for a specific Discord user ID
+  async getUserBadges(discordUserID) {
+    try {
+      const response = await fetch(`${this.baseURL}/discord-bot/badges/${discordUserID}`, {
+        method: 'GET',
+        headers: this.getAuthHeaders()
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to get Discord badges')
+      }
+
+      return data.data
+    } catch (error) {
+      console.error('Failed to get Discord badges:', error)
+      return { badges: [], count: 0 }
+    }
+  }
+
+  // Get Discord user info for a specific Discord user ID
+  async getDiscordUser(discordUserID) {
+    try {
+      const response = await fetch(`${this.baseURL}/discord-bot/user/${discordUserID}`, {
+        method: 'GET',
+        headers: this.getAuthHeaders()
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to get Discord user info')
+      }
+
+      return data.data
+    } catch (error) {
+      console.error('Failed to get Discord user info:', error)
+      return null
+    }
+  }
+
+  // Generate Discord avatar URL
+  getDiscordAvatarURL(userID, avatarHash, size = 128) {
+    if (!userID) return null
+    
+    if (!avatarHash || avatarHash === '') {
+      // Default avatar - use modulo of user ID
+      const defaultNum = (parseInt(userID) % 5)
+      return `https://cdn.discordapp.com/embed/avatars/${defaultNum}.png`
+    }
+
+    // Check if it's an animated avatar
+    const extension = avatarHash.startsWith('a_') ? 'gif' : 'png'
+    return `https://cdn.discordapp.com/avatars/${userID}/${avatarHash}.${extension}?size=${size}`
+  }
+
+  // Get badge display information
+  getBadgeDisplay(badge) {
+    return {
+      id: badge.id,
+      name: badge.name,
+      description: badge.description,
+      icon: badge.icon,
+      rarity: this.getBadgeRarity(badge.id)
+    }
+  }
+
+  // Determine badge rarity based on badge type
+  getBadgeRarity(badgeId) {
+    const rarityMap = {
+      'discord_employee': 'legendary',
+      'discord_partner': 'epic',
+      'certified_mod': 'epic',
+      'bug_hunter_2': 'rare',
+      'early_bot_dev': 'rare',
+      'hypesquad_events': 'uncommon',
+      'bug_hunter_1': 'uncommon',
+      'early_supporter': 'uncommon',
+      'house_bravery': 'common',
+      'house_brilliance': 'common',
+      'house_balance': 'common'
+    }
+
+    return rarityMap[badgeId] || 'common'
+  }
+
+  // Get rarity color for styling
+  getRarityColor(rarity) {
+    const rarityColors = {
+      'legendary': '#ff8c00',
+      'epic': '#9d5bd8',
+      'rare': '#4a90e2',
+      'uncommon': '#57c765',
+      'common': '#747f8d'
+    }
+
+    return rarityColors[rarity] || '#747f8d'
   }
 }
 

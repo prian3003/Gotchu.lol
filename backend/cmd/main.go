@@ -19,6 +19,7 @@ import (
 	"gotchu-backend/pkg/email"
 	"gotchu-backend/pkg/redis"
 	"gotchu-backend/pkg/storage"
+	"gotchu-backend/pkg/workers"
 
 	"github.com/gin-gonic/gin"
 )
@@ -54,17 +55,44 @@ func main() {
 		log.Println("⚡ Skipping migrations for fast development startup")
 	}
 
-	// Initialize Redis
-	redisClient, err := redis.NewClient(
-		cfg.RedisHost,
-		cfg.RedisPort,
-		cfg.RedisPassword,
-		cfg.RedisUsername,
-		cfg.RedisDB,
-	)
-	if err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
+	// Initialize Redis - prefer Upstash if available, fallback to traditional Redis
+	var redisClient *redis.Client
+	
+	if cfg.UpstashRedisURL != "" && cfg.UpstashRedisToken != "" {
+		log.Println("🔗 Connecting to Upstash Redis...")
+		redisClient, err = redis.NewUpstashClient(cfg.UpstashRedisURL, cfg.UpstashRedisToken)
+		if err != nil {
+			log.Printf("Failed to connect to Upstash Redis: %v", err)
+			log.Println("📡 Falling back to traditional Redis...")
+		} else {
+			log.Println("✅ Connected to Upstash Redis successfully")
+		}
 	}
+	
+	// Fallback to traditional Redis if Upstash failed or not configured
+	if redisClient == nil {
+		if cfg.RedisHost != "" && cfg.RedisPort != "" {
+			log.Println("🔗 Connecting to traditional Redis...")
+			redisClient, err = redis.NewClient(
+				cfg.RedisHost,
+				cfg.RedisPort,
+				cfg.RedisPassword,
+				cfg.RedisUsername,
+				cfg.RedisDB,
+			)
+			if err != nil {
+				log.Fatalf("Failed to connect to Redis: %v", err)
+			}
+			log.Println("✅ Connected to traditional Redis successfully")
+		} else {
+			log.Fatalf("No Redis configuration found. Please configure either Upstash Redis (UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN) or traditional Redis (REDIS_HOST, REDIS_PORT)")
+		}
+	}
+
+	// Initialize worker pool for background operations
+	workerPool := workers.NewWorkerPool(8, 1000) // 8 workers, 1000 job queue
+	workerPool.Start()
+	defer workerPool.Stop(5 * time.Second)
 
 	// Initialize auth service
 	authService := auth.NewService(cfg.JWTSecret, cfg.SessionExpiry)
@@ -114,7 +142,7 @@ func main() {
 	var discordBotHandler *handlers.DiscordBotHandler
 	if cfg.DiscordBotToken != "" && cfg.DiscordGuildID != "" {
 		discordBotService = discordbot.NewDiscordBotService(cfg.DiscordBotToken, cfg.DiscordGuildID, db)
-		discordBotHandler = handlers.NewDiscordBotHandler(discordBotService)
+		discordBotHandler = handlers.NewDiscordBotHandler(discordBotService, discordService)
 		
 		// Start the bot service
 		go func() {
@@ -128,18 +156,25 @@ func main() {
 		log.Println("⚠️ Warning: Discord Bot service not configured (missing bot token or guild ID)")
 	}
 
+	// Initialize OAuth configurations
+	handlers.InitOAuthConfig(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.DiscordClientID, cfg.DiscordClientSecret)
+	
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(db, authService, redisClient, authMiddleware, emailService, cfg.SiteURL)
-	dashboardHandler := handlers.NewDashboardHandler(db, redisClient, cfg, discordBotService)
+	authHandler := handlers.NewAuthHandler(db, authService, redisClient, authMiddleware, emailService, cfg.SiteURL, cfg)
+	dashboardHandler := handlers.NewDashboardHandler(db, redisClient, cfg, discordBotService, workerPool)
 	linkHandler := handlers.NewLinkHandler(db, redisClient)
 	templateHandler := handlers.NewTemplateHandler(db, redisClient, supabaseStorage)
 	badgesHandler := handlers.NewBadgesHandler(db)
+	paymentHandler := handlers.NewPaymentHandler(db, redisClient, cfg, workerPool)
 
 	// Setup router
-	router := setupRouter(cfg, authMiddleware, rateLimiter, badgeMiddleware, authHandler, dashboardHandler, linkHandler, templateHandler, badgesHandler, discordHandler, discordBotHandler)
+	router := setupRouter(cfg, authMiddleware, rateLimiter, badgeMiddleware, authHandler, dashboardHandler, linkHandler, templateHandler, badgesHandler, discordHandler, discordBotHandler, paymentHandler)
 
 	// Serve uploaded files
 	router.Static("/uploads", "./uploads")
+
+	// Payment success redirect (outside API group for direct access)
+	router.GET("/payment-success", paymentHandler.PaymentSuccess)
 
 	// Setup HTTP server
 	srv := &http.Server{
@@ -207,22 +242,24 @@ func setupRouter(
 	badgesHandler *handlers.BadgesHandler,
 	discordHandler *handlers.DiscordHandler,
 	discordBotHandler *handlers.DiscordBotHandler,
+	paymentHandler *handlers.PaymentHandler,
 ) *gin.Engine {
 	router := gin.New()
 
 	// Recovery middleware
 	router.Use(gin.Recovery())
 
-	// Logging middleware - temporarily disabled to fix EOF issue
-	// if cfg.IsDevelopment() {
-	//	router.Use(middleware.LoggingMiddleware())
-	// }
+	// Logging middleware temporarily disabled for debugging
+	// router.Use(middleware.LoggingMiddleware())
 
 	// CORS middleware
 	router.Use(middleware.SetupCORS(cfg.CORSOrigins))
 
-	// Global rate limiting - temporarily disabled to fix EOF issue
-	// router.Use(rateLimiter.GlobalRateLimit(cfg.RateLimitMax, cfg.RateLimitWindow))
+	// Validation middleware temporarily disabled for debugging
+	// router.Use(middleware.SQLInjectionProtection())
+
+	// Global rate limiting
+	router.Use(rateLimiter.GlobalRateLimit(cfg.RateLimitMax, cfg.RateLimitWindow))
 
 	// Health check endpoint
 	router.GET("/health", func(c *gin.Context) {
@@ -237,12 +274,12 @@ func setupRouter(
 	// API routes
 	api := router.Group("/api")
 	{
-		// Auth routes with rate limiting - temporarily disabled to fix EOF issue
+		// Auth routes with rate limiting temporarily disabled
 		auth := api.Group("/auth")
 		// auth.Use(authMiddleware.RateLimitAuth(cfg.AuthRateLimitMax, cfg.RateLimitWindow))
 		{
 			auth.POST("/register", authHandler.Register)
-			auth.POST("/login", badgeMiddleware.CheckBadgesOnLogin(), authHandler.Login)
+			auth.POST("/login", authHandler.Login)
 			auth.POST("/login/2fa", badgeMiddleware.CheckBadgesOnLogin(), authHandler.Login2FA)
 			auth.POST("/logout", authMiddleware.OptionalAuth(), authHandler.Logout)
 			auth.GET("/me", authMiddleware.RequireAuth(), authHandler.GetCurrentUser)
@@ -252,6 +289,11 @@ func setupRouter(
 			// Email verification routes
 			auth.GET("/verify-email", authHandler.VerifyEmail)
 			auth.POST("/resend-verification", authHandler.ResendVerification)
+			
+			// OAuth routes
+			auth.GET("/oauth/:provider", authHandler.InitiateOAuth)
+			auth.GET("/oauth/:provider/callback", authHandler.HandleOAuthCallback)
+			auth.POST("/complete-oauth-setup", authMiddleware.RequireAuth(), authHandler.CompleteOAuthSetup)
 			
 			// 2FA routes (protected)
 			twofa := auth.Group("/2fa")
@@ -266,6 +308,7 @@ func setupRouter(
 			auth.POST("/update-username", authMiddleware.RequireAuth(), authHandler.UpdateUsername)
 			auth.POST("/update-display-name", authMiddleware.RequireAuth(), authHandler.UpdateDisplayName)
 			auth.POST("/update-alias", authMiddleware.RequireAuth(), authHandler.UpdateAlias)
+			auth.POST("/change-password", authMiddleware.RequireAuth(), authHandler.ChangePassword)
 		}
 
 		// Dashboard routes (protected)
@@ -274,6 +317,7 @@ func setupRouter(
 		{
 			dashboard.GET("", dashboardHandler.GetDashboard)
 			dashboard.GET("/analytics", dashboardHandler.GetAnalytics)
+			dashboard.POST("/settings", dashboardHandler.SaveSettings)
 		}
 
 		// Customization routes (protected)
@@ -368,6 +412,7 @@ func setupRouter(
 			{
 				badgesProtected.PUT("/order", badgesHandler.UpdateBadgeOrder)
 				badgesProtected.POST("/check", badgesHandler.CheckBadges)
+				badgesProtected.POST("/claim/:badgeId", badgesHandler.ClaimBadge)
 				badgesProtected.POST("/award", badgesHandler.AwardBadgeManually) // Admin only - add admin middleware later
 			}
 		}
@@ -426,6 +471,8 @@ func setupRouter(
 			{
 				// Public presence viewing endpoints (no auth required)
 				discordBot.GET("/presence/:userID", discordBotHandler.GetUserPresence)
+				discordBot.GET("/badges/:userID", discordBotHandler.GetDiscordBadges)
+				discordBot.GET("/user/:userID", discordBotHandler.GetDiscordUser)
 				
 				// Protected endpoints (authentication required)
 				discordBotProtected := discordBot.Group("")
@@ -436,6 +483,25 @@ func setupRouter(
 					discordBotProtected.POST("/start", discordBotHandler.StartBot)
 					discordBotProtected.POST("/stop", discordBotHandler.StopBot)
 				}
+			}
+		}
+
+		// Payment routes
+		payments := api.Group("/payments")
+		{
+			// Public routes (no auth required)
+			payments.GET("/plans", paymentHandler.GetPricingPlans)
+			payments.GET("/currencies", paymentHandler.GetAvailableCurrencies)
+			payments.POST("/webhook", paymentHandler.ProcessWebhook) // OxaPay webhook
+			
+			// Protected routes (authentication required)
+			paymentsProtected := payments.Group("")
+			paymentsProtected.Use(authMiddleware.RequireAuth())
+			{
+				paymentsProtected.POST("/create", paymentHandler.CreatePayment)
+				paymentsProtected.GET("/:id/status", paymentHandler.GetPaymentStatus)
+				paymentsProtected.GET("/history", paymentHandler.GetUserPayments)
+				paymentsProtected.GET("/subscription", paymentHandler.GetCurrentSubscription)
 			}
 		}
 

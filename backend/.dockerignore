@@ -1,0 +1,22 @@
+# Ignore files for Docker build
+.env
+.env.*
+*.log
+.git
+.gitignore
+README.md
+Dockerfile
+.dockerignore
+node_modules
+npm-debug.log
+coverage/
+.nyc_output
+.cache
+.tmp
+.temp
+bin/
+tmp/
+*.exe
+*.test
+.vscode/
+.idea/

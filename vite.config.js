@@ -3,17 +3,23 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  server: {
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-        secure: false,
-      }
-    }
-  },
+export default defineConfig(({ mode }) => {
+  const isDev = mode === 'development'
+  
+  return {
+    plugins: [react(), tailwindcss()],
+    server: {
+      proxy: isDev ? {
+        '/api': {
+          target: 'http://localhost:8080',
+          changeOrigin: true,
+          secure: false,
+        }
+      } : undefined
+    },
+    define: {
+      __DEV__: isDev,
+    },
   build: {
     // Optimize chunk splitting
     rollupOptions: {
@@ -24,7 +30,8 @@ export default defineConfig({
           'router-vendor': ['react-router-dom'],
           'query-vendor': ['@tanstack/react-query'],
           'styled-vendor': ['styled-components'],
-          'icons-vendor': ['react-icons'],
+          'icons-vendor': ['react-icons', '@iconify/react'],
+          'flags-vendor': ['flag-icons'],
           
           // App chunks
           'auth': [
@@ -97,5 +104,6 @@ export default defineConfig({
       'react-icons/hi2'
     ],
     exclude: ['@tanstack/react-query-devtools']
+  }
   }
 })

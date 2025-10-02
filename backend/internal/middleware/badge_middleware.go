@@ -30,7 +30,7 @@ func (m *BadgeMiddleware) CheckBadgesAfterAction() gin.HandlerFunc {
 		if user, exists := GetCurrentUser(c); exists {
 			// Run badge checking in a goroutine to not block the response
 			go func() {
-				if err := m.badgeService.CheckAndAwardBadges(user.ID); err != nil {
+				if _, err := m.badgeService.CheckAndMarkClaimable(user.ID); err != nil {
 					log.Printf("Failed to check badges for user %d: %v", user.ID, err)
 				}
 			}()
@@ -50,7 +50,7 @@ func (m *BadgeMiddleware) CheckBadgesOnLogin() gin.HandlerFunc {
 				// Run badge checking in a goroutine to not block the response
 				go func() {
 					log.Printf("Checking badges for user %d after login", user.ID)
-					if err := m.badgeService.CheckAndAwardBadges(user.ID); err != nil {
+					if _, err := m.badgeService.CheckAndMarkClaimable(user.ID); err != nil {
 						log.Printf("Failed to check badges for user %d after login: %v", user.ID, err)
 					}
 				}()
@@ -62,7 +62,7 @@ func (m *BadgeMiddleware) CheckBadgesOnLogin() gin.HandlerFunc {
 // CheckSpecificBadge manually checks a specific badge type for a user (used in handlers)
 func (m *BadgeMiddleware) CheckSpecificBadge(userID uint, badgeID string) {
 	go func() {
-		if err := m.badgeService.CheckAndAwardBadges(userID); err != nil {
+		if _, err := m.badgeService.CheckAndMarkClaimable(userID); err != nil {
 			log.Printf("Failed to check specific badge %s for user %d: %v", badgeID, userID, err)
 		}
 	}()

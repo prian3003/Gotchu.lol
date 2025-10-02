@@ -3,7 +3,11 @@ import discordPresenceService from '../services/discordPresenceService'
 
 export const useDiscordPresence = (discordUserID) => {
   const [presence, setPresence] = useState(null)
+  const [badges, setBadges] = useState({ badges: [], count: 0 })
+  const [userInfo, setUserInfo] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [badgesLoading, setBadgesLoading] = useState(true)
+  const [userLoading, setUserLoading] = useState(true)
   const [error, setError] = useState(null)
 
   // Fetch presence data
@@ -25,10 +29,48 @@ export const useDiscordPresence = (discordUserID) => {
     }
   }, [discordUserID])
 
+  // Fetch Discord badges
+  const fetchBadges = useCallback(async () => {
+    if (!discordUserID) {
+      setBadgesLoading(false)
+      return
+    }
+
+    try {
+      const badgesData = await discordPresenceService.getUserBadges(discordUserID)
+      setBadges(badgesData)
+    } catch (err) {
+      console.error('Failed to fetch Discord badges:', err)
+      setBadges({ badges: [], count: 0 })
+    } finally {
+      setBadgesLoading(false)
+    }
+  }, [discordUserID])
+
+  // Fetch Discord user info
+  const fetchUserInfo = useCallback(async () => {
+    if (!discordUserID) {
+      setUserLoading(false)
+      return
+    }
+
+    try {
+      const userData = await discordPresenceService.getDiscordUser(discordUserID)
+      setUserInfo(userData)
+    } catch (err) {
+      console.error('Failed to fetch Discord user info:', err)
+      setUserInfo(null)
+    } finally {
+      setUserLoading(false)
+    }
+  }, [discordUserID])
+
   // Initial fetch
   useEffect(() => {
     fetchPresence()
-  }, [fetchPresence])
+    fetchBadges()
+    fetchUserInfo()
+  }, [fetchPresence, fetchBadges, fetchUserInfo])
 
   // Auto-refresh presence every 30 seconds
   useEffect(() => {
@@ -43,14 +85,23 @@ export const useDiscordPresence = (discordUserID) => {
 
   return {
     presence,
+    badges,
+    userInfo,
     loading,
+    badgesLoading,
+    userLoading,
     error,
     refetch: fetchPresence,
+    refetchBadges: fetchBadges,
+    refetchUserInfo: fetchUserInfo,
     // Helper functions
     getStatusDisplay: (status) => discordPresenceService.getStatusDisplay(status),
     getActivityDisplay: (activity) => discordPresenceService.getActivityDisplay(activity),
     formatLastSeen: (lastSeen) => discordPresenceService.formatLastSeen(lastSeen),
-    isPresenceRecent: (updatedAt) => discordPresenceService.isPresenceRecent(updatedAt)
+    isPresenceRecent: (updatedAt) => discordPresenceService.isPresenceRecent(updatedAt),
+    getBadgeDisplay: (badge) => discordPresenceService.getBadgeDisplay(badge),
+    getRarityColor: (rarity) => discordPresenceService.getRarityColor(rarity),
+    getDiscordAvatarURL: (userID, avatarHash, size) => discordPresenceService.getDiscordAvatarURL(userID, avatarHash, size)
   }
 }
 

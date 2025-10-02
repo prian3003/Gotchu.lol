@@ -22,31 +22,153 @@ func NewService(db *gorm.DB) *Service {
 	}
 }
 
-// CheckAndAwardBadges checks all badges for a user and awards them if conditions are met
-func (s *Service) CheckAndAwardBadges(userID uint) error {
+// CheckAndMarkClaimable checks all badges for a user and marks them as claimable if conditions are met
+func (s *Service) CheckAndMarkClaimable(userID uint) (int, error) {
 	// Get user data
 	var user models.User
 	if err := s.db.First(&user, userID).Error; err != nil {
-		return fmt.Errorf("failed to get user: %w", err)
+		return 0, fmt.Errorf("failed to get user: %w", err)
 	}
 
 	// Get all active badges
 	var badges []models.Badge
 	if err := s.db.Where("is_active = ?", true).Find(&badges).Error; err != nil {
-		return fmt.Errorf("failed to get badges: %w", err)
+		return 0, fmt.Errorf("failed to get badges: %w", err)
 	}
 
-	// Check each badge
+	claimableCount := 0
+	// Check each badge and mark as claimable if conditions are met
 	for _, badge := range badges {
-		if err := s.checkAndAwardBadge(&user, &badge); err != nil {
+		if claimed, err := s.checkAndMarkClaimable(&user, &badge); err != nil {
 			log.Printf("Error checking badge %s for user %d: %v", badge.Name, userID, err)
+		} else if claimed {
+			claimableCount++
 		}
+	}
+
+	return claimableCount, nil
+}
+
+// CheckAndMarkClaimable checks a specific badge for a user and marks it as claimable if conditions are met
+func (s *Service) checkAndMarkClaimable(user *models.User, badge *models.Badge) (bool, error) {
+	// Check if user already has this badge
+	var existingUserBadge models.UserBadge
+	result := s.db.Where("user_id = ? AND badge_id = ?", user.ID, badge.ID).First(&existingUserBadge)
+	
+	// If badge already earned, skip
+	if result.Error == nil && existingUserBadge.IsEarned {
+		return false, nil
+	}
+
+	// Parse requirement data
+	var reqData map[string]interface{}
+	if err := json.Unmarshal([]byte(badge.RequirementData), &reqData); err != nil {
+		return false, fmt.Errorf("failed to parse requirement data: %w", err)
+	}
+
+	// Check if user meets the requirements
+	meets, progress, currentValue, targetValue := s.checkRequirement(user, badge.RequirementType, reqData)
+	
+	log.Printf("🔍 Badge %s for user %d: meets=%v, progress=%.2f, current=%.2f, target=%.2f", 
+		badge.Name, user.ID, meets, progress, currentValue, targetValue)
+
+	// Create or update user badge record
+	if result.Error == gorm.ErrRecordNotFound {
+		// Create new user badge record
+		userBadge := models.UserBadge{
+			UserID:       user.ID,
+			BadgeID:      badge.ID,
+			IsEarned:     false, // Never auto-earn, only mark as claimable
+			IsClaimable:  meets,
+			Progress:     progress,
+			CurrentValue: currentValue,
+			TargetValue:  targetValue,
+			IsVisible:    true,
+			IsShowcased:  false,
+		}
+
+		if err := s.db.Create(&userBadge).Error; err != nil {
+			return false, fmt.Errorf("failed to create user badge: %w", err)
+		}
+
+		if meets {
+			log.Printf("🎯 Badge %s is now claimable for user %d", badge.Name, user.ID)
+			return true, nil
+		}
+	} else {
+		// Update existing user badge record
+		updates := map[string]interface{}{
+			"progress":      progress,
+			"current_value": currentValue,
+			"target_value":  targetValue,
+			"is_claimable":  meets,
+		}
+
+		// If badge just became claimable
+		if meets && !existingUserBadge.IsClaimable && !existingUserBadge.IsEarned {
+			log.Printf("🎯 Badge %s is now claimable for user %d", badge.Name, user.ID)
+		} else {
+			log.Printf("📝 Badge %s for user %d: meets=%v, already_claimable=%v, already_earned=%v", 
+				badge.Name, user.ID, meets, existingUserBadge.IsClaimable, existingUserBadge.IsEarned)
+		}
+
+		if err := s.db.Model(&existingUserBadge).Updates(updates).Error; err != nil {
+			return false, fmt.Errorf("failed to update user badge: %w", err)
+		}
+
+		return meets && !existingUserBadge.IsClaimable && !existingUserBadge.IsEarned, nil
+	}
+
+	return false, nil
+}
+
+// ClaimBadge allows a user to claim a badge they've met the requirements for
+func (s *Service) ClaimBadge(userID uint, badgeID string) error {
+	// Check if user has the badge and it's claimable
+	var userBadge models.UserBadge
+	err := s.db.Where("user_id = ? AND badge_id = ?", userID, badgeID).First(&userBadge).Error
+	if err == gorm.ErrRecordNotFound {
+		return fmt.Errorf("badge not found for user")
+	}
+	if err != nil {
+		return fmt.Errorf("database error: %w", err)
+	}
+
+	// Check if already earned
+	if userBadge.IsEarned {
+		return fmt.Errorf("badge already claimed")
+	}
+
+	// Check if claimable
+	if !userBadge.IsClaimable {
+		return fmt.Errorf("badge requirements not met")
+	}
+
+	// Claim the badge
+	now := time.Now()
+	earnMethod := models.EarnMethodClaimed
+	updates := map[string]interface{}{
+		"is_earned":     true,
+		"is_claimable":  false, // No longer claimable once claimed
+		"earned_at":     &now,
+		"earn_method":   earnMethod,
+		"is_showcased":  true, // Auto-showcase newly claimed badges
+	}
+
+	if err := s.db.Model(&userBadge).Updates(updates).Error; err != nil {
+		return fmt.Errorf("failed to claim badge: %w", err)
+	}
+
+	// Get badge info for logging
+	var badge models.Badge
+	if err := s.db.Where("id = ?", badgeID).First(&badge).Error; err == nil {
+		log.Printf("🏆 User %d claimed badge: %s", userID, badge.Name)
 	}
 
 	return nil
 }
 
-// CheckAndAwardBadge checks a specific badge for a user and awards it if conditions are met
+// CheckAndAwardBadge checks a specific badge for a user and awards it if conditions are met (legacy method for manual awards)
 func (s *Service) checkAndAwardBadge(user *models.User, badge *models.Badge) error {
 	// Check if user already has this badge
 	var existingUserBadge models.UserBadge
@@ -284,7 +406,6 @@ func (s *Service) checkCustomMetric(user *models.User, reqData map[string]interf
 
 // CheckManualRequirement checks manual requirements (staff, helper roles, etc.)
 func (s *Service) checkManualRequirement(user *models.User, reqData map[string]interface{}) (bool, float64, float64, float64) {
-	// These badges are manually awarded by admins
 	// Check user role or special flags
 	
 	if role, exists := reqData["role"]; exists {
@@ -301,6 +422,15 @@ func (s *Service) checkManualRequirement(user *models.User, reqData map[string]i
 	if verified, exists := reqData["verified"]; exists && verified.(bool) {
 		// Check if user is verified
 		return user.IsVerified, 1.0, 1.0, 1.0
+	}
+
+	// Welcome badge - automatically claimable for all users with accounts
+	if welcome, exists := reqData["welcome"]; exists {
+		if welcomeBool, ok := welcome.(bool); ok && welcomeBool {
+			// All users with accounts should be able to claim the welcome badge
+			log.Printf("✅ Welcome badge check for user %d: meets requirements", user.ID)
+			return true, 1.0, 1.0, 1.0
+		}
 	}
 
 	return false, 0, 0, 1

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -151,8 +152,13 @@ func (am *AuthMiddleware) RequireAdmin() gin.HandlerFunc {
 
 // authenticateRequest handles the core authentication logic
 func (am *AuthMiddleware) authenticateRequest(c *gin.Context) (*models.User, *redis.SessionData, error) {
-	// Try session ID first
-	sessionID := c.GetHeader("X-Session-ID")
+	// Try session ID from cookie first, then header for backward compatibility
+	sessionID, err := c.Cookie("sessionId")
+	if err != nil || sessionID == "" {
+		// Fallback to header for backward compatibility
+		sessionID = c.GetHeader("X-Session-ID")
+	}
+	
 	if sessionID != "" {
 		session, err := am.redisClient.GetSession(sessionID)
 		if err != nil {
@@ -170,6 +176,8 @@ func (am *AuthMiddleware) authenticateRequest(c *gin.Context) (*models.User, *re
 			}
 
 			return user, session, nil
+		} else {
+			fmt.Printf("Auth middleware: Session not found in Redis\n")
 		}
 	}
 
@@ -211,15 +219,18 @@ func (am *AuthMiddleware) getUserByID(userID uint) (*models.User, error) {
 	cached, err := am.redisClient.GetUserCache(userID)
 	if err == nil && cached != nil {
 		user := &models.User{
-			ID:          cached.ID,
-			Username:    cached.Username,
-			Email:       &cached.Email,
-			DisplayName: cached.DisplayName,
-			AvatarURL:   cached.AvatarURL,
-			IsVerified:  cached.IsVerified,
-			Plan:        cached.Plan,
-			Theme:       cached.Theme,
-			IsActive:    cached.IsActive,
+			ID:           cached.ID,
+			Username:     cached.Username,
+			Email:        &cached.Email,
+			DisplayName:  cached.DisplayName,
+			AvatarURL:    cached.AvatarURL,
+			IsVerified:   cached.IsVerified,
+			Plan:         cached.Plan,
+			Theme:        cached.Theme,
+			IsActive:     cached.IsActive,
+			ProfileViews: cached.ProfileViews,
+			TotalClicks:  cached.TotalClicks,
+			MfaEnabled:   cached.MfaEnabled,
 		}
 		return user, nil
 	}
@@ -232,17 +243,25 @@ func (am *AuthMiddleware) getUserByID(userID uint) (*models.User, error) {
 	}
 
 	// Cache the user data
+	userEmail := ""
+	if user.Email != nil {
+		userEmail = *user.Email
+	}
+	
 	cacheData := redis.UserCache{
-		ID:          user.ID,
-		Username:    user.Username,
-		Email:       *user.Email,
-		DisplayName: user.DisplayName,
-		AvatarURL:   user.AvatarURL,
-		IsVerified:  user.IsVerified,
-		Plan:        user.Plan,
-		Theme:       user.Theme,
-		IsActive:    user.IsActive,
-		UpdatedAt:   time.Now(),
+		ID:           user.ID,
+		Username:     user.Username,
+		Email:        userEmail,
+		DisplayName:  user.DisplayName,
+		AvatarURL:    user.AvatarURL,
+		IsVerified:   user.IsVerified,
+		Plan:         user.Plan,
+		Theme:        user.Theme,
+		IsActive:     user.IsActive,
+		ProfileViews: user.ProfileViews,
+		TotalClicks:  user.TotalClicks,
+		MfaEnabled:   user.MfaEnabled,
+		UpdatedAt:    time.Now(),
 	}
 	am.redisClient.SetUserCache(user.ID, cacheData, 30*time.Minute)
 

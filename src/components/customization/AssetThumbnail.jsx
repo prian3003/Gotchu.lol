@@ -69,7 +69,7 @@ const AssetThumbnail = ({
   const isVideoAsset = assetType === 'backgroundImage' && assetUrl && 
     (assetUrl.includes('.mp4') || assetUrl.includes('.webm') || assetUrl.includes('.ogg') || 
      assetUrl.includes('.avi') || assetUrl.includes('.mov') || assetUrl.includes('video/'))
-  const isImageAsset = (assetType === 'backgroundImage' || assetType === 'avatar') && !isVideoAsset
+  const isImageAsset = (assetType === 'backgroundImage' || assetType === 'avatar' || assetType === 'cursor') && !isVideoAsset
   const isAudioAsset = assetType === 'audio'
 
   if (!assetUrl) {

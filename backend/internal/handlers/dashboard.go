@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	net_url "net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"gotchu-backend/pkg/discordbot"
 	"gotchu-backend/pkg/redis"
 	"gotchu-backend/pkg/storage"
+	"gotchu-backend/pkg/workers"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -28,10 +30,11 @@ type DashboardHandler struct {
 	config      *config.Config
 	geoService  *analytics.GeoLocationService
 	discordBot  *discordbot.DiscordBotService
+	workerPool  *workers.WorkerPool
 }
 
 // NewDashboardHandler creates a new dashboard handler
-func NewDashboardHandler(db *gorm.DB, redisClient *redis.Client, cfg *config.Config, discordBot *discordbot.DiscordBotService) *DashboardHandler {
+func NewDashboardHandler(db *gorm.DB, redisClient *redis.Client, cfg *config.Config, discordBot *discordbot.DiscordBotService, workerPool *workers.WorkerPool) *DashboardHandler {
 	supabaseStorage := storage.NewSupabaseStorage(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey, cfg.SupabaseAnonKey)
 	return &DashboardHandler{
 		db:          db,
@@ -40,6 +43,7 @@ func NewDashboardHandler(db *gorm.DB, redisClient *redis.Client, cfg *config.Con
 		config:      cfg,
 		geoService:  analytics.NewGeoLocationService(),
 		discordBot:  discordBot,
+		workerPool:  workerPool,
 	}
 }
 
@@ -74,8 +78,14 @@ func (h *DashboardHandler) GetDashboard(c *gin.Context) {
 	// Cache key for dashboard data
 	cacheKey := fmt.Sprintf("dashboard:user:%d", user.ID)
 	
-	// Try to get cached data first
-	if h.redisClient != nil {
+	// Check if this is a cache-busting request (from settings page)
+	bypassCache := c.Query("t") != ""
+	if bypassCache {
+		fmt.Printf("Cache bypass requested for user %d (timestamp: %s)\n", user.ID, c.Query("t"))
+	}
+	
+	// Try to get cached data first (unless bypassing cache)
+	if h.redisClient != nil && !bypassCache {
 		var cachedResponse DashboardResponse
 		err := h.redisClient.Get(cacheKey, &cachedResponse)
 		if err == nil {
@@ -92,13 +102,50 @@ func (h *DashboardHandler) GetDashboard(c *gin.Context) {
 	}
 
 	fmt.Printf("Dashboard cache miss for user %d, fetching from database\n", user.ID)
+	
+	// DEBUG: Log current user data from middleware before any processing
+	fmt.Printf("DEBUG - Raw user from middleware - ID: %d, Username: %s, ProfileViews: %d, TotalClicks: %d, MfaEnabled: %t\n", 
+		user.ID, user.Username, user.ProfileViews, user.TotalClicks, user.MfaEnabled)
 
-	// Get additional statistics
-	var linksCount int64
-	h.db.Model(&models.Link{}).Where("user_id = ? AND is_active = ?", user.ID, true).Count(&linksCount)
+	// Always get fresh user data from database to ensure ProfileViews and other stats are current
+	var dbUser models.User
+	if err := h.db.Where("id = ?", user.ID).First(&dbUser).Error; err == nil {
+		fmt.Printf("DEBUG - Raw database query result - ID: %d, Username: %s, ProfileViews: %d, TotalClicks: %d\n", 
+			dbUser.ID, dbUser.Username, dbUser.ProfileViews, dbUser.TotalClicks)
+		
+		// Also do a direct SQL query to double-check
+		var directProfileViews int
+		h.db.Raw("SELECT profile_views FROM users WHERE id = ?", user.ID).Scan(&directProfileViews)
+		fmt.Printf("DEBUG - Direct SQL query profile_views: %d\n", directProfileViews)
+		
+		user = &dbUser
+		fmt.Printf("DEBUG - Fresh user assigned - ID: %d, Username: %s, ProfileViews: %d, TotalClicks: %d\n", 
+			user.ID, user.Username, user.ProfileViews, user.TotalClicks)
+	} else {
+		fmt.Printf("ERROR - Failed to load fresh user data: %v\n", err)
+	}
 
-	var filesCount int64
-	h.db.Model(&models.File{}).Where("user_id = ?", user.ID).Count(&filesCount)
+	// Get additional statistics with single query using CTE
+	type StatsCounts struct {
+		LinksCount int64 `json:"links_count"`
+		FilesCount int64 `json:"files_count"`
+	}
+	
+	var statsCounts StatsCounts
+	result := h.db.Raw(`
+		WITH stats AS (
+			SELECT 
+				(SELECT COUNT(*) FROM links WHERE user_id = ? AND is_active = true) as links_count,
+				(SELECT COUNT(*) FROM files WHERE user_id = ?) as files_count
+		)
+		SELECT links_count, files_count FROM stats
+	`, user.ID, user.ID).Scan(&statsCounts)
+	
+	if result.Error != nil {
+		// Fallback to separate queries if CTE fails
+		h.db.Model(&models.Link{}).Where("user_id = ? AND is_active = ?", user.ID, true).Count(&statsCounts.LinksCount)
+		h.db.Model(&models.File{}).Where("user_id = ?", user.ID).Count(&statsCounts.FilesCount)
+	}
 
 	// Prepare stats
 	stats := DashboardStats{
@@ -106,8 +153,8 @@ func (h *DashboardHandler) GetDashboard(c *gin.Context) {
 		TotalClicks:  user.TotalClicks,
 		JoinDate:     user.CreatedAt,
 		LastActive:   user.LastLoginAt,
-		LinksCount:   int(linksCount),
-		FilesCount:   int(filesCount),
+		LinksCount:   int(statsCounts.LinksCount),
+		FilesCount:   int(statsCounts.FilesCount),
 	}
 
 	// Prepare user data for dashboard
@@ -122,12 +169,14 @@ func (h *DashboardHandler) GetDashboard(c *gin.Context) {
 		"username":     user.Username,
 		"email":        email,
 		"display_name": user.DisplayName,
+		"bio":          user.Bio,
 		"alias":        user.Alias,
 		"avatar_url":   user.AvatarURL,
 		"is_verified":  user.IsVerified,
 		"is_premium":   user.Plan == "premium",
 		"plan":         user.Plan,
 		"theme":        user.Theme,
+		"mfa_enabled":  user.MfaEnabled,
 		"created_at":   user.CreatedAt,
 		"profile_views": user.ProfileViews,
 		"profile_completion": calculateProfileCompletion(user),
@@ -142,8 +191,12 @@ func (h *DashboardHandler) GetDashboard(c *gin.Context) {
 		},
 	}
 
-	// Cache the response for 5 minutes
-	if h.redisClient != nil {
+	// DEBUG: Log the userProfile data being returned
+	fmt.Printf("DEBUG - userProfile being returned: ID=%v, Username=%v, MfaEnabled=%v, Bio=%v\n",
+		userProfile["id"], userProfile["username"], userProfile["mfa_enabled"], userProfile["bio"])
+
+	// Cache the response for 5 minutes (unless bypassing cache)
+	if h.redisClient != nil && !bypassCache {
 		err := h.redisClient.Set(cacheKey, response, 5*time.Minute)
 		if err == nil {
 			fmt.Printf("Dashboard data cached for user %d\n", user.ID)
@@ -167,9 +220,12 @@ func (h *DashboardHandler) GetUserProfile(c *gin.Context) {
 		return
 	}
 
-	// Skip cache for username pages to avoid corruption issues - always get fresh data
+	// Single optimized query: find user by username/alias AND preload links in one operation
 	var user models.User
-	err := h.db.Where("username = ? AND is_active = ?", username, true).First(&user).Error
+	err := h.db.Preload("Links", "is_active = ? ORDER BY \"order\" ASC, created_at ASC", true).
+		Where("(username = ? OR alias = ?) AND is_active = ?", username, username, true).
+		First(&user).Error
+	
 	if err != nil {
 		c.JSON(http.StatusNotFound, DashboardResponse{
 			Success: false,
@@ -189,21 +245,21 @@ func (h *DashboardHandler) GetUserProfile(c *gin.Context) {
 		return
 	}
 
-	// Get user's links
-	var links []models.Link
-	h.db.Where("user_id = ? AND is_active = ?", user.ID, true).
-		Order("\"order\" ASC, created_at ASC").
-		Find(&links)
+	links := user.Links
 
-	// Track unique profile view if not viewing own profile
+	// Track unique profile view if not viewing own profile (non-blocking)
 	if !isAuthenticated || currentUser.ID != user.ID {
-		go h.trackProfileView(c, user.ID) // Run in background to not slow down response
+		h.workerPool.SubmitFunc(fmt.Sprintf("track-view-%d", user.ID), func() error {
+			h.trackProfileView(c, user.ID)
+			return nil
+		})
 	}
 
-	// Prepare public profile data with customization settings
+	// Prepare base profile data
 	profileData := gin.H{
 		"id":            user.ID,
 		"username":      user.Username,
+		"alias":         user.Alias,
 		"display_name":  user.DisplayName,
 		"bio":           user.Bio,
 		"avatar_url":    user.AvatarURL,
@@ -221,16 +277,42 @@ func (h *DashboardHandler) GetUserProfile(c *gin.Context) {
 		"boosting_since":   user.BoostingSince,
 	}
 
-	// Add Discord presence data if available and user has Discord connected
+	// Channel for Discord presence (non-blocking optimization)
+	type presenceResult struct {
+		data gin.H
+		ok   bool
+	}
+	presenceChan := make(chan presenceResult, 1)
+	
+	// Start Discord presence fetch in background if available
 	if user.DiscordID != nil && h.discordBot != nil && h.discordBot.IsRunning() {
-		if presence, err := h.discordBot.GetUserPresence(*user.DiscordID); err == nil && presence != nil {
-			profileData["discord_presence"] = gin.H{
-				"status":      presence.Status,
-				"activities":  presence.Activities,
-				"last_seen":   presence.LastSeen,
-				"updated_at":  presence.UpdatedAt,
+		go func() {
+			if presence, err := h.discordBot.GetUserPresence(*user.DiscordID); err == nil && presence != nil {
+				presenceChan <- presenceResult{
+					data: gin.H{
+						"status":      presence.Status,
+						"activities":  presence.Activities,
+						"last_seen":   presence.LastSeen,
+						"updated_at":  presence.UpdatedAt,
+					},
+					ok: true,
+				}
+			} else {
+				presenceChan <- presenceResult{ok: false}
 			}
+		}()
+	} else {
+		presenceChan <- presenceResult{ok: false}
+	}
+
+	// Wait for Discord presence with timeout (50ms max for responsiveness)
+	select {
+	case result := <-presenceChan:
+		if result.ok {
+			profileData["discord_presence"] = result.data
 		}
+	case <-time.After(50 * time.Millisecond):
+		// Continue without Discord presence to maintain fast response times
 	}
 	
 	// Add customization settings
@@ -279,6 +361,19 @@ func (h *DashboardHandler) GetUserProfile(c *gin.Context) {
 			
 			// Typography
 			"text_font":      getStringValue(user.TextFont),
+			
+			// Splash Screen Settings
+			"enable_splash_screen":      user.EnableSplashScreen,
+			"splash_text":              getStringValue(user.SplashText),
+			"splash_font_size":         getStringValue(user.SplashFontSize),
+			"splash_animated":          user.SplashAnimated,
+			"splash_glow_effect":       user.SplashGlowEffect,
+			"splash_show_particles":    user.SplashShowParticles,
+			"splash_auto_hide":         user.SplashAutoHide,
+			"splash_auto_hide_delay":   user.SplashAutoHideDelay,
+			"splash_background_visible": user.SplashBackgroundVisible,
+			"splash_background_color":  getStringValue(user.SplashBackgroundColor),
+			"splash_transparent":       user.SplashTransparent,
 	}
 
 	// Add private data if viewing own profile
@@ -372,7 +467,7 @@ func validateCustomizationSettings(settings *CustomizationSettings) error {
 	}
 
 	// Validate effects
-	validBackgroundEffects := []string{"", "none", "particles", "rain", "matrix", "waves", "gradient", "geometric"}
+	validBackgroundEffects := []string{"", "none", "particles", "rain", "snow", "matrix", "waves", "gradient", "geometric"}
 	if settings.BackgroundEffect != "" && !contains(validBackgroundEffects, settings.BackgroundEffect) {
 		return fmt.Errorf("invalid background_effect: %s", settings.BackgroundEffect)
 	}
@@ -441,6 +536,19 @@ type CustomizationSettings struct {
 	
 	// Typography
 	TextFont      string `json:"text_font"`
+	
+	// Splash Screen Settings
+	EnableSplashScreen      bool   `json:"enable_splash_screen"`
+	SplashText              string `json:"splash_text"`
+	SplashFontSize          string `json:"splash_font_size"`
+	SplashAnimated          bool   `json:"splash_animated"`
+	SplashGlowEffect        bool   `json:"splash_glow_effect"`
+	SplashShowParticles     bool   `json:"splash_show_particles"`
+	SplashAutoHide          bool   `json:"splash_auto_hide"`
+	SplashAutoHideDelay     int    `json:"splash_auto_hide_delay"`
+	SplashBackgroundVisible bool   `json:"splash_background_visible"`
+	SplashBackgroundColor   string `json:"splash_background_color"`
+	SplashTransparent       bool   `json:"splash_transparent"`
 }
 
 // SaveCustomizationSettings saves user customization preferences
@@ -524,6 +632,16 @@ func (h *DashboardHandler) SaveCustomizationSettings(c *gin.Context) {
 			return nil
 		}(),
 		
+		// Splash Screen Settings
+		"enable_splash_screen":      settings.EnableSplashScreen,
+		"splash_animated":           settings.SplashAnimated,
+		"splash_glow_effect":        settings.SplashGlowEffect,
+		"splash_show_particles":     settings.SplashShowParticles,
+		"splash_auto_hide":          settings.SplashAutoHide,
+		"splash_auto_hide_delay":    settings.SplashAutoHideDelay,
+		"splash_background_visible": settings.SplashBackgroundVisible,
+		"splash_transparent":        settings.SplashTransparent,
+		
 		// Timestamps
 		"updated_at": time.Now(),
 	}
@@ -545,6 +663,27 @@ func (h *DashboardHandler) SaveCustomizationSettings(c *gin.Context) {
 		updates["custom_cursor_url"] = settings.CursorURL
 	} else {
 		updates["custom_cursor_url"] = nil
+	}
+	
+	// Splash screen text fields
+	if settings.SplashText != "" {
+		updates["splash_text"] = settings.SplashText
+	} else {
+		updates["splash_text"] = nil
+	}
+	
+	
+	if settings.SplashFontSize != "" {
+		updates["splash_font_size"] = settings.SplashFontSize
+	} else {
+		updates["splash_font_size"] = nil
+	}
+	
+	// Splash background color field
+	if settings.SplashBackgroundColor != "" {
+		updates["splash_background_color"] = settings.SplashBackgroundColor
+	} else {
+		updates["splash_background_color"] = nil
 	}
 
 	// Update user in database
@@ -676,6 +815,22 @@ func (h *DashboardHandler) GetCustomizationSettings(c *gin.Context) {
 		// Profile Information  
 		Description:   getStringValue(dbUser.Description),
 		Bio:           getStringValue(dbUser.Bio),
+		
+		// Typography
+		TextFont:      getStringValue(dbUser.TextFont),
+		
+		// Splash Screen Settings
+		EnableSplashScreen:      dbUser.EnableSplashScreen,
+		SplashText:              getStringValue(dbUser.SplashText),
+		SplashFontSize:          getStringValue(dbUser.SplashFontSize),
+		SplashAnimated:          dbUser.SplashAnimated,
+		SplashGlowEffect:        dbUser.SplashGlowEffect,
+		SplashShowParticles:     dbUser.SplashShowParticles,
+		SplashAutoHide:          dbUser.SplashAutoHide,
+		SplashAutoHideDelay:     dbUser.SplashAutoHideDelay,
+		SplashBackgroundVisible: dbUser.SplashBackgroundVisible,
+		SplashBackgroundColor:   getStringValue(dbUser.SplashBackgroundColor),
+		SplashTransparent:       dbUser.SplashTransparent,
 	}
 
 	// Debug log the final settings being returned
@@ -697,6 +852,11 @@ func (h *DashboardHandler) GetCustomizationSettings(c *gin.Context) {
 		Message: "Customization settings retrieved successfully",
 		Data: gin.H{
 			"settings": settings,
+			"user": gin.H{
+				"avatar_url": dbUser.AvatarURL,
+				"username":   dbUser.Username,
+				"display_name": dbUser.DisplayName,
+			},
 		},
 	})
 }
@@ -769,7 +929,7 @@ func (h *DashboardHandler) UploadAsset(c *gin.Context) {
 		},
 		"avatar":         {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"},
 		"audio":          {"audio/mpeg", "audio/wav", "audio/mp3", "audio/ogg", "audio/m4a", "audio/opus"},
-		"cursor":         {"image/png", "image/x-icon", "image/vnd.microsoft.icon", "image/svg+xml"},
+		"cursor":         {"image/png", "image/x-icon", "image/vnd.microsoft.icon", "image/svg+xml", "image/gif", "image/jpeg", "image/jpg", "image/webp"},
 	}
 
 	contentType := header.Header.Get("Content-Type")
@@ -838,6 +998,27 @@ func (h *DashboardHandler) UploadAsset(c *gin.Context) {
 		return
 	}
 
+	// Get current asset URL for cleanup after update
+	var currentAssetURL string
+	switch assetType {
+	case "backgroundImage":
+		if user.BackgroundURL != nil {
+			currentAssetURL = *user.BackgroundURL
+		}
+	case "avatar":
+		if user.AvatarURL != nil {
+			currentAssetURL = *user.AvatarURL
+		}
+	case "audio":
+		if user.AudioURL != nil {
+			currentAssetURL = *user.AudioURL
+		}
+	case "cursor":
+		if user.CustomCursorURL != nil {
+			currentAssetURL = *user.CustomCursorURL
+		}
+	}
+
 	// Update user's asset URL field based on asset type
 	updateData := make(map[string]interface{})
 	switch assetType {
@@ -855,6 +1036,22 @@ func (h *DashboardHandler) UploadAsset(c *gin.Context) {
 	if len(updateData) > 0 {
 		if err := h.db.Model(&user).Updates(updateData).Error; err != nil {
 			fmt.Printf("Warning: Failed to update user asset URL: %v\n", err)
+		} else {
+			// After successful database update, clean up old asset in background
+			if currentAssetURL != "" && !strings.HasPrefix(currentAssetURL, "http://") && !strings.HasPrefix(currentAssetURL, "https://") {
+				go func() {
+					// Extract file path from storage URL for cleanup
+					oldFilePath := extractFilePathFromURL(currentAssetURL, user.ID)
+					if oldFilePath != "" {
+						cleanupErr := h.storage.DeleteFile(bucketName, oldFilePath)
+						if cleanupErr != nil {
+							fmt.Printf("Background cleanup failed for old %s file %s: %v\n", assetType, oldFilePath, cleanupErr)
+						} else {
+							fmt.Printf("Background cleanup successful for old %s file %s\n", assetType, oldFilePath)
+						}
+					}
+				}()
+			}
 		}
 	}
 
@@ -999,29 +1196,33 @@ func (h *DashboardHandler) DeleteUserAsset(c *gin.Context) {
 		return
 	}
 
-	// Verify the file path belongs to the user
-	expectedPrefix := fmt.Sprintf("user_%d/", userID)
-	if !strings.HasPrefix(deleteRequest.FilePath, expectedPrefix) {
-		c.JSON(http.StatusForbidden, DashboardResponse{
-			Success: false,
-			Message: "Access denied: file does not belong to user",
-		})
-		return
-	}
-
-	// Get the appropriate bucket name
-	bucketName := storage.GetBucketForAssetType(deleteRequest.AssetType)
+	// Check if this is an external URL (OAuth avatar, etc.)
+	isExternalURL := strings.HasPrefix(deleteRequest.FilePath, "http://") || strings.HasPrefix(deleteRequest.FilePath, "https://")
 	
-	// Delete file from Supabase storage
-	err := h.storage.DeleteFile(bucketName, deleteRequest.FilePath)
-	if err != nil {
-		fmt.Printf("Error deleting %s file %s for user %d: %v\n", deleteRequest.AssetType, deleteRequest.FilePath, userID, err)
-		c.JSON(http.StatusInternalServerError, DashboardResponse{
-			Success: false,
-			Message: fmt.Sprintf("Failed to delete %s file", deleteRequest.AssetType),
-		})
-		return
+	if !isExternalURL {
+		// For local files, verify the file path belongs to the user
+		expectedPrefix := fmt.Sprintf("user_%d/", userID)
+		if !strings.HasPrefix(deleteRequest.FilePath, expectedPrefix) {
+			c.JSON(http.StatusForbidden, DashboardResponse{
+				Success: false,
+				Message: "Access denied: file does not belong to user",
+			})
+			return
+		}
+
+		// Get the appropriate bucket name and delete from Supabase storage
+		bucketName := storage.GetBucketForAssetType(deleteRequest.AssetType)
+		err := h.storage.DeleteFile(bucketName, deleteRequest.FilePath)
+		if err != nil {
+			fmt.Printf("Error deleting %s file %s for user %d: %v\n", deleteRequest.AssetType, deleteRequest.FilePath, userID, err)
+			c.JSON(http.StatusInternalServerError, DashboardResponse{
+				Success: false,
+				Message: fmt.Sprintf("Failed to delete %s file", deleteRequest.AssetType),
+			})
+			return
+		}
 	}
+	// For external URLs (OAuth avatars), we just clear the URL from the database
 
 	// Update user's asset URL field based on asset type
 	updateData := make(map[string]interface{})
@@ -1068,6 +1269,40 @@ func getFileType(assetType string) models.FileType {
 	default:
 		return models.FileTypeOther
 	}
+}
+
+// extractFilePathFromURL extracts the storage file path from a Supabase URL
+func extractFilePathFromURL(url string, userID uint) string {
+	if url == "" {
+		return ""
+	}
+	
+	// Parse URL to extract path
+	parsedURL, err := net_url.Parse(url)
+	if err != nil {
+		return ""
+	}
+	
+	// Extract path segments
+	pathParts := strings.Split(strings.TrimPrefix(parsedURL.Path, "/"), "/")
+	
+	// Find user folder and construct file path
+	for i, part := range pathParts {
+		if strings.HasPrefix(part, fmt.Sprintf("user_%d", userID)) {
+			// Return the path from user folder onwards
+			return strings.Join(pathParts[i:], "/")
+		}
+	}
+	
+	// Fallback: look for filename and assume user_ID/filename structure
+	if len(pathParts) > 0 {
+		filename := pathParts[len(pathParts)-1]
+		if filename != "" {
+			return fmt.Sprintf("user_%d/%s", userID, filename)
+		}
+	}
+	
+	return ""
 }
 
 // AnalyticsData represents analytics data for a user
@@ -1124,38 +1359,188 @@ func (h *DashboardHandler) GetAnalytics(c *gin.Context) {
 		return
 	}
 
-	// TEMPORARY: Skip cache to force fresh analytics calculation
-	// cacheKey := fmt.Sprintf("analytics:user:%d", user.ID)
-	/*
-	if h.redisClient != nil {
-		var cachedData AnalyticsData
-		err := h.redisClient.Get(cacheKey, &cachedData)
-		if err == nil {
-			fmt.Printf("Analytics cache hit for user %d\n", user.ID)
-			c.JSON(http.StatusOK, DashboardResponse{
-				Success: true,
-				Message: "Analytics data retrieved successfully",
-				Data:    cachedData,
-			})
-			return
+	// Always get fresh user data from database to ensure ProfileViews and other stats are current
+	var dbUser models.User
+	if err := h.db.Where("id = ?", user.ID).First(&dbUser).Error; err == nil {
+		user = &dbUser
+		fmt.Printf("DEBUG - Analytics fresh user from database - ID: %d, Username: %s, ProfileViews: %d, TotalClicks: %d\n", 
+			user.ID, user.Username, user.ProfileViews, user.TotalClicks)
+	} else {
+		fmt.Printf("ERROR - Analytics failed to load fresh user data: %v\n", err)
+	}
+
+	// Get query parameters for time filtering
+	daysParam := c.DefaultQuery("days", "14")
+	offsetParam := c.DefaultQuery("offset", "0")
+	
+	// Parse parameters
+	days := 14
+	if d, err := fmt.Sscanf(daysParam, "%d", &days); err != nil || d != 1 || days < 0 || days > 365 {
+		days = 14 // Default to 14 days
+	}
+	// Special case: days = 0 means "All Time" (no time limit)
+	
+	offset := 0
+	if d, err := fmt.Sscanf(offsetParam, "%d", &offset); err != nil || d != 1 || offset < 0 {
+		offset = 0 // Default to current period
+	}
+
+	// Check user plan limits - free users limited to 14 days (except All Time)
+	if user.Plan != "premium" && days > 14 && days != 0 {
+		days = 14
+	}
+
+	// TEMPORARILY DISABLED: Fast analytics with time-based cache key + version for cache invalidation
+	// Use shorter cache time for current data (offset=0) to show more real-time updates
+	// analyticsVersion := "v2" // Increment this when analytics logic changes
+	// cacheKey := fmt.Sprintf("analytics:fast:%s:%d:%d:%d", analyticsVersion, user.ID, days, offset)
+	// cacheTime := 2 * time.Minute
+	// if offset == 0 {
+	// 	cacheTime = 1 * time.Minute // More frequent updates for current data
+	// }
+	
+	// TEMPORARILY DISABLED: Try cache first for lightning-fast response (with versioned cache key)
+	// if h.redisClient != nil {
+	// 	var cachedData AnalyticsData
+	// 	fmt.Printf("DEBUG CACHE: Trying cache key: %s\n", cacheKey)
+	// 	err := h.redisClient.Get(cacheKey, &cachedData)
+	// 	if err == nil {
+	// 		fmt.Printf("DEBUG CACHE: HIT - returning cached data for key: %s\n", cacheKey)
+	// 		c.JSON(http.StatusOK, DashboardResponse{
+	// 			Success: true,
+	// 			Message: "Analytics data retrieved successfully",
+	// 			Data:    cachedData,
+	// 		})
+	// 		return
+	// 	} else {
+	// 		fmt.Printf("DEBUG CACHE: MISS - cache error: %v for key: %s\n", err, cacheKey)
+	// 	}
+	// }
+
+	// Calculate time range for filtering
+	var startTime, endTime time.Time
+	
+	if days == 0 {
+		// All Time: Start from account creation date or very early date
+		startTime = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC) // Early date to capture all data
+		endTime = time.Now()
+	} else if days == 1 && offset == 0 {
+		// Today: Start from beginning of today (00:00:00) to now
+		now := time.Now()
+		startTime = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		endTime = now
+		fmt.Printf("DEBUG: Today analytics - StartTime: %v, EndTime: %v\n", startTime, endTime)
+	} else {
+		// Default behavior: show current data up to now (offset = 0 means "up to today")
+		endTime = time.Now().AddDate(0, 0, -offset)
+		startTime = endTime.AddDate(0, 0, -days)
+		
+		// If offset is 0 (default), we want current data ending "now"
+		if offset == 0 {
+			endTime = time.Now()
+			startTime = endTime.AddDate(0, 0, -days)
 		}
 	}
-	*/
 
-	fmt.Printf("Analytics cache miss for user %d, calculating from database\n", user.ID)
+	fmt.Printf("DEBUG: Analytics time range - StartTime: %v, EndTime: %v, Days: %d, Offset: %d\n", 
+		startTime, endTime, days, offset)
+	
+	// TEMPORARY DEBUG: Return user data directly for debugging
+	if c.Query("debug") == "user" {
+		c.JSON(http.StatusOK, DashboardResponse{
+			Success: true,
+			Message: "Debug user data",
+			Data: gin.H{
+				"user_id": user.ID,
+				"username": user.Username, 
+				"profile_views": user.ProfileViews,
+				"total_clicks": user.TotalClicks,
+				"days_param": days,
+			},
+		})
+		return
+	}
+	
+	// DEBUG: Check if All Time path will be taken
+	fmt.Printf("DEBUG: Analytics request - Days: %d, User ID: %d, ProfileViews: %d, TotalClicks: %d\n", 
+		days, user.ID, user.ProfileViews, user.TotalClicks)
+	if days == 0 {
+		fmt.Printf("DEBUG: All Time analytics requested for User ID: %d, ProfileViews: %d, TotalClicks: %d\n", 
+			user.ID, user.ProfileViews, user.TotalClicks)
+	}
 
-	// Get total link clicks from user's links
-	var totalClicks int64
-	h.db.Model(&models.Link{}).Where("user_id = ? AND is_active = ?", user.ID, true).
-		Select("COALESCE(SUM(clicks), 0)").Scan(&totalClicks)
-
-	// Get total profile views from ProfileView records (real-time count)
-	var realProfileViews int64
-	h.db.Model(&models.ProfileView{}).Where("user_id = ?", user.ID).Count(&realProfileViews)
+	// Fast parallel analytics calculation with time filtering
+	type AnalyticsCounts struct {
+		TotalClicks       int64 `json:"total_clicks"`
+		RealProfileViews  int64 `json:"real_profile_views"`
+	}
+	
+	var analyticsCounts AnalyticsCounts
+	var clicksErr, viewsErr error
+	
+	// Run analytics queries in parallel for speed
+	done := make(chan bool, 2)
+	
+	go func() {
+		// For clicks, use LinkClick records with timestamps for time filtering
+		if days == 0 {
+			// All Time: Use user's aggregate total clicks for performance
+			analyticsCounts.TotalClicks = int64(user.TotalClicks)
+			fmt.Printf("DEBUG Analytics All Time - User ID: %d, TotalClicks: %d\n", user.ID, user.TotalClicks)
+		} else {
+			// Time-limited: Count from LinkClick records with time filtering
+			var timeFilteredClicks int64
+			clicksErr = h.db.Model(&models.LinkClick{}).
+				Joins("JOIN links ON link_clicks.link_id = links.id").
+				Where("links.user_id = ? AND links.is_active = ? AND link_clicks.created_at >= ? AND link_clicks.created_at <= ?", 
+					user.ID, true, startTime, endTime).
+				Count(&timeFilteredClicks).Error
+			analyticsCounts.TotalClicks = timeFilteredClicks
+			fmt.Printf("DEBUG Analytics Time-Filtered - User ID: %d, TotalClicks: %d (period: %d days, %v to %v)\n", 
+				user.ID, timeFilteredClicks, days, startTime.Format("2006-01-02 15:04"), endTime.Format("2006-01-02 15:04"))
+		}
+		done <- true
+	}()
+	
+	go func() {
+		// Profile views with time filtering
+		if days == 0 {
+			// All Time: Always use aggregate total from user table for complete historical data
+			analyticsCounts.RealProfileViews = int64(user.ProfileViews)
+			fmt.Printf("DEBUG Analytics All Time - User ID: %d, Using user aggregate ProfileViews: %d\n", 
+				user.ID, user.ProfileViews)
+		} else {
+			// Time-limited query: Use only detailed records
+			viewsErr = h.db.Model(&models.ProfileView{}).
+				Where("user_id = ? AND created_at >= ? AND created_at <= ?", user.ID, startTime, endTime).
+				Count(&analyticsCounts.RealProfileViews).Error
+		}
+		done <- true
+	}()
+	
+	// Wait for both queries to complete
+	<-done
+	<-done
+	
+	if clicksErr != nil || viewsErr != nil {
+		c.JSON(http.StatusInternalServerError, DashboardResponse{
+			Success: false,
+			Message: "Failed to retrieve analytics data",
+		})
+		return
+	}
+	
+	totalClicks := analyticsCounts.TotalClicks
+	realProfileViews := analyticsCounts.RealProfileViews
 	profileViews := int(realProfileViews)
 	
-	fmt.Printf("DEBUG: Analytics calculation - UserID: %d, ProfileViews from user table: %d, Real ProfileViews from records: %d, TotalClicks: %d\n", 
+	fmt.Printf("DEBUG: Analytics calculation - UserID: %d, ProfileViews from user table: %d, Real ProfileViews from records (time filtered): %d, TotalClicks: %d\n", 
 		user.ID, user.ProfileViews, profileViews, totalClicks)
+	
+	// Debug: Check total ProfileView records without time filtering
+	var totalProfileViewRecords int64
+	h.db.Model(&models.ProfileView{}).Where("user_id = ?", user.ID).Count(&totalProfileViewRecords)
+	fmt.Printf("DEBUG: Total ProfileView records in database (no time filter): %d\n", totalProfileViewRecords)
 
 	// Calculate click rate (clicks per view)
 	var clickRate float64
@@ -1163,23 +1548,32 @@ func (h *DashboardHandler) GetAnalytics(c *gin.Context) {
 		clickRate = (float64(totalClicks) / float64(profileViews)) * 100
 	}
 
-	// Calculate average daily views (last 30 days)
-	avgDailyViews := profileViews / 30
-	if avgDailyViews < 1 {
+	// Calculate average daily views for the selected period
+	var avgDailyViews int
+	if days > 0 {
+		avgDailyViews = profileViews / days
+	} else {
+		// For "All Time", calculate based on account age
+		accountAge := int(time.Since(user.CreatedAt).Hours() / 24)
+		if accountAge > 0 {
+			avgDailyViews = profileViews / accountAge
+		}
+	}
+	if avgDailyViews < 1 && profileViews > 0 {
 		avgDailyViews = 1
 	}
 
-	// Get real profile views data for the last 7 days
-	profileViewsChart := h.getProfileViewsChart(user.ID)
+	// Get real profile views data for the selected period
+	profileViewsChart := h.getProfileViewsChartWithTimeRange(user.ID, startTime, endTime, days)
 	
-	// Get real device breakdown from profile views
-	deviceBreakdown := h.getDeviceBreakdown(user.ID)
+	// Get real device breakdown from profile views in time range
+	deviceBreakdown := h.getDeviceBreakdownWithTimeRange(user.ID, startTime, endTime)
 	
-	// Get real country breakdown from profile views  
-	countryBreakdown := h.getCountryBreakdown(user.ID)
+	// Get real country breakdown from profile views in time range
+	countryBreakdown := h.getCountryBreakdownWithTimeRange(user.ID, startTime, endTime)
 	
-	// Get real referrer breakdown from profile views
-	referrerBreakdown := h.getReferrerBreakdown(user.ID)
+	// Get real referrer breakdown from profile views in time range
+	referrerBreakdown := h.getReferrerBreakdownWithTimeRange(user.ID, startTime, endTime)
 
 	// Get top clicked links as "social" data
 	var topLinks []models.Link
@@ -1235,11 +1629,55 @@ func (h *DashboardHandler) GetAnalytics(c *gin.Context) {
 		topSocials = make([]SocialClick, 0)
 	}
 
-	// Use real analytics data
-	analytics := AnalyticsData{
+	// DEBUG: Log all variables before fallback logic
+	fmt.Printf("=== ANALYTICS FALLBACK DEBUG ===\n")
+	fmt.Printf("DEBUG: profileViews (time-filtered): %d\n", profileViews)
+	fmt.Printf("DEBUG: user.ProfileViews (total): %d\n", user.ProfileViews)
+	fmt.Printf("DEBUG: realProfileViews: %d\n", realProfileViews)
+	fmt.Printf("DEBUG: user.ID: %d, user.Username: %s\n", user.ID, user.Username)
+	fmt.Printf("DEBUG: Fallback condition - profileViews == 0: %t, user.ProfileViews > 0: %t\n", profileViews == 0, user.ProfileViews > 0)
+	fmt.Printf("=== END FALLBACK DEBUG ===\n")
+
+	// Use the time-filtered profile views instead of total aggregate
+	displayProfileViews := profileViews // This is the time-filtered value from realProfileViews
+	fmt.Printf("DEBUG: 🔧 Using time-filtered profile views: %d (period: %d days)\n", displayProfileViews, days)
+	
+	// Recalculate metrics based on time-filtered profile views
+	if displayProfileViews > 0 {
+		if days == 1 && offset == 0 {
+			// For "Today", show views as-is since it's current day
+			avgDailyViews = displayProfileViews
+		} else if days > 0 {
+			avgDailyViews = displayProfileViews / days
+		} else {
+			// For "All Time", calculate based on account age
+			accountAge := int(time.Since(user.CreatedAt).Hours() / 24)
+			if accountAge > 0 {
+				avgDailyViews = displayProfileViews / accountAge
+			}
+		}
+		if avgDailyViews < 1 && days != 1 {
+			avgDailyViews = 1
+		}
+		clickRate = (float64(totalClicks) / float64(displayProfileViews)) * 100
+	} else {
+		avgDailyViews = 0
+		clickRate = 0
+	}
+
+	// DEBUG: Final analytics values
+	fmt.Printf("=== FINAL ANALYTICS VALUES ===\n")
+	fmt.Printf("DEBUG: displayProfileViews (final): %d\n", displayProfileViews)
+	fmt.Printf("DEBUG: totalClicks: %d\n", totalClicks)
+	fmt.Printf("DEBUG: avgDailyViews: %d\n", avgDailyViews)
+	fmt.Printf("DEBUG: clickRate: %.2f\n", clickRate)
+	fmt.Printf("=== END FINAL VALUES ===\n")
+
+	// Prepare analytics response
+	analyticsData := AnalyticsData{
 		TotalLinkClicks:   int(totalClicks),
 		ClickRate:         clickRate,
-		ProfileViews:      profileViews,
+		ProfileViews:      displayProfileViews,
 		AverageDailyViews: avgDailyViews,
 		ProfileViewsChart: profileViewsChart,
 		Devices:           deviceBreakdown,
@@ -1248,22 +1686,39 @@ func (h *DashboardHandler) GetAnalytics(c *gin.Context) {
 		TopCountries:      countryBreakdown,
 	}
 
-	// TEMPORARY: Disable analytics caching to force fresh data
-	/*
-	if h.redisClient != nil {
-		err := h.redisClient.Set(cacheKey, analytics, 1*time.Hour)
-		if err == nil {
-			fmt.Printf("Analytics data cached for user %d\n", user.ID)
-		} else {
-			fmt.Printf("Failed to cache analytics data for user %d: %v\n", user.ID, err)
-		}
+	// DEBUG: Add debug info if requested
+	if c.Query("debug") == "true" {
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Analytics data retrieved successfully (DEBUG MODE)",
+			"debug": gin.H{
+				"user_id": user.ID,
+				"username": user.Username,
+				"user_profile_views_total": user.ProfileViews,
+				"profile_views_time_filtered": profileViews,
+				"real_profile_views": realProfileViews,
+				"display_profile_views_final": displayProfileViews,
+				"fallback_condition_met": profileViews == 0 && user.ProfileViews > 0,
+				"days": days,
+				"start_time": startTime,
+				"end_time": endTime,
+			},
+			"data": analyticsData,
+		})
+		return
 	}
-	*/
+
+	// TEMPORARILY DISABLED: Cache with dynamic time based on data freshness needs
+	// if h.redisClient != nil {
+	// 	h.workerPool.SubmitFunc(fmt.Sprintf("cache-analytics-%d", user.ID), func() error {
+	// 		return h.redisClient.Set(cacheKey, analyticsData, cacheTime)
+	// 	})
+	// }
 
 	c.JSON(http.StatusOK, DashboardResponse{
 		Success: true,
 		Message: "Analytics data retrieved successfully",
-		Data:    analytics,
+		Data:    analyticsData,
 	})
 }
 
@@ -1370,6 +1825,13 @@ func (h *DashboardHandler) trackProfileView(c *gin.Context, userID uint) {
 		if h.redisClient != nil {
 			cacheKey := fmt.Sprintf("analytics:user:%d", userID)
 			h.redisClient.Delete(cacheKey)
+			
+			// Also invalidate user cache since ProfileViews changed
+			h.redisClient.InvalidateUserCache(userID)
+			
+			// Clear dashboard cache too
+			dashboardCacheKey := fmt.Sprintf("dashboard:%d", userID)
+			h.redisClient.Delete(dashboardCacheKey)
 		}
 		
 		fmt.Printf("Recorded unique profile view for user %d from IP %s (%s, %s)\n", 
@@ -1611,6 +2073,121 @@ func getReferrerIcon(source string) string {
 	return "🌐"
 }
 
+// SettingsRequest represents the settings update request structure
+type SettingsRequest struct {
+	// Account settings
+	Username    string `json:"username"`
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+	Bio         string `json:"bio"`
+	
+}
+
+// SaveSettings saves general user settings (account, privacy, notifications)
+func (h *DashboardHandler) SaveSettings(c *gin.Context) {
+	user, exists := middleware.GetCurrentUser(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, DashboardResponse{
+			Success: false,
+			Message: "Authentication required",
+		})
+		return
+	}
+
+	var settings SettingsRequest
+	if err := c.ShouldBindJSON(&settings); err != nil {
+		c.JSON(http.StatusBadRequest, DashboardResponse{
+			Success: false,
+			Message: "Invalid settings data: " + err.Error(),
+		})
+		return
+	}
+
+	// Validate settings
+	if err := validateSettingsRequest(&settings); err != nil {
+		c.JSON(http.StatusBadRequest, DashboardResponse{
+			Success: false,
+			Message: "Invalid settings: " + err.Error(),
+		})
+		return
+	}
+
+	// Prepare updates map
+	updates := map[string]interface{}{
+		// Account settings
+		"username":     settings.Username,
+		"display_name": settings.DisplayName,
+		"bio":          settings.Bio,
+		
+		
+		"updated_at": time.Now(),
+	}
+
+	// Handle email separately as it might need validation
+	if settings.Email != "" {
+		updates["email"] = settings.Email
+	}
+
+	// Update user in database
+	err := h.db.Model(&models.User{}).Where("id = ?", user.ID).Updates(updates).Error
+	if err != nil {
+		fmt.Printf("Failed to update settings for user %d: %v\n", user.ID, err)
+		c.JSON(http.StatusInternalServerError, DashboardResponse{
+			Success: false,
+			Message: "Failed to save settings to database",
+		})
+		return
+	}
+
+	// Clear cache to force refresh
+	if h.redisClient != nil {
+		dashboardCacheKey := fmt.Sprintf("dashboard:user:%d", user.ID)
+		h.redisClient.Delete(dashboardCacheKey)
+	}
+
+	fmt.Printf("Settings saved successfully for user %d\n", user.ID)
+
+	c.JSON(http.StatusOK, DashboardResponse{
+		Success: true,
+		Message: "Settings saved successfully",
+		Data: gin.H{
+			"settings": settings,
+		},
+	})
+}
+
+// validateSettingsRequest validates the settings request data
+func validateSettingsRequest(settings *SettingsRequest) error {
+	// Validate username
+	if len(settings.Username) < 3 || len(settings.Username) > 30 {
+		return fmt.Errorf("username must be between 3 and 30 characters")
+	}
+	
+	// Validate email format if provided
+	if settings.Email != "" {
+		if len(settings.Email) > 255 {
+			return fmt.Errorf("email address too long")
+		}
+		// Basic email validation - you might want to use a proper email validation library
+		if !strings.Contains(settings.Email, "@") || !strings.Contains(settings.Email, ".") {
+			return fmt.Errorf("invalid email format")
+		}
+	}
+	
+	// Validate display name length
+	if len(settings.DisplayName) > 100 {
+		return fmt.Errorf("display name cannot exceed 100 characters")
+	}
+	
+	// Validate bio length
+	if len(settings.Bio) > 500 {
+		return fmt.Errorf("bio cannot exceed 500 characters")
+	}
+	
+	
+	return nil
+}
+
 // calculateProfileCompletion calculates the profile completion percentage
 func calculateProfileCompletion(user *models.User) int {
 	completion := 0
@@ -1670,4 +2247,194 @@ func calculateProfileCompletion(user *models.User) int {
 	}
 	
 	return percentage
+}
+
+// Time-range-aware helper functions for analytics filtering
+
+// getProfileViewsChartWithTimeRange returns daily profile views for a specific time range
+func (h *DashboardHandler) getProfileViewsChartWithTimeRange(userID uint, startTime, endTime time.Time, days int) []DailyViews {
+	var results []struct {
+		Date  time.Time `json:"date"`
+		Count int       `json:"count"`
+	}
+	
+	err := h.db.Model(&models.ProfileView{}).
+		Select("DATE(created_at) as date, COUNT(*) as count").
+		Where("user_id = ? AND created_at >= ? AND created_at <= ?", userID, startTime, endTime).
+		Group("DATE(created_at)").
+		Order("date ASC").
+		Scan(&results).Error
+	
+	if err != nil {
+		fmt.Printf("Failed to get profile views chart for user %d: %v\n", userID, err)
+		return []DailyViews{}
+	}
+	
+	// Create map of existing data
+	dataMap := make(map[string]int)
+	for _, result := range results {
+		dateKey := result.Date.Format("2006-01-02")
+		dataMap[dateKey] = result.Count
+	}
+	
+	// Generate chart data for the requested time range
+	chartDays := days
+	if chartDays > 7 {
+		chartDays = 7 // Limit chart to 7 days for UI clarity
+	}
+	
+	chart := make([]DailyViews, chartDays)
+	// Show the most recent days ending at endTime (today by default)
+	for i := 0; i < chartDays; i++ {
+		date := endTime.AddDate(0, 0, -(chartDays-1-i))
+		dayName := date.Weekday().String()[:3]
+		dateKey := date.Format("2006-01-02")
+		
+		chart[i] = DailyViews{
+			Day:   dayName,
+			Views: dataMap[dateKey], // Will be 0 if no data exists
+		}
+	}
+	
+	return chart
+}
+
+// getDeviceBreakdownWithTimeRange returns device usage percentages for a time range
+func (h *DashboardHandler) getDeviceBreakdownWithTimeRange(userID uint, startTime, endTime time.Time) DeviceBreakdown {
+	var results []struct {
+		Device string `json:"device"`
+		Count  int    `json:"count"`
+	}
+	
+	err := h.db.Model(&models.ProfileView{}).
+		Select("device, COUNT(*) as count").
+		Where("user_id = ? AND device IS NOT NULL AND created_at >= ? AND created_at <= ?", userID, startTime, endTime).
+		Group("device").
+		Scan(&results).Error
+	
+	if err != nil {
+		fmt.Printf("Failed to get device breakdown for user %d: %v\n", userID, err)
+		return DeviceBreakdown{Mobile: 0, Desktop: 0, Tablet: 0}
+	}
+	
+	var total int
+	deviceCounts := make(map[string]int)
+	
+	for _, result := range results {
+		deviceCounts[result.Device] = result.Count
+		total += result.Count
+	}
+	
+	if total == 0 {
+		return DeviceBreakdown{Mobile: 0, Desktop: 0, Tablet: 0}
+	}
+	
+	return DeviceBreakdown{
+		Mobile:  float64(deviceCounts["mobile"]) / float64(total) * 100,
+		Desktop: float64(deviceCounts["desktop"]) / float64(total) * 100,
+		Tablet:  float64(deviceCounts["tablet"]) / float64(total) * 100,
+	}
+}
+
+// getCountryBreakdownWithTimeRange returns top countries by views for a time range
+func (h *DashboardHandler) getCountryBreakdownWithTimeRange(userID uint, startTime, endTime time.Time) []CountryView {
+	var results []struct {
+		Country string `json:"country"`
+		Count   int    `json:"count"`
+	}
+	
+	err := h.db.Model(&models.ProfileView{}).
+		Select("country, COUNT(*) as count").
+		Where("user_id = ? AND country IS NOT NULL AND created_at >= ? AND created_at <= ?", userID, startTime, endTime).
+		Group("country").
+		Order("count DESC").
+		Limit(6).
+		Scan(&results).Error
+	
+	if err != nil {
+		fmt.Printf("Failed to get country breakdown for user %d: %v\n", userID, err)
+		return []CountryView{}
+	}
+	
+	// Get total views for percentage calculation
+	var total int
+	for _, result := range results {
+		total += result.Count
+	}
+	
+	if total == 0 {
+		return []CountryView{}
+	}
+	
+	// Convert to CountryView format
+	countries := make([]CountryView, len(results))
+	for i, result := range results {
+		countryCode := getCountryCode(result.Country)
+		
+		countries[i] = CountryView{
+			Name:       result.Country,
+			Views:      result.Count,
+			Percentage: float64(result.Count) / float64(total) * 100,
+			Code:       countryCode,
+		}
+	}
+	
+	return countries
+}
+
+// getReferrerBreakdownWithTimeRange returns top referrer sources for a time range
+func (h *DashboardHandler) getReferrerBreakdownWithTimeRange(userID uint, startTime, endTime time.Time) []Referrer {
+	var results []struct {
+		Referer string `json:"referer"`
+		Count   int    `json:"count"`
+	}
+	
+	err := h.db.Raw(`
+		SELECT 
+			CASE 
+				WHEN referer IS NULL OR referer = '' THEN 'direct'
+				WHEN referer LIKE '%google%' THEN 'google'
+				WHEN referer LIKE '%twitter%' OR referer LIKE '%x.com%' THEN 'twitter'
+				WHEN referer LIKE '%instagram%' THEN 'instagram'
+				WHEN referer LIKE '%linkedin%' THEN 'linkedin'
+				WHEN referer LIKE '%youtube%' THEN 'youtube'
+				WHEN referer LIKE '%facebook%' THEN 'facebook'
+				ELSE 'other'
+			END as referer,
+			COUNT(*) as count
+		FROM profile_views 
+		WHERE user_id = ? AND created_at >= ? AND created_at <= ?
+		GROUP BY referer
+		ORDER BY count DESC
+		LIMIT 5
+	`, userID, startTime, endTime).Scan(&results).Error
+	
+	if err != nil {
+		fmt.Printf("Failed to get referrer breakdown for user %d: %v\n", userID, err)
+		return []Referrer{}
+	}
+	
+	// Get total for percentage calculation
+	var total int
+	for _, result := range results {
+		total += result.Count
+	}
+	
+	if total == 0 {
+		return []Referrer{}
+	}
+	
+	// Convert to Referrer format with icons
+	referrers := make([]Referrer, len(results))
+	for i, result := range results {
+		icon := getReferrerIcon(result.Referer)
+		
+		referrers[i] = Referrer{
+			Source: result.Referer,
+			Visits: float64(result.Count) / float64(total) * 100,
+			Icon:   icon,
+		}
+	}
+	
+	return referrers
 }

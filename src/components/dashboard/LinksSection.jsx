@@ -59,11 +59,15 @@ const LinksSection = ({
   setHasUnsavedChanges,
   fetchLinks
 }) => {
+  // Show loading state if links data hasn't been loaded yet
+  const isLoading = links === undefined || links === null
+  
   // Ensure links is always an array
   const safeLinks = Array.isArray(links) ? links : []
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [selectedPlatform, setSelectedPlatform] = useState(null)
   const [editingLink, setEditingLink] = useState(null)
+  const [showEditModal, setShowEditModal] = useState(false)
   const [modalMode, setModalMode] = useState('menu') // 'menu', 'link', 'text'
   const [linkData, setLinkData] = useState({ url: '', text: '', customTitle: '', customIcon: '' })
   const [draggedLink, setDraggedLink] = useState(null)
@@ -97,12 +101,11 @@ const LinksSection = ({
 
   const updateLink = async (linkId, updatedData) => {
     try {
-      const token = localStorage.getItem('token')
       const response = await fetch(`http://localhost:8080/api/links/${linkId}`, {
         method: 'PUT',
+        credentials: 'include', // Include httpOnly cookies for auth
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(updatedData)
       })
@@ -140,15 +143,11 @@ const LinksSection = ({
       // Show deletion alert
       showAlert(`Deleting ${linkToDelete?.title || 'link'}...`, 'info', 2000)
       
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-      
       const response = await fetch(`http://localhost:8080/api/links/${linkId}`, {
         method: 'DELETE',
+        credentials: 'include', // Include httpOnly cookies for auth
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || ''
+          'Content-Type': 'application/json'
         }
       })
 
@@ -187,6 +186,7 @@ const LinksSection = ({
       originalUrl: link.url,
       originalIcon: link.icon
     })
+    setShowEditModal(true)
   }
 
   const saveEditedLink = () => {
@@ -197,10 +197,13 @@ const LinksSection = ({
       url: editingLink.url.trim(),
       icon: editingLink.icon || '🔗'
     })
+    setShowEditModal(false)
+    setEditingLink(null)
   }
 
   const cancelLinkEdit = () => {
     setEditingLink(null)
+    setShowEditModal(false)
   }
 
   // Handle icon click to show modal
@@ -223,9 +226,6 @@ const LinksSection = ({
     if (!linkData.url.trim()) return
 
     try {
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-      
       // Ensure URL has proper protocol
       let formattedUrl = linkData.url.trim()
       if (formattedUrl && !formattedUrl.match(/^https?:\/\//)) {
@@ -244,10 +244,9 @@ const LinksSection = ({
       const response = await fetch('http://localhost:8080/api/links', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || ''
+          'Content-Type': 'application/json'
         },
+        credentials: 'include', // Use httpOnly cookies for auth
         body: JSON.stringify(payload)
       })
 
@@ -276,16 +275,12 @@ const LinksSection = ({
     if (!linkData.text.trim()) return
 
     try {
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-      
       const response = await fetch('http://localhost:8080/api/links', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || ''
+          'Content-Type': 'application/json'
         },
+        credentials: 'include', // Use httpOnly cookies for auth
         body: JSON.stringify({
           title: selectedPlatform.name,
           description: linkData.text.trim(), // Store text in description field
@@ -382,16 +377,12 @@ const LinksSection = ({
         order: index + 1
       }))
 
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-
       const response = await fetch('http://localhost:8080/api/links/reorder', {
-        method: 'POST',
+        method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || ''
+          'Content-Type': 'application/json'
         },
+        credentials: 'include', // Use httpOnly cookies for auth
         body: JSON.stringify({ links: reorderData })
       })
 
@@ -419,6 +410,59 @@ const LinksSection = ({
       setReorderedLinks(safeLinks)
     }
   }, [safeLinks, draggedIndex])
+
+  // Show loading state while data is being fetched
+  if (isLoading) {
+    return (
+      <LinksWrapper>
+        <SectionHeader>
+          <SectionTitle>Your Links</SectionTitle>
+          <SectionDescription>
+            Manage and organize your social media links and custom URLs
+          </SectionDescription>
+        </SectionHeader>
+
+        <SocialIconsGrid>
+          {/* Show skeleton social icons */}
+          {[...Array(16)].map((_, i) => (
+            <SkeletonSocialIcon key={i}>
+              <SkeletonIcon />
+            </SkeletonSocialIcon>
+          ))}
+        </SocialIconsGrid>
+
+        <LinksGrid>
+          {/* Show skeleton link cards */}
+          {[...Array(3)].map((_, i) => (
+            <SkeletonLinkCard key={i}>
+              <SkeletonLinkHeader>
+                <SkeletonDragHandle />
+                <SkeletonIcon />
+                <SkeletonLinkInfo>
+                  <SkeletonLine width="60%" height="18px" />
+                  <SkeletonLine width="80%" height="14px" />
+                </SkeletonLinkInfo>
+                <SkeletonActions>
+                  <SkeletonActionButton />
+                  <SkeletonActionButton />
+                </SkeletonActions>
+              </SkeletonLinkHeader>
+              <SkeletonLinkStats>
+                <SkeletonStat>
+                  <SkeletonStatIcon />
+                  <SkeletonLine width="60px" height="14px" />
+                </SkeletonStat>
+                <SkeletonStat>
+                  <SkeletonStatIcon />
+                  <SkeletonLine width="50px" height="14px" />
+                </SkeletonStat>
+              </SkeletonLinkStats>
+            </SkeletonLinkCard>
+          ))}
+        </LinksGrid>
+      </LinksWrapper>
+    )
+  }
 
   return (
     <LinksWrapper>
@@ -458,7 +502,7 @@ const LinksSection = ({
                 <SocialIcon
                   key={platform.name}
                   onClick={() => handleIconClick(platform)}
-                  isDisabled={isAlreadyAdded}
+                  $isDisabled={isAlreadyAdded}
                 >
                   <SimpleIconComponent iconName={platform.icon} size={24} />
                   <div className="tooltip">
@@ -546,6 +590,66 @@ const LinksSection = ({
         </SocialMediaModal>
       )}
 
+      {/* Edit Link Modal */}
+      {showEditModal && editingLink && (
+        <SocialMediaModal>
+          <SocialModalContent>
+            <SocialModalHeader>
+              <SocialModalTitle>
+                Edit Link
+              </SocialModalTitle>
+              <CloseButton onClick={cancelLinkEdit}>
+                <HiXMark />
+              </CloseButton>
+            </SocialModalHeader>
+
+            {/* Edit Form */}
+            <div style={{ padding: '1.5rem 0' }}>
+              <FormGroup>
+                <FormLabel>Title</FormLabel>
+                <FormInput
+                  type="text"
+                  value={editingLink.title}
+                  onChange={(e) => setEditingLink(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="Enter link title"
+                />
+              </FormGroup>
+              
+              <FormGroup>
+                <FormLabel>URL</FormLabel>
+                <FormInput
+                  type="url"
+                  value={editingLink.url}
+                  onChange={(e) => setEditingLink(prev => ({ ...prev, url: e.target.value }))}
+                  placeholder="https://example.com"
+                />
+              </FormGroup>
+              
+              <FormGroup>
+                <FormLabel>Icon (emoji)</FormLabel>
+                <FormInput
+                  type="text"
+                  value={editingLink.icon}
+                  onChange={(e) => setEditingLink(prev => ({ ...prev, icon: e.target.value }))}
+                  placeholder="🔗"
+                  maxLength="2"
+                />
+              </FormGroup>
+            </div>
+
+            {/* Action Buttons */}
+            <ModalActions>
+              <ModalActionButton primary onClick={saveEditedLink}>
+                Save Changes
+              </ModalActionButton>
+              <ModalActionButton onClick={cancelLinkEdit}>
+                Cancel
+              </ModalActionButton>
+            </ModalActions>
+          </SocialModalContent>
+        </SocialMediaModal>
+      )}
+
       <LinksGrid>
         {/* User's Configured Links */}
         {reorderedLinks.map((link, index) => (
@@ -557,90 +661,49 @@ const LinksSection = ({
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, index)}
             onDragEnd={handleDragEnd}
-            isDragging={draggedLink?.link.id === link.id}
-            isDragOver={dragOverIndex === index}
-            isBeingDragged={draggedIndex === index}
-            isDeleting={deletingLinks.has(link.id)}
+            $isDragging={draggedLink?.link.id === link.id}
+            $isDragOver={dragOverIndex === index}
+            $isBeingDragged={draggedIndex === index}
+            $isDeleting={deletingLinks.has(link.id)}
           >
-            {editingLink && editingLink.id === link.id ? (
-              <LinkForm>
-                <FormTitle>Edit Link</FormTitle>
-                <FormGroup>
-                  <FormLabel>Title</FormLabel>
-                  <FormInput
-                    type="text"
-                    value={editingLink.title}
-                    onChange={(e) => setEditingLink(prev => ({ ...prev, title: e.target.value }))}
-                  />
-                </FormGroup>
-                <FormGroup>
-                  <FormLabel>URL</FormLabel>
-                  <FormInput
-                    type="url"
-                    value={editingLink.url}
-                    onChange={(e) => setEditingLink(prev => ({ ...prev, url: e.target.value }))}
-                  />
-                </FormGroup>
-                <FormGroup>
-                  <FormLabel>Icon</FormLabel>
-                  <FormInput
-                    type="text"
-                    value={editingLink.icon}
-                    onChange={(e) => setEditingLink(prev => ({ ...prev, icon: e.target.value }))}
-                    maxLength="2"
-                  />
-                </FormGroup>
-                <FormActions>
-                  <FormButton onClick={saveEditedLink} className="primary">
-                    Save
-                  </FormButton>
-                  <FormButton onClick={cancelLinkEdit}>
-                    Cancel
-                  </FormButton>
-                </FormActions>
-              </LinkForm>
-            ) : (
-              <>
-                <LinkHeader>
-                  <DragHandle className="drag-handle">
-                    <HiArrowsPointingOut />
-                  </DragHandle>
-                  <LinkIcon>
-                    <SimpleIconComponent iconName={link.icon} size={24} />
-                  </LinkIcon>
-                  <LinkInfo>
-                    <LinkTitle>{link.title}</LinkTitle>
-                    <LinkUrl>{link.url}</LinkUrl>
-                  </LinkInfo>
-                  <LinkActions>
-                    <ActionButton onClick={() => handleLinkEdit(link)}>
-                      <HiPencil />
-                    </ActionButton>
-                    <ActionButton 
-                      onClick={() => deleteLink(link.id)} 
-                      className="danger"
-                      disabled={deletingLinks.has(link.id)}
-                    >
-                      {deletingLinks.has(link.id) ? (
-                        <div className="spinner" />
-                      ) : (
-                        <HiTrash />
-                      )}
-                    </ActionButton>
-                  </LinkActions>
-                </LinkHeader>
-                <LinkStats>
-                  <StatItem>
-                    <HiCursorArrowRays />
-                    <span>{link.clicks || 0} clicks</span>
-                  </StatItem>
-                  <StatItem>
-                    <HiEye />
-                    <span>Active</span>
-                  </StatItem>
-                </LinkStats>
-              </>
-            )}
+            <LinkHeader>
+              <DragHandle className="drag-handle">
+                <HiArrowsPointingOut />
+              </DragHandle>
+              <LinkIcon>
+                <SimpleIconComponent iconName={link.icon} size={24} />
+              </LinkIcon>
+              <LinkInfo>
+                <LinkTitle>{link.title}</LinkTitle>
+                <LinkUrl>{link.url}</LinkUrl>
+              </LinkInfo>
+              <LinkActions>
+                <ActionButton onClick={() => handleLinkEdit(link)}>
+                  <HiPencil />
+                </ActionButton>
+                <ActionButton 
+                  onClick={() => deleteLink(link.id)} 
+                  className="danger"
+                  disabled={deletingLinks.has(link.id)}
+                >
+                  {deletingLinks.has(link.id) ? (
+                    <div className="spinner" />
+                  ) : (
+                    <HiTrash />
+                  )}
+                </ActionButton>
+              </LinkActions>
+            </LinkHeader>
+            <LinkStats>
+              <StatItem>
+                <HiCursorArrowRays />
+                <span>{link.clicks || 0} clicks</span>
+              </StatItem>
+              <StatItem>
+                <HiEye />
+                <span>Active</span>
+              </StatItem>
+            </LinkStats>
           </LinkCard>
         ))}
       </LinksGrid>
@@ -780,6 +843,17 @@ const LinkCard = styled.div`
   position: relative;
   will-change: transform, opacity, box-shadow;
 
+  /* Responsive padding */
+  @media (max-width: 768px) {
+    padding: 1rem;
+    margin-top: 1.5rem;
+  }
+
+  @media (max-width: 480px) {
+    padding: 0.75rem;
+    margin-top: 1rem;
+  }
+
   &:hover {
     border-color: rgba(88, 164, 176, 0.25);
     transform: translateY(-2px);
@@ -791,7 +865,7 @@ const LinkCard = styled.div`
     border-color: rgba(88, 164, 176, 0.3);
   }
 
-  ${props => props.isBeingDragged && `
+  ${props => props.$isBeingDragged && `
     opacity: 0.3;
     transform: scale(0.98) rotate(2deg);
     cursor: grabbing;
@@ -800,14 +874,14 @@ const LinkCard = styled.div`
     border-color: rgba(88, 164, 176, 0.4);
   `}
 
-  ${props => props.isDragOver && !props.isBeingDragged && `
+  ${props => props.$isDragOver && !props.$isBeingDragged && `
     border-color: rgba(88, 164, 176, 0.6);
     background: linear-gradient(145deg, rgba(88, 164, 176, 0.12), rgba(88, 164, 176, 0.06));
     transform: translateY(-4px) scale(1.02);
     box-shadow: 0 12px 30px rgba(88, 164, 176, 0.2);
   `}
 
-  ${props => props.isDeleting && `
+  ${props => props.$isDeleting && `
     opacity: 0.6;
     transform: scale(0.95);
     pointer-events: none;
@@ -831,6 +905,17 @@ const LinkHeader = styled.div`
   gap: 0.75rem;
   margin-bottom: 1rem;
   position: relative;
+
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  @media (max-width: 480px) {
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
 `
 
 const DragHandle = styled.div`
@@ -870,6 +955,21 @@ const LinkIcon = styled.div`
   background: rgba(88, 164, 176, 0.2);
   border-radius: 12px;
   flex-shrink: 0;
+
+  /* Responsive icon size */
+  @media (max-width: 768px) {
+    width: 40px;
+    height: 40px;
+    font-size: 1.75rem;
+    border-radius: 10px;
+  }
+
+  @media (max-width: 480px) {
+    width: 36px;
+    height: 36px;
+    font-size: 1.5rem;
+    border-radius: 8px;
+  }
 `
 
 const LinkInfo = styled.div`
@@ -884,6 +984,19 @@ const LinkTitle = styled.h4`
   color: #ffffff;
   margin: 0 0 0.25rem 0;
   word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+
+  /* Responsive font size */
+  @media (max-width: 768px) {
+    font-size: 1rem;
+  }
+
+  @media (max-width: 480px) {
+    font-size: 0.95rem;
+    margin-bottom: 0.125rem;
+  }
 `
 
 const LinkUrl = styled.p`
@@ -891,12 +1004,38 @@ const LinkUrl = styled.p`
   color: #58A4B0;
   margin: 0;
   word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+
+  /* Responsive font size */
+  @media (max-width: 768px) {
+    font-size: 0.85rem;
+    -webkit-line-clamp: 1;
+  }
+
+  @media (max-width: 480px) {
+    font-size: 0.8rem;
+  }
 `
 
 const LinkActions = styled.div`
   display: flex;
   gap: 0.5rem;
   margin-top: 0.125rem;
+  flex-shrink: 0;
+
+  /* Responsive adjustments */
+  @media (max-width: 480px) {
+    gap: 0.25rem;
+    flex-direction: column;
+    align-items: flex-end;
+    width: auto;
+    min-width: 32px;
+  }
 `
 
 const ActionButton = styled.button`
@@ -911,6 +1050,19 @@ const ActionButton = styled.button`
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+
+  /* Responsive size */
+  @media (max-width: 768px) {
+    width: 30px;
+    height: 30px;
+  }
+
+  @media (max-width: 480px) {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+  }
 
   &:hover {
     background: rgba(88, 164, 176, 0.2);
@@ -967,6 +1119,20 @@ const LinkStats = styled.div`
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+  }
+
+  @media (max-width: 480px) {
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    flex-wrap: wrap;
+  }
 `
 
 const StatItem = styled.div`
@@ -975,9 +1141,22 @@ const StatItem = styled.div`
   gap: 0.5rem;
   font-size: 0.85rem;
   color: #a0a0a0;
+  white-space: nowrap;
 
   svg {
     color: #58A4B0;
+    flex-shrink: 0;
+  }
+
+  /* Responsive font size */
+  @media (max-width: 768px) {
+    font-size: 0.8rem;
+    gap: 0.375rem;
+  }
+
+  @media (max-width: 480px) {
+    font-size: 0.75rem;
+    gap: 0.25rem;
   }
 `
 
@@ -1309,19 +1488,19 @@ const SocialIcon = styled.div`
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.02);
   border-radius: 8px;
-  cursor: ${props => props.isDisabled ? 'not-allowed' : 'pointer'};
+  cursor: ${props => props.$isDisabled ? 'not-allowed' : 'pointer'};
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   text-align: center;
   position: relative;
   
-  ${props => props.isDisabled && `
+  ${props => props.$isDisabled && `
     opacity: 0.5;
     background: rgba(88, 164, 176, 0.1);
     border-color: rgba(88, 164, 176, 0.2);
   `}
   
   &:hover {
-    ${props => !props.isDisabled && `
+    ${props => !props.$isDisabled && `
       background: rgba(255, 255, 255, 0.1);
       border-color: rgba(88, 164, 176, 0.3);
       transform: translateY(-2px);
@@ -1802,6 +1981,181 @@ const AlertClose = styled.button`
     color: #ffffff;
     transform: scale(1.1);
   }
+`
+
+// Loading Components
+const LoadingContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: 1.5rem;
+`
+
+const LoadingSpinner = styled.div`
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(88, 164, 176, 0.2);
+  border-top: 4px solid #58A4B0;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+`
+
+const LoadingText = styled.div`
+  color: #58A4B0;
+  font-size: 1rem;
+  font-weight: 500;
+  text-align: center;
+`
+
+// Skeleton Loading Components
+const SocialIconsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+  
+  @media (max-width: 768px) {
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 0.75rem;
+  }
+`
+
+const SkeletonSocialIcon = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    animation: skeletonShimmer 1.5s infinite;
+  }
+  
+  @keyframes skeletonShimmer {
+    0% { left: -100%; }
+    100% { left: 100%; }
+  }
+  
+  @media (max-width: 768px) {
+    width: 48px;
+    height: 48px;
+  }
+`
+
+const SkeletonIcon = styled.div`
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  
+  @media (max-width: 768px) {
+    width: 20px;
+    height: 20px;
+  }
+`
+
+const SkeletonLinkCard = styled.div`
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(88, 164, 176, 0.15);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-top: 2rem;
+  position: relative;
+  overflow: hidden;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    animation: skeletonShimmer 1.5s infinite;
+  }
+`
+
+const SkeletonLinkHeader = styled.div`
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+`
+
+const SkeletonDragHandle = styled.div`
+  width: 20px;
+  height: 20px;
+  margin-top: 0.25rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+`
+
+const SkeletonLinkInfo = styled.div`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.125rem;
+`
+
+const SkeletonLine = styled.div`
+  width: ${props => props.width || '100%'};
+  height: ${props => props.height || '16px'};
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+`
+
+const SkeletonActions = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.125rem;
+`
+
+const SkeletonActionButton = styled.div`
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+`
+
+const SkeletonLinkStats = styled.div`
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+`
+
+const SkeletonStat = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+`
+
+const SkeletonStatIcon = styled.div`
+  width: 16px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
 `
 
 export default LinksSection

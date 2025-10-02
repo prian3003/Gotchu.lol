@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { 
   HiUser, 
   HiStar, 
@@ -14,7 +14,8 @@ import {
   HiFingerPrint,
   HiUserPlus,
   HiSparkles,
-  HiAdjustmentsHorizontal
+  HiAdjustmentsHorizontal,
+  HiAtSymbol
 } from 'react-icons/hi2'
 import { SimpleIconComponent } from '../../../utils/simpleIconsHelper.jsx'
 import { useDiscord } from '../../../hooks/useDiscord'
@@ -22,28 +23,86 @@ import AccountSettingsModal from '../../modals/AccountSettingsModal'
 import ChangeDisplayNameModal from '../../modals/ChangeDisplayNameModal'
 import ChangeAliasModal from '../../modals/ChangeAliasModal'
 
-const OverviewSection = ({ user, setUser }) => {
+const OverviewSection = ({ user, setUser, userLinks = [] }) => {
   const [isUsernameModalOpen, setIsUsernameModalOpen] = useState(false)
   const [isDisplayNameModalOpen, setIsDisplayNameModalOpen] = useState(false)
   const [isAliasModalOpen, setIsAliasModalOpen] = useState(false)
+  const [weeklyViewsGrowth, setWeeklyViewsGrowth] = useState(0)
   
   // Discord integration
   const { discordStatus, connecting, disconnecting, connectDiscord, disconnectDiscord } = useDiscord()
 
+  // Calculate accurate profile completion percentage
+  const calculateProfileCompletion = () => {
+    // Check if user has any custom links added
+    const hasLinks = userLinks && userLinks.length > 0
+    
+    const tasks = [
+      !!user.avatar_url,                                        // Upload Avatar
+      !!user.description || !!user.bio,                        // Add Description  
+      !!discordStatus.connected,                                // Discord Connected
+      hasLinks,                                                 // Add Socials (check if user has any links)
+      !!(user.mfaEnabled || user.twoFactorEnabled)            // 2FA Enabled
+    ]
+    
+    const completedTasks = tasks.filter(Boolean).length
+    const totalTasks = tasks.length
+    const calculatedPercentage = Math.round((completedTasks / totalTasks) * 100)
+    
+    
+    // Use frontend calculation instead of backend to ensure accuracy
+    return calculatedPercentage
+  }
+
+  const actualProfileCompletion = calculateProfileCompletion()
+  const isProfileComplete = actualProfileCompletion === 100
+
+  // Fetch 7-day analytics for profile views growth calculation
+  useEffect(() => {
+    const fetchWeeklyAnalytics = async () => {
+      if (!user) return
+      
+      try {
+        // Fetch only current 7-day period views for faster response
+        const response = await fetch('http://localhost:8080/api/dashboard/analytics?days=7', {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          
+          if (data.success) {
+            const currentViews = data.data?.profile_views || 0
+            // Simple calculation: show current 7-day views as growth from 0
+            // This matches what analytics section would show for new accounts
+            setWeeklyViewsGrowth(currentViews)
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching weekly analytics:', error)
+        // Fallback to 0 if analytics fails
+        setWeeklyViewsGrowth(0)
+      }
+    }
+    
+    // Use a timeout to prevent blocking the UI
+    const timeoutId = setTimeout(fetchWeeklyAnalytics, 100)
+    return () => clearTimeout(timeoutId)
+  }, [user])
+
   // Handle username change
   const handleUsernameChange = async (newUsername) => {
     try {
-      const token = localStorage.getItem('token')
-      const sessionId = localStorage.getItem('sessionId')
-      
       const response = await fetch('/api/auth/update-username', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || '',
+          'Content-Type': 'application/json'
         },
-        credentials: 'include',
+        credentials: 'include', // Use httpOnly cookies for auth
         body: JSON.stringify({ username: newUsername })
       })
 
@@ -72,17 +131,12 @@ const OverviewSection = ({ user, setUser }) => {
   // Handle display name change
   const handleDisplayNameChange = async (newDisplayName) => {
     try {
-      const token = localStorage.getItem('token')
-      const sessionId = localStorage.getItem('sessionId')
-      
       const response = await fetch('/api/auth/update-display-name', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || '',
+          'Content-Type': 'application/json'
         },
-        credentials: 'include',
+        credentials: 'include', // Use httpOnly cookies for auth
         body: JSON.stringify({ displayName: newDisplayName })
       })
 
@@ -111,17 +165,12 @@ const OverviewSection = ({ user, setUser }) => {
   // Handle alias change (Premium only)
   const handleAliasChange = async (newAlias) => {
     try {
-      const token = localStorage.getItem('token')
-      const sessionId = localStorage.getItem('sessionId')
-      
       const response = await fetch('/api/auth/update-alias', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || '',
+          'Content-Type': 'application/json'
         },
-        credentials: 'include',
+        credentials: 'include', // Use httpOnly cookies for auth
         body: JSON.stringify({ alias: newAlias })
       })
 
@@ -217,7 +266,9 @@ const OverviewSection = ({ user, setUser }) => {
             </button>
           </div>
           <div className="card-value">{user.profileViews}</div>
-          <div className="card-description">+0 views since last 7 days</div>
+          <div className="card-description">
+            {weeklyViewsGrowth >= 0 ? '+' : ''}{weeklyViewsGrowth} views since last 7 days
+          </div>
         </div>
       </div>
 
@@ -229,30 +280,61 @@ const OverviewSection = ({ user, setUser }) => {
           <div className="profile-completion">
           <div className="completion-header">
             <h3>Profile Completion</h3>
-            <span className="completion-percentage">{user.profileCompletion}% completed</span>
+            <span className="completion-percentage">{actualProfileCompletion}% completed</span>
           </div>
           <div className="progress-bar">
             <div 
               className="progress-fill" 
-              style={{ width: `${user.profileCompletion}%` }}
+              style={{ width: `${actualProfileCompletion}%` }}
             ></div>
           </div>
-          <div className="completion-alert">
-            <HiExclamationTriangle className="alert-icon" />
-            <span>Your profile isn't complete yet!</span>
-          </div>
-          <p className="completion-description">
-            Complete your profile to make it more discoverable and appealing.
-          </p>
+          {!isProfileComplete && (
+            <>
+              <div className="completion-alert">
+                <HiExclamationTriangle className="alert-icon" />
+                <span>Your profile isn't complete yet!</span>
+              </div>
+              <p className="completion-description">
+                Complete your profile to make it more discoverable and appealing.
+              </p>
+            </>
+          )}
+          {isProfileComplete && (
+            <>
+              <div className="completion-alert" style={{ color: '#4ade80' }}>
+                <HiShieldCheck className="alert-icon" />
+                <span>Congratulations! Your profile is 100% complete!</span>
+              </div>
+              <p className="completion-description">
+                Your profile is fully optimized and ready to impress visitors.
+              </p>
+            </>
+          )}
           
           <div className="completion-tasks">
-            <div className="task-item">
-              <HiCamera className="task-icon" />
+            <div 
+              className={`task-item ${user.avatar_url ? 'completed' : ''}`}
+              onClick={() => window.location.href = '/dashboard?section=customize'}
+              style={{ cursor: 'pointer' }}
+            >
+              <HiCamera className={`task-icon ${user.avatar_url ? 'completed' : ''}`} />
               <span className="task-text">Upload An Avatar</span>
-              <HiArrowTopRightOnSquare className="task-arrow" />
+              {user.avatar_url ? (
+                <HiShieldCheck className="task-icon completed" />
+              ) : (
+                <HiArrowTopRightOnSquare className="task-arrow" />
+              )}
             </div>
-            <div className="task-item completed">
-              <HiShieldCheck className="task-icon completed" />
+            <div 
+              className={`task-item ${(user.description || user.bio) ? 'completed' : ''}`}
+              onClick={() => window.location.href = '/dashboard?section=customize'}
+              style={{ cursor: 'pointer' }}
+            >
+              {(user.description || user.bio) ? (
+                <HiShieldCheck className="task-icon completed" />
+              ) : (
+                <HiArrowTopRightOnSquare className="task-arrow" />
+              )}
               <span className="task-text">Add A Description</span>
             </div>
             <div className={`task-item ${discordStatus.connected ? 'completed' : ''}`}>
@@ -266,14 +348,32 @@ const OverviewSection = ({ user, setUser }) => {
                 <HiArrowTopRightOnSquare className="task-arrow" />
               )}
             </div>
-            <div className="task-item completed">
-              <HiShieldCheck className="task-icon completed" />
+            <div 
+              className={`task-item ${(userLinks && userLinks.length > 0) ? 'completed' : ''}`}
+              onClick={() => window.location.href = '/dashboard?section=links'}
+              style={{ cursor: 'pointer' }}
+            >
+              {(userLinks && userLinks.length > 0) ? (
+                <HiShieldCheck className="task-icon completed" />
+              ) : (
+                <HiArrowTopRightOnSquare className="task-arrow" />
+              )}
               <span className="task-text">Add Socials</span>
             </div>
-            <div className="task-item">
-              <HiFingerPrint className="task-icon" />
-              <span className="task-text">Enable 2FA</span>
-              <HiArrowTopRightOnSquare className="task-arrow" />
+            <div 
+              className={`task-item ${user.mfaEnabled || user.twoFactorEnabled ? 'completed' : ''}`}
+              onClick={() => window.location.href = '/dashboard?section=settings'}
+              style={{ cursor: 'pointer' }}
+            >
+              <HiFingerPrint className={`task-icon ${user.mfaEnabled || user.twoFactorEnabled ? 'completed' : ''}`} />
+              <span className="task-text">
+                {user.mfaEnabled || user.twoFactorEnabled ? '2FA Enabled' : 'Enable 2FA'}
+              </span>
+              {user.mfaEnabled || user.twoFactorEnabled ? (
+                <HiShieldCheck className="task-icon completed" />
+              ) : (
+                <HiArrowTopRightOnSquare className="task-arrow" />
+              )}
             </div>
           </div>
         </div>
@@ -293,11 +393,17 @@ const OverviewSection = ({ user, setUser }) => {
                 <HiUserPlus className="action-icon" />
                 Change Display Name
               </button>
-              <button className="action-button premium">
-                <HiSparkles className="action-icon" />
-                Want more? Unlock with Premium
+              <button className="action-button" onClick={() => setIsAliasModalOpen(true)}>
+                <HiAtSymbol className="action-icon" />
+                Change Alias
               </button>
-              <button className="action-button" onClick={() => setIsUsernameModalOpen(true)}>
+              {user.plan !== 'premium' && (
+                <button className="action-button premium">
+                  <HiSparkles className="action-icon" />
+                  Want more? Unlock with Premium
+                </button>
+              )}
+              <button className="action-button" onClick={() => window.location.href = '/dashboard?section=settings'}>
                 <HiAdjustmentsHorizontal className="action-icon" />
                 Account Settings
               </button>

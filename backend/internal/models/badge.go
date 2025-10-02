@@ -108,6 +108,7 @@ type UserBadge struct {
 	UserID         uint                 `json:"user_id" gorm:"not null;index"`
 	BadgeID        string               `json:"badge_id" gorm:"not null;index;size:50"`
 	IsEarned       bool                 `json:"is_earned" gorm:"default:false"`
+	IsClaimable    bool                 `json:"is_claimable" gorm:"default:false"`
 	Progress       float64              `json:"progress" gorm:"default:0.0"`
 	CurrentValue   float64              `json:"current_value" gorm:"default:0.0"`
 	TargetValue    float64              `json:"target_value" gorm:"not null"`
@@ -134,6 +135,7 @@ type EarnMethod string
 const (
 	EarnMethodAutomatic   EarnMethod = "AUTOMATIC"
 	EarnMethodManual      EarnMethod = "MANUAL"
+	EarnMethodClaimed     EarnMethod = "CLAIMED"
 	EarnMethodImport      EarnMethod = "IMPORT"
 	EarnMethodEvent       EarnMethod = "EVENT"
 	EarnMethodAchievement EarnMethod = "ACHIEVEMENT"

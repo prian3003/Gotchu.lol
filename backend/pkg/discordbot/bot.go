@@ -38,9 +38,11 @@ type PresenceData struct {
 
 // Activity represents Discord user activity
 type Activity struct {
-	Name string `json:"name"`
-	Type int    `json:"type"` // 0=playing, 1=streaming, 2=listening, 3=watching, 4=custom, 5=competing
-	URL  string `json:"url,omitempty"`
+	Name    string `json:"name"`
+	Type    int    `json:"type"` // 0=playing, 1=streaming, 2=listening, 3=watching, 4=custom, 5=competing
+	URL     string `json:"url,omitempty"`
+	Details string `json:"details,omitempty"` // For Spotify: track name
+	State   string `json:"state,omitempty"`   // For Spotify: artist name
 }
 
 // Gateway payload structure
@@ -293,6 +295,11 @@ func (bot *DiscordBotService) handlePresenceUpdate(data json.RawMessage) {
 
 	userID := presence.User.ID
 	now := time.Now()
+
+	// Debug logging for activities
+	if len(presence.Activities) > 0 {
+		log.Printf("🎵 User %s activity: %+v", userID, presence.Activities[0])
+	}
 
 	// Update in-memory presence
 	bot.mutex.Lock()

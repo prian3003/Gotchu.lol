@@ -37,7 +37,7 @@ const TemplatesSection = () => {
   const [likedTemplates, setLikedTemplates] = useState([])
   const [userTemplates, setUserTemplates] = useState([])
   const [categories, setCategories] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
@@ -53,6 +53,7 @@ const TemplatesSection = () => {
   const [createLoading, setCreateLoading] = useState(false)
   const [applyLoading, setApplyLoading] = useState(false)
   const [copiedTemplateId, setCopiedTemplateId] = useState(null)
+  const [likingTemplates, setLikingTemplates] = useState(new Set())
 
   const tabs = [
     { id: 'library', label: 'Template Library', count: templates.length },
@@ -102,13 +103,10 @@ const TemplatesSection = () => {
   const fetchLikedTemplates = async () => {
     try {
       setLoading(true)
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-
       const response = await fetch('/api/templates/liked', {
+        credentials: 'include', // Use httpOnly cookies
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'X-Session-ID': sessionId
+          'Content-Type': 'application/json'
         }
       })
       const data = await response.json()
@@ -128,15 +126,12 @@ const TemplatesSection = () => {
   const fetchUserTemplates = async () => {
     try {
       setLoading(true)
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-
       console.log('🔍 Fetching user templates...')
       
       const response = await fetch('/api/templates/my-templates', {
+        credentials: 'include', // Use httpOnly cookies
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'X-Session-ID': sessionId
+          'Content-Type': 'application/json'
         }
       })
       
@@ -178,7 +173,16 @@ const TemplatesSection = () => {
   }
 
   const handleLikeTemplate = async (templateId) => {
+    // Prevent spam clicking - if already processing this template, ignore
+    if (likingTemplates.has(templateId)) {
+      console.log('Like request ignored - already processing template:', templateId)
+      return
+    }
+
     try {
+      // Add to processing set
+      setLikingTemplates(prev => new Set([...prev, templateId]))
+
       // Find the template to check current like status
       const currentTemplate = getCurrentTemplates().find(t => t.id === templateId)
       
@@ -210,9 +214,15 @@ const TemplatesSection = () => {
         })
       }
 
-      // Calculate new like count
+      // Calculate new like count using atomic state updates
       const currentLikes = currentTemplate?.likes || 0
       const newLikeCount = willBeLiked ? currentLikes + 1 : Math.max(0, currentLikes - 1)
+      
+      // Store original state for rollback
+      const originalState = {
+        likes: currentLikes,
+        is_liked: isCurrentlyLiked
+      }
 
       // Update favorites list
       if (willBeLiked && activeTab !== 'favorites') {
@@ -237,21 +247,18 @@ const TemplatesSection = () => {
       setTemplates(prev => updateTemplateLike(prev, willBeLiked, newLikeCount))
       setUserTemplates(prev => updateTemplateLike(prev, willBeLiked, newLikeCount))
 
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-
       const response = await fetch(`/api/templates/${templateId}/like`, {
         method: 'POST',
+        credentials: 'include', // Use httpOnly cookies
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'X-Session-ID': sessionId
+          'Content-Type': 'application/json'
         }
       })
       const data = await response.json()
 
       if (!data.success) {
         // Revert optimistic update if API call failed
-        console.error('Failed to update like status, reverting...')
+        console.error('Failed to update like status, reverting...', data.error)
         
         // Revert favorites list
         if (willBeLiked && activeTab !== 'favorites') {
@@ -266,19 +273,36 @@ const TemplatesSection = () => {
           }
         }
         
-        // Revert other template lists
-        setTemplates(prev => updateTemplateLike(prev, isCurrentlyLiked, currentLikes))
-        setUserTemplates(prev => updateTemplateLike(prev, isCurrentlyLiked, currentLikes))
+        // Revert other template lists using original state
+        setTemplates(prev => updateTemplateLike(prev, originalState.is_liked, originalState.likes))
+        setUserTemplates(prev => updateTemplateLike(prev, originalState.is_liked, originalState.likes))
         logger.error('Failed to like template:', data.error)
       }
     } catch (error) {
+      console.error('Error liking template:', error)
       logger.error('Error liking template:', error)
-      // Revert optimistic updates on error
-      fetchLikedTemplates()
-      fetchTemplates(pagination.page)
-      if (activeTab === 'uploads') {
-        fetchUserTemplates()
+      
+      // Revert optimistic updates using original state
+      if (currentTemplate) {
+        setTemplates(prev => updateTemplateLike(prev, originalState.is_liked, originalState.likes))
+        setUserTemplates(prev => updateTemplateLike(prev, originalState.is_liked, originalState.likes))
+        setLikedTemplates(prev => {
+          if (originalState.is_liked) {
+            // Add back if was originally liked
+            return prev.some(t => t.id === templateId) ? prev : [{ ...currentTemplate, ...originalState }, ...prev]
+          } else {
+            // Remove if was originally not liked
+            return prev.filter(t => t.id !== templateId)
+          }
+        })
       }
+    } finally {
+      // Always remove from processing set
+      setLikingTemplates(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(templateId)
+        return newSet
+      })
     }
   }
 
@@ -290,14 +314,11 @@ const TemplatesSection = () => {
   const handleApplyTemplate = async (template) => {
     try {
       setApplyLoading(true)
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-
       const response = await fetch(`/api/templates/${template.id}/apply`, {
         method: 'POST',
+        credentials: 'include', // Use httpOnly cookies
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'X-Session-ID': sessionId
+          'Content-Type': 'application/json'
         }
       })
       const data = await response.json()
@@ -360,9 +381,6 @@ const TemplatesSection = () => {
   const handleCreateFromCurrent = async (templateData) => {
     try {
       setCreateLoading(true)
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-
       // Create FormData to handle file upload
       const formData = new FormData()
       
@@ -381,10 +399,7 @@ const TemplatesSection = () => {
 
       const response = await fetch('/api/templates/create', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'X-Session-ID': sessionId
-        },
+        credentials: 'include', // Use httpOnly cookies
         body: formData
       })
       const data = await response.json()
@@ -555,7 +570,9 @@ const TemplatesSection = () => {
                     <img src={previewImage} alt={template.name} />
                     <FavoriteButton
                       $favorited={template.is_liked || activeTab === 'favorites'}
+                      $processing={likingTemplates.has(template.id)}
                       onClick={() => handleLikeTemplate(template.id)}
+                      disabled={likingTemplates.has(template.id)}
                     >
                       <HiHeart />
                     </FavoriteButton>
@@ -1346,19 +1363,32 @@ const FavoriteButton = styled.button`
   border: none;
   border-radius: 50%;
   color: ${props => props.$favorited ? '#FFD700' : '#ffffff'};
-  cursor: pointer;
+  cursor: ${props => props.$processing ? 'not-allowed' : 'pointer'};
   transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
+  opacity: ${props => props.$processing ? 0.6 : 1};
   
-  &:hover {
+  &:hover:not(:disabled) {
     background: rgba(0, 0, 0, 0.8);
     transform: scale(1.1);
   }
   
+  &:disabled {
+    cursor: not-allowed;
+  }
+  
   svg {
     font-size: 1rem;
+    ${props => props.$processing && `
+      animation: pulse 1s ease-in-out infinite;
+    `}
+  }
+  
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 `
 

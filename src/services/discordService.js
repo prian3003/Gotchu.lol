@@ -4,25 +4,32 @@ class DiscordService {
     this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api'
   }
 
-  // Get authorization headers
+  // Get authorization headers for httpOnly cookie authentication
   getAuthHeaders() {
-    const token = localStorage.getItem('authToken')
-    const sessionId = localStorage.getItem('sessionId')
-    
     return {
-      'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : '',
-      'X-Session-ID': sessionId || ''
+      'Content-Type': 'application/json'
     }
+  }
+  
+  // Get fetch options with credentials for httpOnly cookies
+  getFetchOptions(method = 'GET', body = null) {
+    const options = {
+      method,
+      credentials: 'include', // Include httpOnly cookies
+      headers: this.getAuthHeaders()
+    }
+    
+    if (body) {
+      options.body = JSON.stringify(body)
+    }
+    
+    return options
   }
 
   // Initiate Discord OAuth2 flow
   async initiateDiscordAuth() {
     try {
-      const response = await fetch(`${this.baseURL}/discord/auth`, {
-        method: 'POST',
-        headers: this.getAuthHeaders()
-      })
+      const response = await fetch(`${this.baseURL}/discord/auth`, this.getFetchOptions('POST'))
 
       const data = await response.json()
 
@@ -46,10 +53,7 @@ class DiscordService {
   // Get current Discord connection status
   async getDiscordStatus() {
     try {
-      const response = await fetch(`${this.baseURL}/discord/status`, {
-        method: 'GET',
-        headers: this.getAuthHeaders()
-      })
+      const response = await fetch(`${this.baseURL}/discord/status`, this.getFetchOptions('GET'))
 
       const data = await response.json()
 
@@ -70,10 +74,7 @@ class DiscordService {
   // Disconnect Discord account
   async disconnectDiscord() {
     try {
-      const response = await fetch(`${this.baseURL}/discord/disconnect`, {
-        method: 'POST',
-        headers: this.getAuthHeaders()
-      })
+      const response = await fetch(`${this.baseURL}/discord/disconnect`, this.getFetchOptions('POST'))
 
       const data = await response.json()
 
@@ -91,10 +92,7 @@ class DiscordService {
   // Refresh Discord data (booster status, etc.)
   async refreshDiscordData() {
     try {
-      const response = await fetch(`${this.baseURL}/discord/refresh`, {
-        method: 'POST',
-        headers: this.getAuthHeaders()
-      })
+      const response = await fetch(`${this.baseURL}/discord/refresh`, this.getFetchOptions('POST'))
 
       const data = await response.json()
 

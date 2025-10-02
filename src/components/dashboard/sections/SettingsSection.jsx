@@ -1,5 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo, useCallback } from 'react'
 import QRCode from 'react-qr-code'
+import ChangePasswordModal from '../../modals/ChangePasswordModal'
+import Disable2FAModal from '../../modals/Disable2FAModal'
+import { useToast } from '../../ui/Toast'
 import { 
   HiAdjustmentsHorizontal,
   HiUser,
@@ -7,7 +10,6 @@ import {
   HiLockClosed,
   HiEyeSlash,
   HiShieldCheck,
-  HiBell,
   HiGlobeAlt,
   HiSun,
   HiMoon,
@@ -27,10 +29,52 @@ import {
   HiCheckCircle
 } from 'react-icons/hi2'
 
-const SettingsSection = ({ user }) => {
+const SettingsSection = ({ user, onUserUpdate }) => {
+  const toast = useToast()
+  
+  const [freshUserData, setFreshUserData] = useState(null)
+  const [fetchingFreshData, setFetchingFreshData] = useState(true)
+  const [originalSettings, setOriginalSettings] = useState(null)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  
+  // Fetch fresh user data directly from database (no cache)
+  const fetchFreshUserData = async () => {
+    try {
+      setFetchingFreshData(true)
+      // Use a timestamp to bypass any potential caching
+      const timestamp = Date.now()
+      const response = await fetch(`/api/dashboard?t=${timestamp}`, {
+        method: 'GET',
+        credentials: 'include', // Use httpOnly cookies for auth
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        const userData = data.data.user
+        setFreshUserData(userData)
+      }
+    } catch (error) {
+    } finally {
+      setFetchingFreshData(false)
+    }
+  }
+  
+  // Fetch fresh data when component mounts
+  React.useEffect(() => {
+    fetchFreshUserData()
+  }, [])
+  
   const [activeTab, setActiveTab] = useState('account')
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [show2FAModal, setShow2FAModal] = useState(false)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [showDisable2FAModal, setShowDisable2FAModal] = useState(false)
   const [twoFAStep, setTwoFAStep] = useState(1)
   const [backupCodes, setBackupCodes] = useState([])
   const [verificationCode, setVerificationCode] = useState('')
@@ -40,33 +84,60 @@ const SettingsSection = ({ user }) => {
   const [customAlert, setCustomAlert] = useState({ show: false, title: '', message: '', type: 'error' })
   const [settings, setSettings] = useState({
     // Account settings
-    username: user?.username || 'user123',
-    email: user?.email || 'user@example.com',
-    displayName: user?.displayName || user?.username || 'User',
-    bio: user?.bio || '',
+    username: '',
+    email: '',
+    displayName: '',
+    bio: '',
     
     // Privacy settings
-    profileVisibility: user?.profileVisibility || 'public',
-    showEmail: user?.showEmail || false,
-    showLastSeen: user?.showLastSeen !== false,
-    allowDirectMessages: user?.allowDirectMessages !== false,
     
-    // Notification settings
-    emailNotifications: user?.emailNotifications !== false,
-    pushNotifications: user?.pushNotifications !== false,
-    marketingEmails: user?.marketingEmails || false,
-    weeklyDigest: user?.weeklyDigest !== false,
     
     // Appearance settings
-    theme: user?.theme || 'system',
-    language: user?.language || 'en',
-    timezone: user?.timezone || 'auto',
+    theme: 'system',
+    language: 'en',
+    timezone: 'auto',
     
     // Security settings
-    twoFactorEnabled: user?.mfaEnabled || user?.twoFactorEnabled || false,
-    sessionTimeout: user?.sessionTimeout || 30,
-    loginAlerts: user?.loginAlerts !== false
+    twoFactorEnabled: false,
+    sessionTimeout: 30
   })
+  
+  // Update settings when fresh user data is loaded
+  React.useEffect(() => {
+    if (freshUserData) {
+      const newSettings = {
+        // Account settings
+        username: freshUserData.username || 'user123',
+        email: freshUserData.email || 'user@example.com',
+        displayName: freshUserData.display_name || freshUserData.username || 'User',
+        bio: freshUserData.bio || '',
+        
+        // Privacy settings
+        
+        // Appearance settings
+        theme: freshUserData.theme || 'system',
+        language: freshUserData.language || 'en',
+        timezone: freshUserData.timezone || 'auto',
+        
+        // Security settings - Use fresh data from database
+        twoFactorEnabled: freshUserData.mfa_enabled || false,
+        sessionTimeout: freshUserData.sessionTimeout || 30
+      }
+      
+      setSettings(newSettings)
+      setOriginalSettings(newSettings) // Store original settings for change detection
+      setHasUnsavedChanges(false)
+    }
+  }, [freshUserData])
+  
+  // Check for changes whenever settings update
+  React.useEffect(() => {
+    if (originalSettings) {
+      const hasChanges = JSON.stringify(settings) !== JSON.stringify(originalSettings)
+      setHasUnsavedChanges(hasChanges)
+    }
+  }, [settings, originalSettings])
+  
 
   // Generate random secret for TOTP
   const generateSecret = () => {
@@ -96,9 +167,6 @@ const SettingsSection = ({ user }) => {
 
   const tabs = [
     { id: 'account', label: 'Account', icon: HiUser },
-    { id: 'privacy', label: 'Privacy', icon: HiEyeSlash },
-    { id: 'notifications', label: 'Notifications', icon: HiBell },
-    { id: 'appearance', label: 'Appearance', icon: HiSun },
     { id: 'security', label: 'Security', icon: HiShieldCheck }
   ]
 
@@ -109,36 +177,73 @@ const SettingsSection = ({ user }) => {
     }))
   }
 
-  const handleSave = () => {
-    // In real app, would make API call to save settings
-    console.log('Saving settings:', settings)
+  const handleSave = async () => {
+    try {
+      setIsSaving(true)
+      
+      const response = await fetch('/api/dashboard/settings', {
+        method: 'POST',
+        credentials: 'include', // Use httpOnly cookies for auth
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          // Account settings
+          username: settings.username,
+          email: settings.email,
+          displayName: settings.displayName,
+          bio: settings.bio,
+          
+          // Privacy settings
+          
+          // Security settings (non-2FA/password)
+          sessionTimeout: settings.sessionTimeout
+        })
+      })
+      
+      if (response.ok) {
+        const result = await response.json()
+        
+        // Update original settings to new saved state
+        setOriginalSettings({...settings})
+        setHasUnsavedChanges(false)
+        
+        // Refresh user data
+        await fetchFreshUserData()
+        if (onUserUpdate) {
+          onUserUpdate()
+        }
+        
+        toast.success('Settings Saved', 'Your account settings have been saved successfully!')
+      } else {
+        const error = await response.json()
+        toast.error('Save Failed', error.message || 'Failed to save settings. Please try again.')
+      }
+      
+    } catch (error) {
+      console.error('Settings save error:', error)
+      toast.error('Connection Error', 'Failed to save settings. Please check your connection and try again.')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handle2FASetup = async () => {
+    console.log('2FA Setup button clicked!')
     try {
+      console.log('Setting show2FAModal to true')
       setShow2FAModal(true)
       setTwoFAStep(1)
       setIsLoading(true)
       
-      // API call to generate 2FA secret from backend
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
+      // API call to generate 2FA secret from backend using cookies
+      console.log('Making 2FA API call with cookie authentication')
       
-      console.log('Debug - Token found:', token ? 'YES' : 'NO', token?.substring(0, 20) + '...')
-      console.log('Debug - SessionId found:', sessionId ? 'YES' : 'NO', sessionId?.substring(0, 20) + '...')
-      
-      if (!token && !sessionId) {
-        showAlert('Authentication Required', 'No authentication found. Please log in again.')
-        setShow2FAModal(false)
-        return
-      }
-      
-      const response = await fetch('http://localhost:8080/api/auth/2fa/generate', {
+      const response = await fetch('/api/auth/2fa/generate', {
         method: 'POST',
+        credentials: 'include', // Use httpOnly cookies for auth
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || '',
         }
       })
       
@@ -147,16 +252,18 @@ const SettingsSection = ({ user }) => {
         setTotpSecret(data.secret)
         setQrCodeUrl(data.qr_code_url)
         setBackupCodes(data.backup_codes)
-      } else {
-        console.log('Response status:', response.status)
-        console.log('Response headers:', Object.fromEntries(response.headers.entries()))
         
+        // If 2FA is already enabled, skip to step 2 with reconfiguration message
+        if (settings.twoFactorEnabled || data.message.includes('already enabled')) {
+          setTwoFAStep(2)
+          showAlert('2FA Already Enabled', 'You can reconfigure your 2FA or generate new backup codes.', 'success')
+        }
+      } else {
         const errorText = await response.text()
-        console.log('Raw error response:', errorText)
+        console.log('2FA Error Response:', { status: response.status, body: errorText })
         
         try {
           const error = JSON.parse(errorText)
-          console.error('Failed to generate 2FA:', error.message)
           showAlert('Setup Error', 'Failed to generate 2FA: ' + (error.message || `HTTP ${response.status}`))
         } catch {
           showAlert('Setup Error', 'Failed to generate 2FA: HTTP ' + response.status + ' - ' + errorText)
@@ -166,9 +273,10 @@ const SettingsSection = ({ user }) => {
       }
       
     } catch (error) {
-      console.error('Failed to setup 2FA:', error)
+      console.error('2FA setup error caught:', error)
       showAlert('Connection Error', 'Error connecting to server. Please check if backend is running.')
-      setShow2FAModal(false)
+      // Don't close modal on error to debug
+      // setShow2FAModal(false)
       return
     } finally {
       setIsLoading(false)
@@ -184,16 +292,12 @@ const SettingsSection = ({ user }) => {
       
       setIsLoading(true)
       
-      // API call to verify and enable 2FA
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-      
-      const response = await fetch('http://localhost:8080/api/auth/2fa/verify', {
+      // API call to verify and enable 2FA using cookies
+      const response = await fetch('/api/auth/2fa/verify', {
         method: 'POST',
+        credentials: 'include', // Use httpOnly cookies for auth
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || '',
         },
         body: JSON.stringify({ 
           code: verificationCode,
@@ -208,15 +312,18 @@ const SettingsSection = ({ user }) => {
         }
         setSettings(prev => ({ ...prev, twoFactorEnabled: true }))
         showAlert('Success!', '2FA has been enabled successfully! Make sure to save your backup codes.', 'success')
+        // Refresh fresh user data and parent user data
+        fetchFreshUserData()
+        if (onUserUpdate) {
+          onUserUpdate()
+        }
       } else {
         const error = await response.json()
-        console.error('Failed to verify 2FA:', error.message)
         showAlert('Verification Failed', error.message || 'Invalid verification code. Please try again.')
         return // Don't enable 2FA if verification failed
       }
       
     } catch (error) {
-      console.error('Failed to verify 2FA code:', error)
       showAlert('Connection Error', 'Error connecting to server: ' + error.message)
       return // Don't enable 2FA if request failed
     } finally {
@@ -226,10 +333,7 @@ const SettingsSection = ({ user }) => {
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text).then(() => {
-      // Could add toast notification here
-      console.log('Copied to clipboard:', text)
     }).catch(err => {
-      console.error('Failed to copy:', err)
     })
   }
 
@@ -246,40 +350,61 @@ const SettingsSection = ({ user }) => {
     setCustomAlert({ show: false, title: '', message: '', type: 'error' })
   }
 
-  const handleDisable2FA = async () => {
-    try {
-      const password = prompt('Enter your password to disable 2FA:')
-      if (!password) return
 
+  const handleDisable2FA = () => {
+    setShowDisable2FAModal(true)
+  }
+
+  const handleDisable2FASubmit = async (password) => {
+    try {
       setIsLoading(true)
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-      
-      const response = await fetch('http://localhost:8080/api/auth/2fa/disable', {
+      const response = await fetch('/api/auth/2fa/disable', {
         method: 'POST',
+        credentials: 'include', // Use httpOnly cookies for auth
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || '',
         },
         body: JSON.stringify({ password })
       })
       
       if (response.ok) {
         setSettings(prev => ({ ...prev, twoFactorEnabled: false }))
+        setShowDisable2FAModal(false)
         showAlert('Success', '2FA disabled successfully!', 'success')
+        // Refresh fresh user data and parent user data
+        fetchFreshUserData()
+        if (onUserUpdate) {
+          onUserUpdate()
+        }
       } else {
         const error = await response.json()
-        console.error('Failed to disable 2FA:', error.message)
-        showAlert('Error', 'Failed to disable 2FA: ' + error.message)
+        throw new Error(error.message || 'Failed to disable 2FA')
       }
       
     } catch (error) {
-      console.error('Failed to disable 2FA:', error)
-      showAlert('Error', 'Failed to disable 2FA. Please check your connection.')
+      throw error
     } finally {
       setIsLoading(false)
     }
+  }
+
+
+  const handlePasswordChange = async (passwordData) => {
+    const response = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      credentials: 'include', // Use httpOnly cookies for auth
+      headers: { 
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(passwordData)
+    })
+    
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.message || 'Failed to change password')
+    }
+    
+    return await response.json()
   }
 
   const ToggleSwitch = ({ enabled, onChange, label, description }) => (
@@ -566,6 +691,7 @@ const SettingsSection = ({ user }) => {
     </div>
   )
 
+
   return (
     <>
       {/* Header */}
@@ -647,141 +773,8 @@ const SettingsSection = ({ user }) => {
             </div>
           )}
 
-          {/* Privacy Settings */}
-          {activeTab === 'privacy' && (
-            <div className="settings-section">
-              <div className="section-header">
-                <h2>Privacy & Visibility</h2>
-                <p>Control who can see your profile and information</p>
-              </div>
 
-              <div className="settings-list">
-                <SelectSetting
-                  label="Profile Visibility"
-                  description="Who can view your profile"
-                  value={settings.profileVisibility}
-                  onChange={(value) => handleSettingChange('profileVisibility', value)}
-                  options={[
-                    { value: 'public', label: 'Public - Anyone can view' },
-                    { value: 'unlisted', label: 'Unlisted - Only with link' },
-                    { value: 'private', label: 'Private - Only you' }
-                  ]}
-                />
 
-                <ToggleSwitch
-                  label="Show Email Address"
-                  description="Display your email on your public profile"
-                  enabled={settings.showEmail}
-                  onChange={(value) => handleSettingChange('showEmail', value)}
-                />
-
-                <ToggleSwitch
-                  label="Show Last Seen"
-                  description="Let others see when you were last active"
-                  enabled={settings.showLastSeen}
-                  onChange={(value) => handleSettingChange('showLastSeen', value)}
-                />
-
-                <ToggleSwitch
-                  label="Allow Direct Messages"
-                  description="Allow others to send you messages"
-                  enabled={settings.allowDirectMessages}
-                  onChange={(value) => handleSettingChange('allowDirectMessages', value)}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Notification Settings */}
-          {activeTab === 'notifications' && (
-            <div className="settings-section">
-              <div className="section-header">
-                <h2>Notifications</h2>
-                <p>Manage how and when you receive notifications</p>
-              </div>
-
-              <div className="settings-list">
-                <ToggleSwitch
-                  label="Email Notifications"
-                  description="Receive important updates via email"
-                  enabled={settings.emailNotifications}
-                  onChange={(value) => handleSettingChange('emailNotifications', value)}
-                />
-
-                <ToggleSwitch
-                  label="Push Notifications"
-                  description="Get notifications in your browser"
-                  enabled={settings.pushNotifications}
-                  onChange={(value) => handleSettingChange('pushNotifications', value)}
-                />
-
-                <ToggleSwitch
-                  label="Marketing Emails"
-                  description="Receive emails about new features and updates"
-                  enabled={settings.marketingEmails}
-                  onChange={(value) => handleSettingChange('marketingEmails', value)}
-                />
-
-                <ToggleSwitch
-                  label="Weekly Digest"
-                  description="Get a weekly summary of your profile activity"
-                  enabled={settings.weeklyDigest}
-                  onChange={(value) => handleSettingChange('weeklyDigest', value)}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Appearance Settings */}
-          {activeTab === 'appearance' && (
-            <div className="settings-section">
-              <div className="section-header">
-                <h2>Appearance & Display</h2>
-                <p>Customize how gotchu.lol looks and feels</p>
-              </div>
-
-              <div className="settings-list">
-                <SelectSetting
-                  label="Theme"
-                  description="Choose your preferred color scheme"
-                  value={settings.theme}
-                  onChange={(value) => handleSettingChange('theme', value)}
-                  options={[
-                    { value: 'system', label: 'System Default' },
-                    { value: 'light', label: 'Light Mode' },
-                    { value: 'dark', label: 'Dark Mode' }
-                  ]}
-                />
-
-                <SelectSetting
-                  label="Language"
-                  description="Select your preferred language"
-                  value={settings.language}
-                  onChange={(value) => handleSettingChange('language', value)}
-                  options={[
-                    { value: 'en', label: 'English' },
-                    { value: 'es', label: 'Español' },
-                    { value: 'fr', label: 'Français' },
-                    { value: 'de', label: 'Deutsch' }
-                  ]}
-                />
-
-                <SelectSetting
-                  label="Timezone"
-                  description="Set your local timezone"
-                  value={settings.timezone}
-                  onChange={(value) => handleSettingChange('timezone', value)}
-                  options={[
-                    { value: 'auto', label: 'Automatic' },
-                    { value: 'utc', label: 'UTC' },
-                    { value: 'est', label: 'Eastern Time' },
-                    { value: 'pst', label: 'Pacific Time' },
-                    { value: 'cet', label: 'Central European Time' }
-                  ]}
-                />
-              </div>
-            </div>
-          )}
 
           {/* Security Settings */}
           {activeTab === 'security' && (
@@ -801,16 +794,22 @@ const SettingsSection = ({ user }) => {
                     {settings.twoFactorEnabled ? (
                       <div className="security-status enabled">
                         <HiCheck className="status-icon" />
-                        <span>Enabled</span>
-                        <button className="disable-button" onClick={handleDisable2FA}>Disable</button>
+                        <button 
+                          className="enable-2fa-button disable-variant"
+                          onClick={handleDisable2FA}
+                        >
+                          <HiLockClosed className="button-icon" />
+                          Disable 2FA
+                        </button>
                       </div>
                     ) : (
                       <button 
                         className="enable-2fa-button"
                         onClick={handle2FASetup}
+                        disabled={fetchingFreshData}
                       >
                         <HiFingerPrint className="button-icon" />
-                        Enable 2FA
+                        {fetchingFreshData ? 'Loading...' : 'Enable 2FA'}
                       </button>
                     )}
                   </div>
@@ -830,22 +829,21 @@ const SettingsSection = ({ user }) => {
                   ]}
                 />
 
-                <ToggleSwitch
-                  label="Login Alerts"
-                  description="Get notified when someone logs into your account"
-                  enabled={settings.loginAlerts}
-                  onChange={(value) => handleSettingChange('loginAlerts', value)}
-                />
 
-                <div className="setting-item">
+                <div className="setting-item security-item">
                   <div className="setting-info">
                     <label className="setting-label">Change Password</label>
                     <p className="setting-description">Update your account password</p>
                   </div>
-                  <button className="change-password-button">
-                    <HiKey className="button-icon" />
-                    Change Password
-                  </button>
+                  <div className="security-actions">
+                    <button 
+                      className="enable-2fa-button"
+                      onClick={() => setShowPasswordModal(true)}
+                    >
+                      <HiKey className="button-icon" />
+                      Change Password
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -868,21 +866,60 @@ const SettingsSection = ({ user }) => {
             </div>
           )}
 
-          {/* Save Button */}
-          <div className="settings-footer">
-            <button className="save-button" onClick={handleSave}>
-              <HiCheck className="button-icon" />
-              Save Changes
-            </button>
-          </div>
+          {/* Save Button - Only show when there are unsaved changes */}
+          {hasUnsavedChanges && (
+            <div className="settings-footer">
+              <button 
+                className="save-button" 
+                onClick={handleSave}
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <>
+                    <div className="spinner" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <HiCheck className="button-icon" />
+                    Save Changes
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* 2FA Setup Modal */}
       {show2FAModal && <TwoFactorModal />}
+      {console.log('Modal render check:', { show2FAModal })}
+      
+      {/* Change Password Modal */}
+      <ChangePasswordModal 
+        isOpen={showPasswordModal}
+        onClose={() => setShowPasswordModal(false)}
+        onPasswordChange={handlePasswordChange}
+      />
       
       {/* Delete Account Modal */}
       {showDeleteModal && <DeleteAccountModal />}
+      
+      {/* Disable 2FA Modal */}
+      <Disable2FAModal 
+        isOpen={showDisable2FAModal}
+        onClose={() => setShowDisable2FAModal(false)}
+        onSubmit={handleDisable2FASubmit}
+        loading={isLoading}
+        colors={{
+          surface: '#1a1a1a',
+          background: '#0a0a0a',
+          text: '#ffffff',
+          muted: 'rgba(255, 255, 255, 0.7)',
+          border: 'rgba(255, 255, 255, 0.1)',
+          accent: '#58A4B0'
+        }}
+      />
     </>
   )
 }

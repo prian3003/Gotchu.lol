@@ -3,20 +3,20 @@ import styled from 'styled-components'
 import logger from '../../utils/logger'
 import { SimpleIconComponent } from '../../utils/simpleIconsHelper.jsx'
 
-// Helper function to render icon - supports Simple Icons and emojis as fallback
-const renderIcon = (icon, useMonochrome = false) => {
+// Memoized helper component to render icon - supports Simple Icons and emojis as fallback
+const RenderIcon = React.memo(({ icon, useMonochrome = false }) => {
   if (!icon) return <SimpleIconComponent iconName="link" useWhite={true} size={24} />
   
   // If it's an emoji (Unicode character), return as is
   if (/[\u{1F000}-\u{1F6FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u.test(icon)) {
-    return icon
+    return <span style={{ fontSize: '24px' }}>{icon}</span>
   }
   
   // Render as Simple Icon with brand colors or monochrome
   return <SimpleIconComponent iconName={icon} size={24} useWhite={useMonochrome} />
-}
+})
 
-const UserLinks = ({ username, monochromeIcons = false }) => {
+const UserLinks = React.memo(({ username, monochromeIcons = false }) => {
   const [links, setLinks] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -97,7 +97,15 @@ const UserLinks = ({ username, monochromeIcons = false }) => {
   }
 
   if (loading) {
-    return null // Don't show anything while loading
+    return (
+      <LinksContainer>
+        <IconsGrid>
+          {[...Array(3)].map((_, i) => (
+            <SkeletonIcon key={i} />
+          ))}
+        </IconsGrid>
+      </LinksContainer>
+    )
   }
 
   if (links.length === 0) {
@@ -107,24 +115,28 @@ const UserLinks = ({ username, monochromeIcons = false }) => {
   return (
     <LinksContainer>
       <IconsGrid>
-        {links.map((link) => (
+        {links.map((link, index) => (
           <IconButton
             key={link.id}
             id={`link-${link.id}`}
             onClick={() => handleLinkClick(link)}
             linkType={link.description && !link.url ? 'text' : 'url'}
             title={link.description && !link.url ? `Click to copy: ${link.description}` : `Visit ${link.title}`}
+            style={{ 
+              animationDelay: `${index * 100}ms`,
+              animation: 'fadeInScale 0.4s ease-out forwards'
+            }}
           >
-            {renderIcon(link.icon, monochromeIcons)}
+            <RenderIcon icon={link.icon} useMonochrome={monochromeIcons} />
           </IconButton>
         ))}
       </IconsGrid>
     </LinksContainer>
   )
-}
+})
 
 const LinksContainer = styled.div`
-  margin: 1.5rem 0 0 0;
+  margin: 0.75rem 0 0 0;
   padding: 0;
   text-align: center;
   width: 100%;
@@ -147,6 +159,29 @@ const IconsGrid = styled.div`
   }
 `
 
+const SkeletonIcon = styled.div`
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, 
+    rgba(255,255,255,0.1) 25%, 
+    rgba(255,255,255,0.2) 50%, 
+    rgba(255,255,255,0.1) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  @media (max-width: 768px) {
+    width: 44px;
+    height: 44px;
+  }
+`
+
 const IconButton = styled.button.withConfig({
   shouldForwardProp: (prop) => prop !== 'linkType'
 })`
@@ -160,9 +195,24 @@ const IconButton = styled.button.withConfig({
   border: none;
   color: #ffffff;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+              filter 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50%;
   position: relative;
+  will-change: transform;
+  opacity: 0;
+  transform: scale(0.8);
+
+  @keyframes fadeInScale {
+    from {
+      opacity: 0;
+      transform: scale(0.8);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
   
   &:hover {
     transform: translateY(-3px) scale(1.15);

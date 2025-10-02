@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import styled from 'styled-components'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useToast } from '../ui/Toast'
 import logger from '../../utils/logger'
 import AudioManager from '../customization/AudioManager'
 import AssetThumbnail from '../customization/AssetThumbnail'
 import { deleteAsset, getAssetFilePath, getAssetTypeFromUrl } from '../../utils/assetUtils'
 import { SimpleIconComponent } from '../../utils/simpleIconsHelper.jsx'
 import { useDiscord } from '../../hooks/useDiscord'
+import { useAuth } from '../../contexts/AuthContext'
 import {
   HiUser,
   HiCog,
@@ -32,7 +34,7 @@ import {
   HiInformationCircle,
   HiClock,
   HiPencilSquare,
-  HiDocumentText
+  HiDocumentText,HiEye,HiSwatch,HiEyeSlash
 } from 'react-icons/hi2'
 
 // Popular Google Fonts list
@@ -79,9 +81,14 @@ const loadGoogleFont = (fontFamily) => {
 
 const CustomizationPage = ({ onBack }) => {
   const { colors, isDarkMode } = useTheme()
+  const { user } = useAuth()
+  const toast = useToast()
   const [activeTab, setActiveTab] = useState('appearance') // Temporarily restored for syntax
   const [showAudioModal, setShowAudioModal] = useState(false)
   const [showFontModal, setShowFontModal] = useState(false)
+  const [tempSelectedFont, setTempSelectedFont] = useState('')
+  const [showUsernameEffectsModal, setShowUsernameEffectsModal] = useState(false)
+  const [tempSelectedUsernameEffect, setTempSelectedUsernameEffect] = useState('')
   
   // Discord integration
   const { discordStatus, connecting, connectDiscord, disconnectDiscord, disconnecting } = useDiscord()
@@ -99,6 +106,7 @@ const CustomizationPage = ({ onBack }) => {
     // Profile
     description: '',
     bio: '',
+    username: '',
     // Effects
     backgroundEffect: 'particles',
     usernameEffect: 'glow',
@@ -127,7 +135,20 @@ const CustomizationPage = ({ onBack }) => {
     // Advanced
     customCursor: '',
     // Typography
-    textFont: ''
+    textFont: '',
+    
+    // Splash Screen Settings
+    enableSplashScreen: true,
+    splashText: 'click here',
+    splashFontSize: '3rem',
+    splashAnimated: true,
+    splashGlowEffect: false,
+    splashShowParticles: true,
+    splashAutoHide: false,
+    splashAutoHideDelay: 5000,
+    splashBackgroundVisible: true,
+    splashBackgroundColor: '#0a0a0a',
+    splashTransparent: false
   })
 
   // Removed tabs array since we're using a single page layout now - temporarily uncommented to fix syntax
@@ -171,19 +192,17 @@ const CustomizationPage = ({ onBack }) => {
     { id: 'none', name: 'None', preview: '🚫' },
     { id: 'particles', name: 'Particles', preview: '✨' },
     { id: 'rain', name: 'Rain', preview: '🌧️' },
-    { id: 'matrix', name: 'Matrix', preview: '🟢' },
-    { id: 'waves', name: 'Waves', preview: '🌊' },
-    { id: 'gradient', name: 'Gradient', preview: '🎨' },
-    { id: 'geometric', name: 'Geometric', preview: '🔷' }
+    { id: 'snow', name: 'Snow', preview: '❄️' }
   ]
 
   const usernameEffects = [
-    { id: 'none', name: 'None' },
-    { id: 'glow', name: 'Glow' },
-    { id: 'rainbow', name: 'Rainbow' },
-    { id: 'typewriter', name: 'Typewriter' },
-    { id: 'bounce', name: 'Bounce' },
-    { id: 'fade', name: 'Fade In' }
+    { id: 'none', name: 'None', description: 'No special effects', free: true },
+    { id: 'glow', name: 'Glow', description: 'Soft glowing effect', free: true },
+    { id: 'rainbow', name: 'Rainbow', description: 'Multi-color gradient', free: false },
+    { id: 'typewriter', name: 'Typewriter', description: 'Typing animation', free: false },
+    { id: 'bounce', name: 'Bounce', description: 'Bouncing animation', free: false },
+    { id: 'fade', name: 'Fade In', description: 'Fade-in animation', free: false },
+    { id: 'sparkles', name: 'Green Sparkles', description: 'Sparkling particles', free: true }
   ]
 
   const [loading, setLoading] = useState(true)
@@ -192,13 +211,13 @@ const CustomizationPage = ({ onBack }) => {
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [showResetDialog, setShowResetDialog] = useState(false)
   const [showSaveSuccess, setShowSaveSuccess] = useState(false)
-  const [showSaveError, setShowSaveError] = useState(false)
-  const [saveErrorMessage, setSaveErrorMessage] = useState('')
   const [originalSettings, setOriginalSettings] = useState(null)
   const [validationErrors, setValidationErrors] = useState({})
   const [isValidating, setIsValidating] = useState(false)
   const [uploading, setUploading] = useState({})
   const [currentBio, setCurrentBio] = useState('')
+  const [saveErrorMessage, setSaveErrorMessage] = useState('')
+  const [showSaveError, setShowSaveError] = useState(false)
   const validationTimeoutRef = useRef(null)
   const fileInputRefs = useRef({
     backgroundImage: null,
@@ -220,7 +239,14 @@ const CustomizationPage = ({ onBack }) => {
   useEffect(() => {
     console.log('🏁 Component mounted - calling loadSettings')
     loadSettings()
-  }, []) // Only run once on mount
+  }, [])
+
+  // Load Google Font when textFont setting changes
+  useEffect(() => {
+    if (settings.textFont) {
+      loadGoogleFont(settings.textFont)
+    }
+  }, [settings.textFont]) // Only run once on mount
 
   // Setup beforeunload listener for unsaved changes
   useEffect(() => {
@@ -248,17 +274,11 @@ const CustomizationPage = ({ onBack }) => {
   const loadSettings = async () => {
     console.log('🔄 loadSettings called')
     try {
-      const sessionId = localStorage.getItem('sessionId')
-      if (!sessionId) {
-        console.log('❌ No session ID found')
-        setLoading(false)
-        return
-      }
-
       console.log('📡 Making API request to /api/customization/settings')
-      const response = await fetch('/api/customization/settings', {
+      const response = await fetch('http://localhost:8080/api/customization/settings', {
+        credentials: 'include', // Use httpOnly cookies for auth
         headers: {
-          'X-Session-ID': sessionId
+          'Content-Type': 'application/json'
         }
       })
 
@@ -281,10 +301,14 @@ const CustomizationPage = ({ onBack }) => {
             // Asset URLs
             backgroundUrl: backendSettings.background_url || settings.backgroundUrl,
             audioUrl: backendSettings.audio_url || settings.audioUrl,
+            avatarUrl: backendSettings.avatar_url || data.data.user?.avatar_url || settings.avatarUrl,
             customCursor: backendSettings.cursor_url || settings.customCursor,
+            // Typography
+            textFont: backendSettings.text_font || settings.textFont,
             // Profile Information
             description: backendSettings.description || settings.description,
             bio: backendSettings.bio || settings.bio,
+            username: data.data.user?.username || settings.username,
             // Effects
             backgroundEffect: backendSettings.background_effect || settings.backgroundEffect,
             usernameEffect: backendSettings.username_effect || settings.usernameEffect,
@@ -307,9 +331,21 @@ const CustomizationPage = ({ onBack }) => {
             // Discord Integration
             discordPresence: typeof backendSettings.discord_presence === 'boolean' ? backendSettings.discord_presence : settings.discordPresence,
             useDiscordAvatar: typeof backendSettings.use_discord_avatar === 'boolean' ? backendSettings.use_discord_avatar : settings.useDiscordAvatar,
-            discordAvatarDecoration: typeof backendSettings.discord_avatar_decoration === 'boolean' ? backendSettings.discord_avatar_decoration : settings.discordAvatarDecoration
+            discordAvatarDecoration: typeof backendSettings.discord_avatar_decoration === 'boolean' ? backendSettings.discord_avatar_decoration : settings.discordAvatarDecoration,
+            
+            // Splash Screen Settings
+            enableSplashScreen: typeof backendSettings.enable_splash_screen === 'boolean' ? backendSettings.enable_splash_screen : settings.enableSplashScreen,
+            splashText: backendSettings.splash_text || settings.splashText,
+            splashFontSize: backendSettings.splash_font_size || settings.splashFontSize,
+            splashAnimated: typeof backendSettings.splash_animated === 'boolean' ? backendSettings.splash_animated : settings.splashAnimated,
+            splashGlowEffect: typeof backendSettings.splash_glow_effect === 'boolean' ? backendSettings.splash_glow_effect : settings.splashGlowEffect,
+            splashShowParticles: typeof backendSettings.splash_show_particles === 'boolean' ? backendSettings.splash_show_particles : settings.splashShowParticles,
+            splashAutoHide: typeof backendSettings.splash_auto_hide === 'boolean' ? backendSettings.splash_auto_hide : settings.splashAutoHide,
+            splashAutoHideDelay: backendSettings.splash_auto_hide_delay !== undefined ? backendSettings.splash_auto_hide_delay : settings.splashAutoHideDelay,
+            splashBackgroundVisible: typeof backendSettings.splash_background_visible === 'boolean' ? backendSettings.splash_background_visible : settings.splashBackgroundVisible,
+            splashBackgroundColor: backendSettings.splash_background_color || settings.splashBackgroundColor,
+            splashTransparent: typeof backendSettings.splash_transparent === 'boolean' ? backendSettings.splash_transparent : settings.splashTransparent
           }
-          console.log('✅ Setting loaded settings from API')
           setSettings(loadedSettings)
           setOriginalSettings(JSON.parse(JSON.stringify(loadedSettings)))
           setCurrentBio(backendSettings.bio || '')
@@ -328,21 +364,14 @@ const CustomizationPage = ({ onBack }) => {
   const saveSettings = async (showNotification = true) => {
     try {
       setSaving(true)
-      const sessionId = localStorage.getItem('sessionId')
-      if (!sessionId) {
-        setSaveErrorMessage('No session found. Please log in again.')
-        setShowSaveError(true)
-        setTimeout(() => setShowSaveError(false), 5000)
-        return false
-      }
 
-      logger.info('Attempting to save settings with session ID:', sessionId.substring(0, 8) + '...')
+      logger.info('Attempting to save settings...')
 
-      const response = await fetch('/api/customization/settings', {
+      const response = await fetch('http://localhost:8080/api/customization/settings', {
         method: 'POST',
+        credentials: 'include', // Use httpOnly cookies for auth
         headers: {
-          'Content-Type': 'application/json',
-          'X-Session-ID': sessionId
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           // Basic Theme
@@ -382,7 +411,23 @@ const CustomizationPage = ({ onBack }) => {
           // Asset URLs
           background_url: settings.backgroundUrl || '',
           audio_url: settings.audioUrl || '',
-          cursor_url: settings.customCursor || ''
+          cursor_url: settings.customCursor || '',
+          
+          // Typography
+          text_font: settings.textFont || '',
+          
+          // Splash Screen Settings
+          enable_splash_screen: settings.enableSplashScreen,
+          splash_text: settings.splashText,
+          splash_font_size: settings.splashFontSize,
+          splash_animated: settings.splashAnimated,
+          splash_glow_effect: settings.splashGlowEffect,
+          splash_show_particles: settings.splashShowParticles,
+          splash_auto_hide: settings.splashAutoHide,
+          splash_auto_hide_delay: settings.splashAutoHideDelay,
+          splash_background_visible: settings.splashBackgroundVisible,
+          splash_background_color: settings.splashBackgroundColor,
+          splash_transparent: settings.splashTransparent
         })
       })
 
@@ -391,6 +436,12 @@ const CustomizationPage = ({ onBack }) => {
         if (data.success) {
           setOriginalSettings(JSON.parse(JSON.stringify(settings)))
           setHasUnsavedChanges(false)
+          
+          // Show success toast
+          if (showNotification) {
+            toast.success('Settings Saved', 'Your customization settings have been saved successfully!')
+          }
+          
           return true
         } else {
           throw new Error(data.message || 'Failed to save settings')
@@ -406,9 +457,12 @@ const CustomizationPage = ({ onBack }) => {
       }
     } catch (error) {
       logger.error('Failed to save customization settings', error)
-      setSaveErrorMessage(error.message || 'Failed to save settings. Please try again.')
-      setShowSaveError(true)
-      setTimeout(() => setShowSaveError(false), 5000)
+      
+      // Show error toast instead of inline error
+      if (showNotification) {
+        toast.error('Save Failed', error.message || 'Failed to save settings. Please try again.')
+      }
+      
       return false
     } finally {
       setSaving(false)
@@ -418,14 +472,11 @@ const CustomizationPage = ({ onBack }) => {
   // Direct save function for audio settings - bypasses unsaved changes dialog
   const saveAudioSettings = async (silent = false) => {
     try {
-      const sessionId = localStorage.getItem('sessionId')
-      if (!sessionId) return
-
-      const response = await fetch('/api/customization/settings', {
+      const response = await fetch('http://localhost:8080/api/customization/settings', {
         method: 'POST',
+        credentials: 'include', // Use httpOnly cookies for auth
         headers: {
-          'Content-Type': 'application/json',
-          'X-Session-ID': sessionId
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           // Only save audio-related fields
@@ -458,7 +509,23 @@ const CustomizationPage = ({ onBack }) => {
           use_discord_avatar: settings.useDiscordAvatar,
           discord_avatar_decoration: settings.discordAvatarDecoration,
           background_url: settings.backgroundUrl,
-          cursor_url: settings.cursorUrl
+          cursor_url: settings.customCursor,
+          
+          // Typography
+          text_font: settings.textFont || '',
+          
+          // Splash Screen Settings
+          enable_splash_screen: settings.enableSplashScreen,
+          splash_text: settings.splashText,
+          splash_font_size: settings.splashFontSize,
+          splash_animated: settings.splashAnimated,
+          splash_glow_effect: settings.splashGlowEffect,
+          splash_show_particles: settings.splashShowParticles,
+          splash_auto_hide: settings.splashAutoHide,
+          splash_auto_hide_delay: settings.splashAutoHideDelay,
+          splash_background_visible: settings.splashBackgroundVisible,
+          splash_background_color: settings.splashBackgroundColor,
+          splash_transparent: settings.splashTransparent
         })
       })
 
@@ -493,17 +560,27 @@ const CustomizationPage = ({ onBack }) => {
     [settings.volumeLevel, settings.volumeControl]
   )
 
+  // Filter out asset URLs that are auto-saved to database
+  const getSettingsWithoutAssets = useCallback((settings) => {
+    const { backgroundUrl, audioUrl, avatarUrl, customCursor, ...settingsWithoutAssets } = settings
+    return settingsWithoutAssets
+  }, [])
+
   // Detect changes but DON'T auto-show dialog - only show when user wants to leave
+  // Only check non-asset settings since assets are auto-saved to database
   useEffect(() => {
     if (!loading && originalSettings) {
-      const currentSettingsStr = JSON.stringify(settings)
-      const originalSettingsStr = JSON.stringify(originalSettings)
+      const currentSettingsFiltered = getSettingsWithoutAssets(settings)
+      const originalSettingsFiltered = getSettingsWithoutAssets(originalSettings)
+      
+      const currentSettingsStr = JSON.stringify(currentSettingsFiltered)
+      const originalSettingsStr = JSON.stringify(originalSettingsFiltered)
       const hasChanges = currentSettingsStr !== originalSettingsStr
       
       setHasUnsavedChanges(hasChanges)
       // Don't auto-show dialog - only show based on user action
     }
-  }, [settings, loading, originalSettings])
+  }, [settings, loading, originalSettings, getSettingsWithoutAssets])
 
   // Real-time validation function
   const validateSetting = useCallback((key, value) => {
@@ -653,20 +730,12 @@ const CustomizationPage = ({ onBack }) => {
   // Helper function to get user ID
   const fetchUserId = async () => {
     try {
-      const token = localStorage.getItem('authToken')
-      const sessionId = localStorage.getItem('sessionId')
-      
-      if (!token && !sessionId) {
-        console.error('No authentication found')
-        return null
-      }
 
-      const response = await fetch('/api/dashboard', {
+      const response = await fetch('http://localhost:8080/api/dashboard', {
         method: 'GET',
+        credentials: 'include', // Use httpOnly cookies for auth
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || '',
+          'Content-Type': 'application/json'
         },
       })
 
@@ -701,10 +770,15 @@ const CustomizationPage = ({ onBack }) => {
         return
       }
 
-      const filePath = getAssetFilePath(assetUrl, userId)
-      if (!filePath) {
-        console.error('Could not determine file path for asset removal')
-        return
+      // For external URLs (OAuth avatars), pass the full URL
+      // For local storage files, extract the file path
+      let filePath = assetUrl
+      if (!assetUrl.startsWith('http')) {
+        filePath = getAssetFilePath(assetUrl, userId)
+        if (!filePath) {
+          console.error('Could not determine file path for asset removal')
+          return
+        }
       }
 
       const result = await deleteAsset(assetType, filePath)
@@ -731,29 +805,10 @@ const CustomizationPage = ({ onBack }) => {
 
   const handleAssetChange = async (assetType) => {
     try {
-      // First, remove the existing asset if there is one
+      // Store existing asset info for background deletion after upload
       const existingAssetUrl = getAssetUrl(assetType)
-      if (existingAssetUrl) {
-        const userId = await fetchUserId()
-        if (!userId) {
-          console.error('Failed to get user ID for asset change')
-          return
-        }
-
-        const filePath = getAssetFilePath(existingAssetUrl, userId)
-        if (filePath) {
-          console.log(`Removing existing ${assetType} before uploading new one...`)
-          const result = await deleteAsset(assetType, filePath)
-          if (!result.success) {
-            console.error(`Failed to remove existing ${assetType}:`, result.error)
-            // Continue anyway to allow new upload
-          } else {
-            console.log(`Existing ${assetType} removed successfully`)
-          }
-        }
-      }
-
-      // Then trigger file input click for new upload
+      
+      // Trigger file input click for new upload immediately
       const fileInput = fileInputRefs.current[assetType]
       if (fileInput) {
         fileInput.click()
@@ -777,7 +832,7 @@ const CustomizationPage = ({ onBack }) => {
       case 'audio':
         return settings.audioUrl
       case 'cursor':
-        return settings.cursorUrl
+        return settings.customCursor
       default:
         return ''
     }
@@ -792,7 +847,7 @@ const CustomizationPage = ({ onBack }) => {
       case 'audio':
         return 'audioUrl'
       case 'cursor':
-        return 'cursorUrl'
+        return 'customCursor'
       default:
         return ''
     }
@@ -801,6 +856,9 @@ const CustomizationPage = ({ onBack }) => {
   // File upload handlers - Fixed validation mapping
   const handleFileUpload = async (file, type) => {
     if (!file) return
+
+    // Store existing asset for background deletion after upload
+    const existingAssetUrl = getAssetUrl(type)
 
     // Validate file size and type
     const getMaxSize = (type) => {
@@ -833,7 +891,7 @@ const CustomizationPage = ({ onBack }) => {
       ],
       avatar: ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'],
       audio: ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/ogg', 'audio/m4a', 'audio/opus'],
-      cursor: ['image/png', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/svg+xml']
+      cursor: ['image/png', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/svg+xml', 'image/gif', 'image/jpeg', 'image/jpg', 'image/webp']
     }
 
     if (!allowedTypes[type]?.includes(file.type)) {
@@ -842,7 +900,7 @@ const CustomizationPage = ({ onBack }) => {
         : type === 'audio'
         ? 'MP3, WAV, OGG, M4A, OPUS'
         : type === 'cursor'
-        ? 'PNG, ICO, SVG'
+        ? 'PNG, ICO, SVG, GIF, JPG, WebP'
         : 'PNG, JPG, WebP, GIF'
       
       setSaveErrorMessage(`Invalid file type for ${type}. Supported formats: ${supportedFormats}`)
@@ -858,16 +916,9 @@ const CustomizationPage = ({ onBack }) => {
       formData.append('file', file)
       formData.append('type', type)
 
-      const sessionId = localStorage.getItem('sessionId')
-      if (!sessionId) {
-        throw new Error('No session found. Please log in again.')
-      }
-
-      const response = await fetch('/api/upload/asset', {
+      const response = await fetch('http://localhost:8080/api/upload/asset', {
         method: 'POST',
-        headers: {
-          'X-Session-ID': sessionId
-        },
+        credentials: 'include', // Use httpOnly cookies for auth
         body: formData
       })
 
@@ -883,11 +934,13 @@ const CustomizationPage = ({ onBack }) => {
           backgroundImage: 'backgroundUrl',
           avatar: 'avatarUrl',
           audio: 'audioUrl',
-          cursor: 'cursorUrl'
+          cursor: 'customCursor'
         }[type]
 
         // Update settings
         setSettings(prev => ({ ...prev, [settingKey]: data.data.url }))
+        
+        // Backend now handles old asset cleanup automatically
         
         // Auto-save immediately for audio uploads
         if (type === 'audio') {
@@ -919,8 +972,52 @@ const CustomizationPage = ({ onBack }) => {
     event.target.value = ''
   }
 
+  // Show loading state while data is being fetched
+  if (loading) {
+    return (
+      <CustomizationWrapper style={{ background: colors.background }}>
+        <LoadingContainer>
+          <LoadingSpinner />
+          <LoadingText>Loading customization settings...</LoadingText>
+        </LoadingContainer>
+      </CustomizationWrapper>
+    )
+  }
+
   return (
     <>
+      {/* Global Styles for Username Effects */}
+      <style jsx global>{`
+        @keyframes sparkle {
+          0%, 100% { opacity: 0.3; transform: scale(1); }
+          25% { opacity: 1; transform: scale(1.2); }
+          50% { opacity: 0.6; transform: scale(0.8); }
+          75% { opacity: 1; transform: scale(1.1); }
+        }
+        
+        @keyframes typing {
+          from { width: 0; }
+          to { width: 100%; }
+        }
+        
+        @keyframes blink-caret {
+          from, to { border-color: transparent; }
+          50% { border-color: #58A4B0; }
+        }
+        
+        @keyframes bounce {
+          0%, 20%, 53%, 80%, 100% { transform: translateY(0); }
+          40%, 43% { transform: translateY(-30px); }
+          70% { transform: translateY(-15px); }
+          90% { transform: translateY(-4px); }
+        }
+        
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      `}</style>
+      
       <CustomizationWrapper style={{ background: colors.background }}>
       {/* Header */}
       <Header>
@@ -977,13 +1074,15 @@ const CustomizationPage = ({ onBack }) => {
                 {/* Audio Asset */}
                 <AssetSection>
                   {settings.audioUrl ? (
-                    <AssetThumbnail
-                      assetType="audio"
-                      assetUrl={settings.audioUrl}
-                      onRemove={() => handleAssetRemove('audio')}
-                      onChange={() => setShowAudioModal(true)}
-                      loading={uploading.audio}
-                    />
+                    <AudioDisplay onClick={() => setShowAudioModal(true)}>
+                      <AudioIcon>
+                        <HiMusicalNote />
+                      </AudioIcon>
+                      <AudioInfo>
+                        <AudioLabel>Audio Set</AudioLabel>
+                        <AudioSubtext>Click to manage</AudioSubtext>
+                      </AudioInfo>
+                    </AudioDisplay>
                   ) : (
                     <UploadZone onClick={() => setShowAudioModal(true)}>
                       <HiSpeakerWave style={{ fontSize: '2rem', marginBottom: '0.5rem', color: '#58A4B0' }} />
@@ -993,13 +1092,6 @@ const CustomizationPage = ({ onBack }) => {
                       </UploadSubtext>
                     </UploadZone>
                   )}
-                  <input
-                    ref={el => fileInputRefs.current.audio = el}
-                    type="file"
-                    accept="audio/*"
-                    onChange={(e) => handleFileUpload(e.target.files[0], 'audio')}
-                    style={{ display: 'none' }}
-                  />
                 </AssetSection>
 
                 {/* Avatar Asset */}
@@ -1032,10 +1124,10 @@ const CustomizationPage = ({ onBack }) => {
 
                 {/* Cursor Asset */}
                 <AssetSection>
-                  {settings.cursorUrl ? (
+                  {settings.customCursor ? (
                     <AssetThumbnail
                       assetType="cursor"
-                      assetUrl={settings.cursorUrl}
+                      assetUrl={settings.customCursor}
                       onRemove={() => handleAssetRemove('cursor')}
                       onChange={() => handleAssetChange('cursor')}
                       loading={uploading.cursor}
@@ -1052,7 +1144,7 @@ const CustomizationPage = ({ onBack }) => {
                   <input
                     ref={el => fileInputRefs.current.cursor = el}
                     type="file"
-                    accept="image/png,image/gif"
+                    accept="image/png,image/gif,image/jpeg,image/jpg,image/webp,image/x-icon,image/vnd.microsoft.icon,image/svg+xml"
                     onChange={(e) => handleFileUpload(e.target.files[0], 'cursor')}
                     style={{ display: 'none' }}
                   />
@@ -1060,35 +1152,37 @@ const CustomizationPage = ({ onBack }) => {
               </AssetsContainer>
             </SettingsGroup>
 
-            {/* 2. Premium Banner */}
-            <div style={{ 
-              background: 'linear-gradient(135deg, rgba(138, 43, 226, 0.2), rgba(75, 0, 130, 0.1))', 
-              border: '1px solid rgba(138, 43, 226, 0.3)',
-              borderRadius: '12px', 
-              padding: '1rem 1.5rem', 
-              margin: '2rem 0',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              color: '#ffffff',
-              transition: 'all 0.3s ease',
-              cursor: 'pointer'
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.background = 'linear-gradient(135deg, rgba(138, 43, 226, 0.3), rgba(75, 0, 130, 0.15))'
-              e.target.style.borderColor = 'rgba(138, 43, 226, 0.5)'
-              e.target.style.transform = 'translateY(-1px)'
-              e.target.style.boxShadow = '0 4px 16px rgba(138, 43, 226, 0.2)'
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.background = 'linear-gradient(135deg, rgba(138, 43, 226, 0.2), rgba(75, 0, 130, 0.1))'
-              e.target.style.borderColor = 'rgba(138, 43, 226, 0.3)'
-              e.target.style.transform = 'translateY(0)'
-              e.target.style.boxShadow = 'none'
-            }}>
-              <HiStar style={{ color: '#ffd700', fontSize: '1.2rem' }} />
-              <span>Want exclusive features? Unlock more with 💎 Premium</span>
-            </div>
+            {/* 2. Premium Banner - Hide if user is already premium */}
+            {!user?.isPremium && !user?.is_premium && !['premium', 'pro', 'enterprise', 'admin', 'staff'].includes(user?.plan) && (
+              <div style={{ 
+                background: 'linear-gradient(135deg, rgba(138, 43, 226, 0.2), rgba(75, 0, 130, 0.1))', 
+                border: '1px solid rgba(138, 43, 226, 0.3)',
+                borderRadius: '12px', 
+                padding: '1rem 1.5rem', 
+                margin: '2rem 0',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                color: '#ffffff',
+                transition: 'all 0.3s ease',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.background = 'linear-gradient(135deg, rgba(138, 43, 226, 0.3), rgba(75, 0, 130, 0.15))'
+                e.target.style.borderColor = 'rgba(138, 43, 226, 0.5)'
+                e.target.style.transform = 'translateY(-1px)'
+                e.target.style.boxShadow = '0 4px 16px rgba(138, 43, 226, 0.2)'
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.background = 'linear-gradient(135deg, rgba(138, 43, 226, 0.2), rgba(75, 0, 130, 0.1))'
+                e.target.style.borderColor = 'rgba(138, 43, 226, 0.3)'
+                e.target.style.transform = 'translateY(0)'
+                e.target.style.boxShadow = 'none'
+              }}>
+                <HiStar style={{ color: '#ffd700', fontSize: '1.2rem' }} />
+                <span>Want exclusive features? Unlock more with 💎 Premium</span>
+              </div>
+            )}
 
             {/* 3. General Customization Section */}
             <SectionHeader>
@@ -1126,44 +1220,68 @@ const CustomizationPage = ({ onBack }) => {
 
                 {/* Profile Opacity */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Profile Opacity</label>
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    marginBottom: '0.75rem' 
+                  }}>
+                    <span style={{ fontSize: '0.9rem', color: '#ffffff', fontWeight: '600' }}>Profile Opacity</span>
+                    <span style={{ color: '#58A4B0', fontWeight: '600' }}>{settings.profileOpacity || 90}%</span>
+                  </div>
                   <input
                     type="range"
                     min="0"
                     max="100"
                     value={settings.profileOpacity || 90}
                     onChange={(e) => {
-                      // Update settings locally without triggering side effects
                       setSettings(prev => ({ ...prev, profileOpacity: parseInt(e.target.value) }))
                     }}
-                    style={{ width: '100%' }}
+                    className="custom-slider"
+                    style={{
+                      width: '100%',
+                      height: '6px',
+                      background: `linear-gradient(to right, #58A4B0 0%, #58A4B0 ${settings.profileOpacity || 90}%, rgba(255, 255, 255, 0.2) ${settings.profileOpacity || 90}%, rgba(255, 255, 255, 0.2) 100%)`,
+                      borderRadius: '3px',
+                      outline: 'none',
+                      WebkitAppearance: 'none',
+                      cursor: 'pointer',
+                      border: 'none'
+                    }}
                   />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.25rem' }}>
-                    {[0, 25, 50, 75, 100].map(val => (
-                      <span key={val} style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>{val}%</span>
-                    ))}
-                  </div>
                 </div>
 
                 {/* Profile Blur */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Profile Blur</label>
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    marginBottom: '0.75rem' 
+                  }}>
+                    <span style={{ fontSize: '0.9rem', color: '#ffffff', fontWeight: '600' }}>Profile Blur</span>
+                    <span style={{ color: '#58A4B0', fontWeight: '600' }}>{settings.profileBlur || 0}px</span>
+                  </div>
                   <input
                     type="range"
                     min="0"
                     max="20"
                     value={settings.profileBlur || 0}
                     onChange={(e) => {
-                      // Update settings locally without triggering side effects  
                       setSettings(prev => ({ ...prev, profileBlur: parseInt(e.target.value) }))
                     }}
-                    style={{ width: '100%' }}
+                    className="custom-slider"
+                    style={{
+                      width: '100%',
+                      height: '6px',
+                      background: `linear-gradient(to right, #58A4B0 0%, #58A4B0 ${(settings.profileBlur || 0) * 5}%, rgba(255, 255, 255, 0.2) ${(settings.profileBlur || 0) * 5}%, rgba(255, 255, 255, 0.2) 100%)`,
+                      borderRadius: '3px',
+                      outline: 'none',
+                      WebkitAppearance: 'none',
+                      cursor: 'pointer',
+                      border: 'none'
+                    }}
                   />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.25rem' }}>
-                    {[0, 5, 10, 15, 20].map(val => (
-                      <span key={val} style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>{val}px</span>
-                    ))}
-                  </div>
                 </div>
 
                 {/* Background Effect */}
@@ -1187,20 +1305,14 @@ const CustomizationPage = ({ onBack }) => {
                     <option value="none" style={{ background: '#1a1a1a', color: '#ffffff' }}>None</option>
                     <option value="particles" style={{ background: '#1a1a1a', color: '#ffffff' }}>Particles</option>
                     <option value="rain" style={{ background: '#1a1a1a', color: '#ffffff' }}>Rain</option>
-                    <option value="bubbles" style={{ background: '#1a1a1a', color: '#ffffff' }}>Bubbles</option>
-                    <option value="lines" style={{ background: '#1a1a1a', color: '#ffffff' }}>Lines</option>
-                    <option value="gradient" style={{ background: '#1a1a1a', color: '#ffffff' }}>Gradient</option>
+                    <option value="snow" style={{ background: '#1a1a1a', color: '#ffffff' }}>Snow</option>
                   </select>
                 </div>
 
                 {/* Username Effect */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Username Effect</label>
-                  <select
-                    value={settings.usernameEffect || 'none'}
-                    onChange={(e) => {
-                      setSettings(prev => ({ ...prev, usernameEffect: e.target.value }))
-                    }}
+                  <button
                     style={{
                       width: '100%',
                       padding: '0.75rem',
@@ -1208,16 +1320,22 @@ const CustomizationPage = ({ onBack }) => {
                       border: '1px solid rgba(255,255,255,0.1)',
                       borderRadius: '8px',
                       color: '#ffffff',
-                      fontSize: '0.9rem'
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.9rem',
+                      transition: 'all 0.3s ease'
+                    }}
+                    onClick={() => {
+                      setTempSelectedUsernameEffect('')
+                      setShowUsernameEffectsModal(true)
                     }}
                   >
-                    <option value="none" style={{ background: '#1a1a1a', color: '#ffffff' }}>None</option>
-                    <option value="glow" style={{ background: '#1a1a1a', color: '#ffffff' }}>Glow</option>
-                    <option value="rainbow" style={{ background: '#1a1a1a', color: '#ffffff' }}>Rainbow</option>
-                    <option value="shadow" style={{ background: '#1a1a1a', color: '#ffffff' }}>Shadow</option>
-                    <option value="outline" style={{ background: '#1a1a1a', color: '#ffffff' }}>Outline</option>
-                    <option value="typewriter" style={{ background: '#1a1a1a', color: '#ffffff' }}>Typewriter</option>
-                  </select>
+                    <HiSparkles style={{ color: 'rgba(88, 164, 176, 0.7)' }} />
+                    {settings.usernameEffect ? usernameEffects.find(effect => effect.id === settings.usernameEffect)?.name || settings.usernameEffect : 'None'}
+                  </button>
                 </div>
 
                 {/* Glow Username */}
@@ -1351,7 +1469,10 @@ const CustomizationPage = ({ onBack }) => {
                       fontSize: '0.9rem',
                       transition: 'all 0.3s ease'
                     }}
-                    onClick={() => setShowFontModal(true)}
+                    onClick={() => {
+                      setTempSelectedFont(settings.textFont || '')
+                      setShowFontModal(true)
+                    }}
                   >
                     <HiDocumentText style={{ color: 'rgba(88, 164, 176, 0.7)' }} />
                     {settings.textFont ? GOOGLE_FONTS.find(font => font.family === settings.textFont)?.name || settings.textFont : 'Default'}
@@ -2091,6 +2212,269 @@ const CustomizationPage = ({ onBack }) => {
               </div>
 
             </div>
+
+            {/* 6. Splash Screen Section */}
+            <SectionHeader style={{ marginTop: '2rem' }}>
+              <h2>Profile Splash Screen</h2>
+            </SectionHeader>
+            
+            {/* Profile Splash Screen Settings - Matching General Style */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '1rem',
+              marginBottom: '1.5rem'
+            }}>
+              {/* Enable Splash Screen */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Splash Screen</label>
+                <button
+                  onClick={() => {
+                    setSettings(prev => ({ ...prev, enableSplashScreen: !prev.enableSplashScreen }))
+                    setHasUnsavedChanges(true)
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    background: settings.enableSplashScreen ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'rgba(255,255,255,0.05)',
+                    border: `1px solid ${settings.enableSplashScreen ? 'rgba(88, 164, 176, 0.3)' : 'rgba(255,255,255,0.1)'}`,
+                    borderRadius: '8px',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    fontSize: '0.9rem',
+                    transition: 'all 0.3s ease'
+                  }}
+                >
+                  <HiEye style={{ color: settings.enableSplashScreen ? '#58A4B0' : 'rgba(255,255,255,0.7)' }} />
+                  {settings.enableSplashScreen ? 'Enabled' : 'Disabled'}
+                </button>
+              </div>
+
+              {/* Splash Text */}
+              {settings.enableSplashScreen && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Splash Text</label>
+                  <input
+                    type="text"
+                    value={settings.splashText || 'click here'}
+                    onChange={(e) => {
+                      setSettings(prev => ({ ...prev, splashText: e.target.value }))
+                      setHasUnsavedChanges(true)
+                    }}
+                    placeholder="click here"
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      fontSize: '0.9rem'
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Font Size */}
+              {settings.enableSplashScreen && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Font Size</label>
+                  <select
+                    value={settings.splashFontSize || '3rem'}
+                    onChange={(e) => {
+                      setSettings(prev => ({ ...prev, splashFontSize: e.target.value }))
+                      setHasUnsavedChanges(true)
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      fontSize: '0.9rem'
+                    }}
+                  >
+                    <option value="2rem" style={{ background: '#1a1a1a', color: '#ffffff' }}>Small (2rem)</option>
+                    <option value="2.5rem" style={{ background: '#1a1a1a', color: '#ffffff' }}>Medium (2.5rem)</option>
+                    <option value="3rem" style={{ background: '#1a1a1a', color: '#ffffff' }}>Large (3rem)</option>
+                    <option value="3.5rem" style={{ background: '#1a1a1a', color: '#ffffff' }}>XL (3.5rem)</option>
+                    <option value="4rem" style={{ background: '#1a1a1a', color: '#ffffff' }}>Huge (4rem)</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Animation Toggle */}
+              {settings.enableSplashScreen && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Text Animation</label>
+                  <button
+                    onClick={() => {
+                      setSettings(prev => ({ ...prev, splashAnimated: !prev.splashAnimated }))
+                      setHasUnsavedChanges(true)
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: settings.splashAnimated ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'rgba(255,255,255,0.05)',
+                      border: `1px solid ${settings.splashAnimated ? 'rgba(88, 164, 176, 0.3)' : 'rgba(255,255,255,0.1)'}`,
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.9rem',
+                      transition: 'all 0.3s ease'
+                    }}
+                  >
+                    <HiSparkles style={{ color: settings.splashAnimated ? '#58A4B0' : 'rgba(255,255,255,0.7)' }} />
+                    {settings.splashAnimated ? 'Animated' : 'Static'}
+                  </button>
+                </div>
+              )}
+
+              {/* Glow Effect */}
+              {settings.enableSplashScreen && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Glow Effect</label>
+                  <button
+                    onClick={() => {
+                      setSettings(prev => ({ ...prev, splashGlowEffect: !prev.splashGlowEffect }))
+                      setHasUnsavedChanges(true)
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: settings.splashGlowEffect ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'rgba(255,255,255,0.05)',
+                      border: `1px solid ${settings.splashGlowEffect ? 'rgba(88, 164, 176, 0.3)' : 'rgba(255,255,255,0.1)'}`,
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.9rem',
+                      transition: 'all 0.3s ease'
+                    }}
+                  >
+                    <HiSparkles style={{ color: settings.splashGlowEffect ? '#58A4B0' : 'rgba(255,255,255,0.7)' }} />
+                    {settings.splashGlowEffect ? 'Enabled' : 'Disabled'}
+                  </button>
+                </div>
+              )}
+
+              {/* Background Visibility */}
+              {settings.enableSplashScreen && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Background</label>
+                  <button
+                    onClick={() => {
+                      setSettings(prev => ({ ...prev, splashBackgroundVisible: !prev.splashBackgroundVisible }))
+                      setHasUnsavedChanges(true)
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: settings.splashBackgroundVisible ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'rgba(255,255,255,0.05)',
+                      border: `1px solid ${settings.splashBackgroundVisible ? 'rgba(88, 164, 176, 0.3)' : 'rgba(255,255,255,0.1)'}`,
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.9rem',
+                      transition: 'all 0.3s ease'
+                    }}
+                  >
+                    {settings.splashBackgroundVisible ? <HiEye /> : <HiEyeSlash />}
+                    {settings.splashBackgroundVisible ? 'Visible' : 'Hidden'}
+                  </button>
+                </div>
+              )}
+
+              {/* Transparency */}
+              {settings.enableSplashScreen && settings.splashBackgroundVisible && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Transparency</label>
+                  <button
+                    onClick={() => {
+                      setSettings(prev => ({ ...prev, splashTransparent: !prev.splashTransparent }))
+                      setHasUnsavedChanges(true)
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      background: settings.splashTransparent ? 'linear-gradient(135deg, rgba(88, 164, 176, 0.2), rgba(88, 164, 176, 0.1))' : 'rgba(255,255,255,0.05)',
+                      border: `1px solid ${settings.splashTransparent ? 'rgba(88, 164, 176, 0.3)' : 'rgba(255,255,255,0.1)'}`,
+                      borderRadius: '8px',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.9rem',
+                      transition: 'all 0.3s ease'
+                    }}
+                  >
+                    <HiSwatch style={{ color: settings.splashTransparent ? '#58A4B0' : 'rgba(255,255,255,0.7)' }} />
+                    {settings.splashTransparent ? 'Transparent' : 'Solid'}
+                  </button>
+                </div>
+              )}
+
+              {/* Background Color - Enhanced Color Picker */}
+              {settings.enableSplashScreen && settings.splashBackgroundVisible && !settings.splashTransparent && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', fontWeight: '600', color: '#ffffff' }}>Background Color</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div 
+                      onClick={() => colorInputRefs.current.splashBackgroundColor?.click()}
+                      style={{ 
+                        width: '40px', 
+                        height: '40px', 
+                        borderRadius: '8px', 
+                        background: settings.splashBackgroundColor || '#0a0a0a',
+                        border: '2px solid rgba(255,255,255,0.2)',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s ease',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                      }}
+                    />
+                    <input
+                      ref={el => {
+                        if (!colorInputRefs.current) colorInputRefs.current = {}
+                        colorInputRefs.current.splashBackgroundColor = el
+                      }}
+                      type="color"
+                      value={settings.splashBackgroundColor || '#0a0a0a'}
+                      onChange={(e) => {
+                        setSettings(prev => ({ ...prev, splashBackgroundColor: e.target.value }))
+                        setHasUnsavedChanges(true)
+                      }}
+                      style={{ opacity: 0, width: 0, height: 0 }}
+                    />
+                    <span style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>
+                      {settings.splashBackgroundColor || '#0a0a0a'}
+                    </span>
+                    <HiPencilSquare 
+                      onClick={() => colorInputRefs.current.splashBackgroundColor?.click()}
+                      style={{ color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }} 
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
           </TabContent>
         </MainContent>
 
@@ -2100,16 +2484,6 @@ const CustomizationPage = ({ onBack }) => {
 
 
 
-      {/* Error Notification */}
-      {showSaveError && (
-        <ErrorNotification>
-          <HiExclamationTriangle className="error-icon" />
-          <div>
-            <span>Failed to save settings</span>
-            <p>{saveErrorMessage}</p>
-          </div>
-        </ErrorNotification>
-      )}
 
       </CustomizationWrapper>
 
@@ -2135,7 +2509,10 @@ const CustomizationPage = ({ onBack }) => {
           <FontModalContent>
             <FontModalHeader>
               <h3>Select Font</h3>
-              <button onClick={() => setShowFontModal(false)}>
+              <button onClick={() => {
+                setShowFontModal(false)
+                setTempSelectedFont('')
+              }}>
                 <HiXMark />
               </button>
             </FontModalHeader>
@@ -2146,11 +2523,10 @@ const CustomizationPage = ({ onBack }) => {
                   <FontItem
                     key={font.name}
                     onClick={() => {
-                      setSettings(prev => ({ ...prev, textFont: font.family }))
+                      setTempSelectedFont(font.family)
                       loadGoogleFont(font.family)
-                      setShowFontModal(false)
                     }}
-                    $isSelected={settings.textFont === font.family}
+                    $isSelected={tempSelectedFont === font.family || (!tempSelectedFont && settings.textFont === font.family)}
                   >
                     <FontPreview style={{ fontFamily: font.family }}>
                       {font.name}
@@ -2167,7 +2543,7 @@ const CustomizationPage = ({ onBack }) => {
                 <h4>Preview</h4>
                 <PreviewText 
                   style={{ 
-                    fontFamily: settings.textFont || 'inherit',
+                    fontFamily: tempSelectedFont || settings.textFont || 'inherit',
                     fontSize: '2rem',
                     fontWeight: '600',
                     color: '#ffffff',
@@ -2178,17 +2554,436 @@ const CustomizationPage = ({ onBack }) => {
                 </PreviewText>
                 <PreviewText 
                   style={{ 
-                    fontFamily: settings.textFont || 'inherit',
+                    fontFamily: tempSelectedFont || settings.textFont || 'inherit',
                     fontSize: '1.2rem',
-                    color: 'rgba(255,255,255,0.8)'
+                    color: 'rgba(255,255,255,0.8)',
+                    marginBottom: '2rem'
                   }}
                 >
                   Frontend Developer
                 </PreviewText>
+                
+                <div style={{ 
+                  display: 'flex',
+                  gap: '0.75rem',
+                  marginTop: 'auto'
+                }}>
+                  <button
+                    onClick={() => {
+                      setShowFontModal(false)
+                      setTempSelectedFont('')
+                    }}
+                    style={{
+                      flex: '1',
+                      padding: '0.75rem 1rem',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '10px',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      fontWeight: '500'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Allow saving even empty font (means Default)
+                      setSettings(prev => ({ ...prev, textFont: tempSelectedFont }))
+                      setHasUnsavedChanges(true)
+                      setShowFontModal(false)
+                      setTempSelectedFont('')
+                    }}
+                    style={{
+                      flex: '1',
+                      padding: '0.75rem 1rem',
+                      background: '#58A4B0',
+                      border: '1px solid #58A4B0',
+                      borderRadius: '10px',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      fontWeight: '600'
+                    }}
+                  >
+                    Save Font
+                  </button>
+                </div>
               </FontPreviewSection>
             </FontModalBody>
           </FontModalContent>
         </FontModal>,
+        document.body
+      )}
+
+      {/* Username Effects Modal - Clean Glassmorphism Design */}
+      {showUsernameEffectsModal && createPortal(
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(12px)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem'
+        }}>
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.08)',
+            backdropFilter: 'blur(20px)',
+            borderRadius: '24px',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            boxShadow: '0 24px 48px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+            width: '100%',
+            maxWidth: '800px',
+            maxHeight: '80vh',
+            overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '1.5rem 2rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
+            }}>
+              <h3 style={{
+                color: '#ffffff',
+                fontSize: '1.25rem',
+                fontWeight: '600',
+                margin: 0
+              }}>Username Effects</h3>
+              <button
+                onClick={() => {
+                  setShowUsernameEffectsModal(false)
+                  setTempSelectedUsernameEffect('')
+                }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '10px',
+                  width: '36px',
+                  height: '36px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'rgba(255, 255, 255, 0.8)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = 'rgba(255, 255, 255, 0.12)'
+                  e.target.style.color = '#ffffff'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = 'rgba(255, 255, 255, 0.08)'
+                  e.target.style.color = 'rgba(255, 255, 255, 0.8)'
+                }}
+              >
+                <HiXMark size={20} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div style={{
+              padding: '2rem',
+              overflowY: 'auto',
+              maxHeight: 'calc(80vh - 140px)',
+              display: 'flex',
+              gap: '2rem'
+            }}>
+              {/* Left Side - Effects Grid */}
+              <div style={{ flex: '2' }}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                  gap: '1rem',
+                  marginBottom: '2rem'
+                }}>
+                {usernameEffects.map((effect) => {
+                  const isSelected = tempSelectedUsernameEffect === effect.id || (!tempSelectedUsernameEffect && settings.usernameEffect === effect.id)
+                  return (
+                    <div
+                      key={effect.id}
+                      onClick={() => setTempSelectedUsernameEffect(effect.id)}
+                      style={{
+                        padding: '1.25rem 1rem',
+                        background: isSelected 
+                          ? 'rgba(88, 164, 176, 0.15)' 
+                          : 'rgba(255, 255, 255, 0.04)',
+                        backdropFilter: 'blur(10px)',
+                        border: isSelected 
+                          ? '1px solid rgba(88, 164, 176, 0.4)' 
+                          : '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: '16px',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s ease',
+                        textAlign: 'center',
+                        position: 'relative',
+                        transform: isSelected ? 'translateY(-2px)' : 'translateY(0)',
+                        boxShadow: isSelected 
+                          ? '0 8px 24px rgba(88, 164, 176, 0.2)' 
+                          : '0 4px 12px rgba(0, 0, 0, 0.1)'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isSelected) {
+                          e.target.style.background = 'rgba(255, 255, 255, 0.08)'
+                          e.target.style.transform = 'translateY(-1px)'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isSelected) {
+                          e.target.style.background = 'rgba(255, 255, 255, 0.04)'
+                          e.target.style.transform = 'translateY(0)'
+                        }
+                      }}
+                    >
+                      
+                      {/* Effect Name */}
+                      <div style={{ 
+                        fontSize: '0.9rem', 
+                        fontWeight: '600',
+                        color: isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.9)',
+                        marginBottom: '0.5rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.25rem'
+                      }}>
+                        {effect.name}
+                        {!effect.free && (
+                          <span style={{
+                            background: 'linear-gradient(45deg, #FFD700, #FFA500)',
+                            color: '#000',
+                            padding: '0.1rem 0.3rem',
+                            borderRadius: '4px',
+                            fontSize: '0.6rem',
+                            fontWeight: '700'
+                          }}>PRO</span>
+                        )}
+                      </div>
+                      
+                      {/* Selection Indicator */}
+                      {isSelected && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '0.75rem',
+                          right: '0.75rem',
+                          width: '18px',
+                          height: '18px',
+                          background: '#58A4B0',
+                          borderRadius: '50%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 2px 8px rgba(88, 164, 176, 0.4)'
+                        }}>
+                          <HiCheck style={{ color: 'white', fontSize: '0.7rem' }} />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+                </div>
+              </div>
+
+              {/* Right Side - Preview Section */}
+              <div style={{ flex: '1' }}>
+                {(tempSelectedUsernameEffect || settings.usernameEffect) && (
+                  <div style={{
+                    background: 'rgba(0, 0, 0, 0.2)',
+                    borderRadius: '16px',
+                    padding: '2rem',
+                    textAlign: 'center',
+                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                    height: 'fit-content',
+                    position: 'sticky',
+                    top: '0'
+                  }}>
+                    <div style={{
+                      fontSize: '0.9rem',
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      marginBottom: '1.5rem',
+                      fontWeight: '500'
+                    }}>Preview</div>
+                    
+                    <div style={{
+                      fontSize: '2rem',
+                      fontWeight: '600',
+                      position: 'relative',
+                      minHeight: '60px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      {(() => {
+                        const currentEffect = tempSelectedUsernameEffect || settings.usernameEffect
+                        const username = settings.username || 'Username'
+                        
+                        if (currentEffect === 'sparkles') {
+                          return (
+                            <div style={{ position: 'relative' }}>
+                              <div style={{
+                                position: 'absolute',
+                                width: '100%',
+                                height: '100%',
+                                background: `
+                                  radial-gradient(circle at 20% 30%, rgba(34, 197, 94, 0.4) 1px, transparent 1px),
+                                  radial-gradient(circle at 80% 20%, rgba(34, 197, 94, 0.3) 1px, transparent 1px),
+                                  radial-gradient(circle at 90% 80%, rgba(34, 197, 94, 0.4) 1px, transparent 1px),
+                                  radial-gradient(circle at 10% 70%, rgba(34, 197, 94, 0.3) 1px, transparent 1px)
+                                `,
+                                animation: 'sparkle 2s ease-in-out infinite'
+                              }} />
+                              <span style={{ color: '#00ff88', textShadow: '0 0 12px #00ff88', position: 'relative', zIndex: 1 }}>
+                                {username} ✨
+                              </span>
+                            </div>
+                          )
+                        } else if (currentEffect === 'rainbow') {
+                          return (
+                            <span style={{ 
+                              background: 'linear-gradient(45deg, #ff0000, #ff8800, #ffff00, #88ff00, #00ff00, #00ff88, #00ffff, #0088ff, #0000ff, #8800ff, #ff00ff, #ff0088)',
+                              WebkitBackgroundClip: 'text',
+                              WebkitTextFillColor: 'transparent',
+                              backgroundClip: 'text'
+                            }}>
+                              {username}
+                            </span>
+                          )
+                        } else if (currentEffect === 'typewriter') {
+                          return (
+                            <span style={{ 
+                              color: '#ffffff',
+                              overflow: 'hidden',
+                              borderRight: '2px solid #58A4B0',
+                              whiteSpace: 'nowrap',
+                              animation: 'typing 3.5s steps(40, end), blink-caret 0.75s step-end infinite'
+                            }}>
+                              {username}
+                            </span>
+                          )
+                        } else if (currentEffect === 'bounce') {
+                          return (
+                            <span style={{ 
+                              color: '#ffffff',
+                              animation: 'bounce 2s ease-in-out infinite'
+                            }}>
+                              {username}
+                            </span>
+                          )
+                        } else if (currentEffect === 'fade') {
+                          return (
+                            <span style={{ 
+                              color: '#ffffff',
+                              animation: 'fade-in 2s ease-in-out'
+                            }}>
+                              {username}
+                            </span>
+                          )
+                        } else if (currentEffect === 'glow') {
+                          return (
+                            <span style={{ 
+                              color: '#ffffff', 
+                              textShadow: '0 0 20px rgba(88, 164, 176, 0.8)' 
+                            }}>
+                              {username}
+                            </span>
+                          )
+                        } else {
+                          return <span style={{ color: '#ffffff' }}>{username}</span>
+                        }
+                      })()}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ 
+              display: 'flex',
+              gap: '0.75rem',
+              padding: '0 2rem 2rem 2rem'
+            }}>
+                <button
+                  onClick={() => {
+                    setShowUsernameEffectsModal(false)
+                    setTempSelectedUsernameEffect('')
+                  }}
+                  style={{
+                    flex: '1',
+                    padding: '0.875rem 1.5rem',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    backdropFilter: 'blur(10px)',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    borderRadius: '12px',
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    fontWeight: '500',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.background = 'rgba(255, 255, 255, 0.12)'
+                    e.target.style.color = '#ffffff'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.background = 'rgba(255, 255, 255, 0.08)'
+                    e.target.style.color = 'rgba(255, 255, 255, 0.9)'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (tempSelectedUsernameEffect) {
+                      setSettings(prev => ({ ...prev, usernameEffect: tempSelectedUsernameEffect }))
+                      setHasUnsavedChanges(true)
+                    }
+                    setShowUsernameEffectsModal(false)
+                    setTempSelectedUsernameEffect('')
+                  }}
+                  disabled={!tempSelectedUsernameEffect}
+                  style={{
+                    flex: '1',
+                    padding: '0.875rem 1.5rem',
+                    background: tempSelectedUsernameEffect 
+                      ? 'linear-gradient(135deg, #58A4B0, #4A9AA8)' 
+                      : 'rgba(88, 164, 176, 0.3)',
+                    backdropFilter: 'blur(10px)',
+                    border: '1px solid rgba(88, 164, 176, 0.3)',
+                    borderRadius: '12px',
+                    color: tempSelectedUsernameEffect ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
+                    cursor: tempSelectedUsernameEffect ? 'pointer' : 'not-allowed',
+                    fontSize: '0.9rem',
+                    fontWeight: '600',
+                    transition: 'all 0.2s ease',
+                    boxShadow: tempSelectedUsernameEffect ? '0 4px 16px rgba(88, 164, 176, 0.3)' : 'none'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (tempSelectedUsernameEffect) {
+                      e.target.style.background = 'linear-gradient(135deg, #4A9AA8, #3D8A98)'
+                      e.target.style.transform = 'translateY(-1px)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (tempSelectedUsernameEffect) {
+                      e.target.style.background = 'linear-gradient(135deg, #58A4B0, #4A9AA8)'
+                      e.target.style.transform = 'translateY(0)'
+                    }
+                  }}
+                >
+                  Apply Effect
+                </button>
+              </div>
+          </div>
+        </div>,
         document.body
       )}
 
@@ -2979,11 +3774,18 @@ const SliderControl = styled.div`
   .slider {
     width: 100%;
     height: 6px;
-    background: rgba(255, 255, 255, 0.2);
+    background: transparent;
     border-radius: 3px;
     outline: none;
     appearance: none;
     cursor: pointer;
+    
+    &::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+    }
     
     &::-webkit-slider-thumb {
       appearance: none;
@@ -2994,11 +3796,20 @@ const SliderControl = styled.div`
       cursor: pointer;
       box-shadow: 0 2px 8px rgba(88, 164, 176, 0.4);
       transition: all 0.3s ease;
+      margin-top: -7px;
       
       &:hover {
         transform: scale(1.1);
         box-shadow: 0 4px 12px rgba(88, 164, 176, 0.6);
       }
+    }
+    
+    &::-moz-range-track {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+      border: none;
     }
     
     &::-moz-range-thumb {
@@ -3653,6 +4464,9 @@ const FontInfo = styled.div`
 const FontPreviewSection = styled.div`
   padding: 20px;
   background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 
   h4 {
     color: #ffffff;
@@ -3678,5 +4492,156 @@ const PreviewText = styled.div`
     margin-bottom: 0;
   }
 `
+
+// Audio Display Components
+const AudioDisplay = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  height: 100px;
+  background: linear-gradient(135deg, rgba(88, 164, 176, 0.1), rgba(88, 164, 176, 0.05));
+  border: 1px solid rgba(88, 164, 176, 0.3);
+  border-radius: 12px;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  
+  &:hover {
+    background: linear-gradient(135deg, rgba(88, 164, 176, 0.15), rgba(88, 164, 176, 0.08));
+    border-color: rgba(88, 164, 176, 0.5);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(88, 164, 176, 0.2);
+  }
+  
+  &:active {
+    transform: translateY(0);
+  }
+`
+
+const AudioIcon = styled.div`
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #58A4B0, #4A8A94);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(88, 164, 176, 0.3);
+`
+
+const AudioInfo = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  overflow: hidden;
+`
+
+const AudioLabel = styled.div`
+  font-size: 1rem;
+  font-weight: 600;
+  color: #58A4B0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`
+
+const AudioSubtext = styled.div`
+  font-size: 0.85rem;
+  color: rgba(88, 164, 176, 0.8);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`
+
+// Loading Components
+const LoadingContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: 1.5rem;
+`
+
+const LoadingSpinner = styled.div`
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(88, 164, 176, 0.2);
+  border-top: 4px solid #58A4B0;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+`
+
+const LoadingText = styled.div`
+  color: #58A4B0;
+  font-size: 1rem;
+  font-weight: 500;
+  text-align: center;
+`
+
+// Add global styles for custom-slider
+const GlobalStyle = `
+  .custom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    background: #58A4B0;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(88, 164, 176, 0.4);
+    transition: all 0.3s ease;
+    margin-top: -7px;
+  }
+  
+  .custom-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(88, 164, 176, 0.6);
+  }
+  
+  .custom-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    background: #58A4B0;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 8px rgba(88, 164, 176, 0.4);
+  }
+  
+  .custom-slider::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+    background: transparent;
+  }
+  
+  .custom-slider::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: transparent;
+    border: none;
+  }
+`;
+
+// Inject styles
+if (typeof document !== 'undefined') {
+  const styleElement = document.getElementById('custom-slider-styles') || document.createElement('style');
+  styleElement.id = 'custom-slider-styles';
+  styleElement.textContent = GlobalStyle;
+  if (!document.getElementById('custom-slider-styles')) {
+    document.head.appendChild(styleElement);
+  }
+}
 
 export default CustomizationPage

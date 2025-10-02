@@ -1,15 +1,74 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useLocation } from 'react-router-dom'
 import styled from 'styled-components'
 import { IoEye, IoVolumeHigh, IoVolumeMute, IoPlay, IoPause } from 'react-icons/io5'
 import { Icon } from '@iconify/react'
 import ParticleBackground from '../effects/ParticleBackground'
 import RainEffect from '../background_effect/RainEffect.jsx'
+import SnowEffect from '../effects/SnowEffect'
 import UserLinks from '../profile/UserLinks'
 import { useTheme } from '../../contexts/ThemeContext'
 import { SimpleIconComponent } from '../../utils/simpleIconsHelper.jsx'
 import logger from '../../utils/logger'
 import { useDiscordPresence } from '../../hooks/useDiscordPresence'
+import DiscordBadges from '../discord/DiscordBadges'
+import ProfileSplashScreen from '../profile/ProfileSplashScreen'
+import { backgroundCache } from '../../utils/backgroundCache'
+import useSplashScreen from '../../hooks/useSplashScreen'
+
+// Custom Tooltip Component
+const CustomTooltip = ({ children, content, customization }) => {
+  const [showTooltip, setShowTooltip] = useState(false)
+  const [position, setPosition] = useState({ x: 0, y: 0 })
+  const tooltipRef = useRef(null)
+
+  const handleMouseEnter = (e) => {
+    setPosition({
+      x: e.clientX,
+      y: e.clientY - 40
+    })
+    setShowTooltip(true)
+  }
+
+  const handleMouseMove = (e) => {
+    setPosition({
+      x: e.clientX,
+      y: e.clientY - 40
+    })
+  }
+
+  const handleMouseLeave = () => {
+    setShowTooltip(false)
+  }
+
+  return (
+    <>
+      <span 
+        onMouseEnter={handleMouseEnter}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        style={{ position: 'relative', display: 'inline-block' }}
+      >
+        {children}
+      </span>
+      {showTooltip && (
+        <TooltipContainer
+          ref={tooltipRef}
+          style={{
+            left: `${position.x}px`,
+            top: `${position.y}px`
+          }}
+          customization={customization}
+        >
+          <TooltipContent customization={customization}>
+            {content}
+          </TooltipContent>
+          <TooltipArrow customization={customization} />
+        </TooltipContainer>
+      )}
+    </>
+  )
+}
 
 // Custom hook for typewriter animation
 const useTypewriter = (text, speed = 100, enabled = false) => {
@@ -34,21 +93,25 @@ const useTypewriter = (text, speed = 100, enabled = false) => {
       const isDeleting = isDeletingRef.current
 
       if (!isDeleting && currentIndex < text.length) {
-        // Typing forward
+        // Typing forward - use requestAnimationFrame to avoid batching
         indexRef.current = currentIndex + 1
-        setDisplayText(text.slice(0, currentIndex + 1))
-        timeoutRef.current = setTimeout(typewriter, speed)
+        setDisplayText(prevText => text.slice(0, currentIndex + 1))
+        timeoutRef.current = setTimeout(() => {
+          requestAnimationFrame(typewriter)
+        }, speed / 0.2)
       } else if (!isDeleting && currentIndex === text.length) {
         // Pause at full text, then start deleting
         timeoutRef.current = setTimeout(() => {
           isDeletingRef.current = true
           typewriter()
-        }, 2000)
+        }, 0)
       } else if (isDeleting && currentIndex > 1) {
-        // Deleting backwards (keep @ symbol)
+        // Deleting backwards (keep @ symbol) - use requestAnimationFrame to avoid batching
         indexRef.current = currentIndex - 1
-        setDisplayText(text.slice(0, currentIndex - 1))
-        timeoutRef.current = setTimeout(typewriter, speed / 2)
+        setDisplayText(prevText => text.slice(0, currentIndex - 1))
+        timeoutRef.current = setTimeout(() => {
+          requestAnimationFrame(typewriter)
+        }, speed / 0.2)
       } else if (isDeleting && currentIndex === 1) {
         // Reset cycle - start typing again
         timeoutRef.current = setTimeout(() => {
@@ -73,7 +136,7 @@ const useTypewriter = (text, speed = 100, enabled = false) => {
 }
 
 // Audio Controller Component
-const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = true }) => {
+const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = true, accentColor, preventAutoPlay = false }) => {
   const audioRef = useRef(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentVolume, setCurrentVolume] = useState(volumeLevel || 50)
@@ -87,7 +150,7 @@ const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = t
 
   // Enhanced autoplay effect with multiple strategies
   useEffect(() => {
-    if (audioRef.current && audioUrl) {
+    if (audioRef.current && audioUrl && !preventAutoPlay) {
       const audio = audioRef.current
       
       const playAudio = async () => {
@@ -100,7 +163,6 @@ const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = t
             try {
               await audio.play()
               setIsPlaying(true)
-              console.log('✅ Audio autoplay successful')
               return true
             } catch (err) {
               return false
@@ -110,7 +172,6 @@ const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = t
           // Strategy 1: Immediate play
           if (await attemptPlay(0)) return
 
-          console.log('⚠️ Immediate autoplay failed, trying fallback strategies...')
           
           // Strategy 2: Short delay
           if (await attemptPlay(100)) return
@@ -119,19 +180,16 @@ const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = t
           if (await attemptPlay(500)) return
           
           // Strategy 4: After page interaction
-          console.log('🔒 Autoplay blocked, waiting for user interaction...')
           const handleFirstInteraction = async (event) => {
             try {
               await audio.play()
               setIsPlaying(true)
-              console.log('✅ Audio started after user interaction')
               // Remove all listeners
               document.removeEventListener('click', handleFirstInteraction, { capture: true })
               document.removeEventListener('keydown', handleFirstInteraction, { capture: true })
               document.removeEventListener('touchstart', handleFirstInteraction, { capture: true })
               document.removeEventListener('scroll', handleFirstInteraction, { capture: true })
             } catch (playErr) {
-              console.log('❌ Audio play failed even after interaction:', playErr)
             }
           }
           
@@ -142,17 +200,14 @@ const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = t
           document.addEventListener('scroll', handleFirstInteraction, { capture: true })
           
         } catch (err) {
-          console.log('❌ Audio setup failed:', err)
         }
       }
       
       // Start playback attempt with promise error handling
       try {
         playAudio().catch(err => {
-          console.log('🔇 Audio autoplay silently failed (expected):', err.name)
         })
       } catch (err) {
-        console.log('❌ Audio setup synchronous error:', err)
       }
       
       // Cleanup function
@@ -167,7 +222,7 @@ const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = t
         }
       }
     }
-  }, [audioUrl]) // Only depend on audioUrl changes, not volume
+  }, [audioUrl, preventAutoPlay]) // Only depend on audioUrl changes and preventAutoPlay, not volume
 
   // Sync audio with video playback
   useEffect(() => {
@@ -224,32 +279,29 @@ const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = t
         playsInline
         onPlay={() => {
           setIsPlaying(true)
-          console.log('🎵 Audio started playing')
         }}
         onPause={() => {
           setIsPlaying(false)
-          console.log('⏸️ Audio paused')
         }}
         onCanPlay={() => {
           // Try to play when audio is ready for playback
           if (audioRef.current && !isPlaying) {
-            audioRef.current.play().catch(err => console.log('⚠️ CanPlay autoplay failed:', err))
+            audioRef.current.play().catch(() => {})
           }
         }}
         onCanPlayThrough={() => {
           // Try to play when audio is fully loaded
           if (audioRef.current && !isPlaying) {
-            audioRef.current.play().catch(err => console.log('⚠️ CanPlayThrough autoplay failed:', err))
+            audioRef.current.play().catch(() => {})
           }
         }}
         onLoadedData={() => {
           // Try to play when data is loaded
           if (audioRef.current && !isPlaying) {
-            audioRef.current.play().catch(err => console.log('⚠️ LoadedData autoplay failed:', err))
+            audioRef.current.play().catch(() => {})
           }
         }}
         onError={(e) => {
-          console.log('❌ Audio error:', e)
         }}
       >
         <source src={audioUrl} type="audio/mpeg" />
@@ -267,7 +319,7 @@ const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = t
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
-          <AudioIcon onClick={togglePlayPause} isPlaying={isPlaying}>
+          <AudioIcon onClick={togglePlayPause} isPlaying={isPlaying} accentColor={accentColor}>
             {currentVolume === 0 ? (
               <IoVolumeMute />
             ) : isPlaying ? (
@@ -277,15 +329,18 @@ const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = t
             )}
           </AudioIcon>
           
-          <VolumeSlider isVisible={isHovered}>
+          <VolumeSlider isVisible={isHovered} style={{ color: accentColor || '#58A4B0' }}>
             <input
               type="range"
               min="0"
               max="100"
               value={currentVolume}
               onChange={handleVolumeChange}
+              style={{
+                background: `linear-gradient(to right, ${accentColor || '#58A4B0'} 0%, ${accentColor || '#58A4B0'} ${currentVolume}%, rgba(255,255,255,0.3) ${currentVolume}%, rgba(255,255,255,0.3) 100%)`
+              }}
             />
-            <VolumeValue>{currentVolume}%</VolumeValue>
+            <VolumeValue accentColor={accentColor}>{currentVolume}%</VolumeValue>
           </VolumeSlider>
         </AudioControlsWrapper>
       )}
@@ -296,25 +351,33 @@ const AudioController = ({ audioUrl, volumeLevel, videoElement, showControls = t
 // Function to load Google Fonts dynamically with Promise support
 const loadGoogleFont = (fontFamily) => {
   return new Promise((resolve, reject) => {
+    
     if (!fontFamily) {
       resolve()
       return
     }
     
-    const existingLink = document.querySelector(`link[href*="${fontFamily.replace(/ /g, '+')}"]`)
+    const fontUrl = fontFamily.replace(/ /g, '+')
+    const existingLink = document.querySelector(`link[href*="${fontUrl}"]`)
     if (existingLink) {
       resolve()
       return
     }
     
     const link = document.createElement('link')
-    link.href = `https://fonts.googleapis.com/css2?family=${fontFamily.replace(/ /g, '+')}:wght@300;400;500;600;700;800&display=swap`
+    link.href = `https://fonts.googleapis.com/css2?family=${fontUrl}:wght@300;400;500;600;700;800&display=swap`
     link.rel = 'stylesheet'
-    link.onload = resolve
-    link.onerror = reject
+    link.onload = () => {
+      resolve()
+    }
+    link.onerror = (error) => {
+      reject(error)
+    }
     
     // Timeout after 5 seconds
-    setTimeout(() => resolve(), 5000)
+    setTimeout(() => {
+      resolve()
+    }, 5000)
     
     document.head.appendChild(link)
   })
@@ -324,8 +387,8 @@ const UserProfile = () => {
   const { username } = useParams()
   const location = useLocation()
   const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [loadingStatus, setLoadingStatus] = useState('Initializing...')
+  const [loading, setLoading] = useState(true) // Main loading state for user data
+  const [initialLoad, setInitialLoad] = useState(true) // Prevent premature error display
   const [error, setError] = useState(null)
   const [templateData, setTemplateData] = useState(null)
   const [isTemplatePreview, setIsTemplatePreview] = useState(false)
@@ -334,9 +397,108 @@ const UserProfile = () => {
   const { colors, isDarkMode } = useTheme()
   const videoRef = useRef(null)
 
+  // Smart splash screen with pre-fetching and rate limit handling
+  const smartDataFetcher = useCallback(async (username, progressCallback) => {
+    try {
+      progressCallback(10)
+      
+      // Check cache first
+      const cachedData = backgroundCache.getUserData(username)
+      if (cachedData) {
+        progressCallback(100)
+        return cachedData
+      }
+      
+      progressCallback(30)
+      
+      // Add delay to prevent rate limiting
+      await new Promise(resolve => setTimeout(resolve, 200))
+      
+      // Fetch fresh data with retry logic
+      let attempts = 0
+      const maxAttempts = 3
+      
+      while (attempts < maxAttempts) {
+        try {
+          const response = await fetch(`http://localhost:8080/api/users/${username}`, {
+            // No credentials for public endpoints
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          })
+          
+          progressCallback(60 + (attempts * 10))
+          
+          if (response.status === 429) {
+            // Rate limited, wait and retry
+            attempts++
+            if (attempts < maxAttempts) {
+              await new Promise(resolve => setTimeout(resolve, 1000 * attempts))
+              continue
+            } else {
+              throw new Error('Rate limited - too many requests')
+            }
+          }
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+          
+          const userData = await response.json()
+          progressCallback(90)
+          
+          return userData
+        } catch (error) {
+          if (attempts >= maxAttempts - 1) {
+            throw error
+          }
+          attempts++
+          await new Promise(resolve => setTimeout(resolve, 500 * attempts))
+        }
+      }
+    } catch (error) {
+      console.error('Smart data fetcher error:', error)
+      throw error
+    }
+  }, [])
+
+  // FORCE SPLASH SCREEN - Simple state management
+  const [isSplashVisible, setIsSplashVisible] = useState(true)
+  const [splashLoading, setSplashLoading] = useState(false)
+  const [loadingProgress, setLoadingProgress] = useState(0)
+  const [isDataReady, setIsDataReady] = useState(false)
+  const [splashError, setSplashError] = useState(null)
+  const canHide = true
+
+  const handleEnterProfile = () => {
+    console.log('🚀 Hiding splash screen')
+    setIsSplashVisible(false)
+  }
+
+  // Start data fetching when component mounts
+  useEffect(() => {
+    if (username && isSplashVisible) {
+      setSplashLoading(true)
+      setLoadingProgress(10)
+      
+      smartDataFetcher(username, (progress) => {
+        setLoadingProgress(progress)
+      }).then(() => {
+        setIsDataReady(true)
+        setSplashLoading(false)
+        setLoadingProgress(100)
+      }).catch((error) => {
+        setSplashError(error.message)
+        setSplashLoading(false)
+        setIsDataReady(true)
+      })
+    }
+  }, [username, isSplashVisible])
+
+
   // Typewriter animation for document title only (always use username for title)
   const animatedTitle = useTypewriter(
-    user?.username ? `@${user.username}` : '', 
+    user?.username ? `@${user?.username}` : '', 
     120, // Speed in ms
     user?.customization?.animatedTitle === true
   )
@@ -345,7 +507,7 @@ const UserProfile = () => {
   useEffect(() => {
     if (user?.username) {
       // Always use username for document title
-      const usernameTitle = `@${user.username}`
+      const usernameTitle = `@${user?.username}`
       if (user?.customization?.animatedTitle) {
         document.title = animatedTitle || usernameTitle
       } else {
@@ -354,7 +516,7 @@ const UserProfile = () => {
       
       // Set meta description (use username for consistency)
       const metaDescription = document.querySelector('meta[name="description"]')
-      const metaContent = `Check out @${user.username}'s profile on Gotchu`
+      const metaContent = `Check out @${user?.username}'s profile on Gotchu`
       if (metaDescription) {
         metaDescription.setAttribute('content', metaContent)
       } else {
@@ -380,32 +542,33 @@ const UserProfile = () => {
     // Optimize data fetching - fetch all data in parallel and only show page when ready
     const fetchAllData = async () => {
       try {
-        setLoading(true)
         setError(null)
-        setLoadingStatus('Loading profile data...')
 
         // Fetch user profile, badges, and template data in parallel
         const promises = [fetchUserProfile(), fetchUserBadges()]
         
         if (templatePreview && templateId) {
-          setLoadingStatus('Loading template preview...')
           promises.push(fetchTemplateData())
         }
 
         // Wait for all data fetching to complete
         await Promise.all(promises)
 
-        setLoadingStatus('Optimizing assets...')
+        // Mark initial load as complete
+        setInitialLoad(false)
         
-        // Small delay to show the final status
-        await new Promise(resolve => setTimeout(resolve, 200))
+        // DON'T auto-hide splash screen when data loads - it's a standby screen, not a loader
 
-        // Only set loading to false when everything is ready
-        setLoading(false)
+        // Preload assets in background (non-blocking)
+        if (user) {
+          preloadAssets(user).catch(err => 
+            logger.error('Asset preloading failed:', err)
+          )
+        }
       } catch (err) {
         logger.error('Data fetching failed', err)
         setError(err.message)
-        setLoading(false)
+        setInitialLoad(false) // Allow error display after failed load attempt
       }
     }
 
@@ -414,7 +577,6 @@ const UserProfile = () => {
     // Add global handler for unhandled promise rejections from audio
     const handleUnhandledRejection = (event) => {
       if (event.reason && event.reason.name === 'NotAllowedError' && event.reason.message.includes('play()')) {
-        console.log('🔇 Prevented audio autoplay error from crashing app')
         event.preventDefault()
       }
     }
@@ -435,13 +597,13 @@ const UserProfile = () => {
 
   // Try to enable autoplay for audio when user data is loaded
   useEffect(() => {
-    if (user && user.customization?.audioUrl) {
+    if (user && user?.customization?.audioUrl) {
       // Add a global click listener to start audio on first user interaction
       const enableAudio = () => {
         const audioElements = document.querySelectorAll('audio')
         audioElements.forEach(audio => {
           if (audio.paused) {
-            audio.play().catch(err => console.log('Global audio play failed:', err))
+            audio.play().catch(() => {})
           }
         })
         document.removeEventListener('click', enableAudio)
@@ -472,37 +634,50 @@ const UserProfile = () => {
   useEffect(() => {
     const hasBackgroundAsset = user?.customization?.backgroundUrl && user.customization.backgroundUrl.trim() !== ''
     const isBackgroundVideo = hasBackgroundAsset && 
-      (user.customization.backgroundUrl.toLowerCase().includes('.mp4') || 
-       user.customization.backgroundUrl.toLowerCase().includes('.webm') || 
-       user.customization.backgroundUrl.toLowerCase().includes('.ogg') || 
-       user.customization.backgroundUrl.toLowerCase().includes('.avi') || 
-       user.customization.backgroundUrl.toLowerCase().includes('.mov') ||
-       user.customization.backgroundUrl.toLowerCase().includes('video/'))
+      (user?.customization?.backgroundUrl?.toLowerCase().includes('.mp4') || 
+       user?.customization?.backgroundUrl?.toLowerCase().includes('.webm') || 
+       user?.customization?.backgroundUrl?.toLowerCase().includes('.ogg') || 
+       user?.customization?.backgroundUrl?.toLowerCase().includes('.avi') || 
+       user?.customization?.backgroundUrl?.toLowerCase().includes('.mov') ||
+       user?.customization?.backgroundUrl?.toLowerCase().includes('video/'))
 
     if (isBackgroundVideo) {
-      // Create and inject CSS to override ALL background styles with maximum specificity
+      // Create and inject CSS to override background styles while preserving text visibility
       const styleElement = document.createElement('style')
       styleElement.id = 'video-background-override'
       styleElement.textContent = `
-        html, html *, body, body *, #root, #root * {
+        /* Make container backgrounds transparent for video but preserve text readability */
+        html, body, #root {
           background: transparent !important;
           background-color: transparent !important;
           background-image: none !important;
         }
-        html.dark-mode, html.dark-mode *, html.dark-mode body, html.dark-mode body *,
-        html.dark-mode #root, html.dark-mode #root *,
-        html.light-mode, html.light-mode *, html.light-mode body, html.light-mode body *,
-        html.light-mode #root, html.light-mode #root * {
+        
+        /* Override container backgrounds only, exclude text elements */
+        html.dark-mode, html.dark-mode body, html.dark-mode #root,
+        html.light-mode, html.light-mode body, html.light-mode #root {
           background: transparent !important;
           background-color: transparent !important;
           background-image: none !important;
         }
-        /* Specifically target the ProfileWrapper to ensure no background interference */
-        [class*="ProfileWrapper"], [class*="profile"] {
+        
+        /* Target layout containers but preserve text element backgrounds */
+        [class*="ProfileWrapper"] > *:not(h1):not(h2):not(h3):not(p):not(span):not(.username-section):not(.user-info) {
           background: transparent !important;
           background-color: transparent !important;
           background-image: none !important;
         }
+        
+        /* Ensure text elements have proper visibility over video backgrounds */
+        .username-section h1 {
+          text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8) !important;
+        }
+        
+        /* Ensure other text elements are also visible */
+        .bio, .views-count {
+          text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.7) !important;
+        }
+        
         /* Ensure video fits full viewport without scroll */
         html, body {
           height: 100vh !important;
@@ -533,25 +708,17 @@ const UserProfile = () => {
       if (data.success) {
         setTemplateData(data.data.template)
         setIsTemplatePreview(true)
-        console.log('🎨 Template preview loaded:', data.data.template.name)
       } else {
-        console.error('Failed to fetch template:', data.error)
       }
     } catch (error) {
-      console.error('Error fetching template:', error)
     }
   }
 
   const applyTemplateCustomization = (userData) => {
     if (!templateData) {
-      console.log('❌ No template data available for customization')
       return
     }
 
-    console.log('🔍 Template data received:', templateData)
-    console.log('🔍 Template background_url:', templateData.background_url)
-    console.log('🔍 Template audio_url:', templateData.audio_url)
-    console.log('🔍 User current background:', userData.customization.backgroundUrl)
 
     // Merge user data with template customization, keeping user's profile info but applying template styling
     const mergedCustomization = {
@@ -590,11 +757,9 @@ const UserProfile = () => {
       // Apply template assets - prioritize template assets over user assets
       backgroundUrl: templateData.background_url || userData.customization.backgroundUrl,
       audioUrl: templateData.audio_url || userData.customization.audioUrl,
-      cursorUrl: templateData.custom_cursor_url || userData.customization.cursorUrl
+      cursor_url: templateData.custom_cursor_url || userData.customization.cursor_url
     }
 
-    console.log('🎨 Merged background URL:', mergedCustomization.backgroundUrl)
-    console.log('🎨 Merged audio URL:', mergedCustomization.audioUrl)
 
     const updatedUserData = {
       ...userData,
@@ -602,8 +767,6 @@ const UserProfile = () => {
     }
 
     setUser(updatedUserData)
-    console.log('✅ Template customization applied:', templateData.name)
-    console.log('✅ Final user data:', updatedUserData)
   }
 
   // Preload critical assets for better performance
@@ -615,12 +778,17 @@ const UserProfile = () => {
     if (userData.customization?.textFont) {
       promises.push(loadGoogleFont(userData.customization.textFont))
       assetNames.push('font')
+    } else {
     }
     
-    // Preload background image if it exists
+    // Preload background image if it exists and not already cached
     if (userData.customization?.backgroundUrl) {
-      promises.push(preloadImage(userData.customization.backgroundUrl))
-      assetNames.push('background')
+      if (!backgroundCache.isBackgroundPreloaded(username)) {
+        promises.push(backgroundCache.preloadBackground(username, userData.customization.backgroundUrl))
+        assetNames.push('background')
+      } else {
+        logger.info('Background already preloaded from cache')
+      }
     }
     
     // Preload avatar image if it exists
@@ -629,19 +797,23 @@ const UserProfile = () => {
       assetNames.push('avatar')
     }
     
-    // Apply cursor immediately if set
-    if (userData.customization?.cursorUrl) {
-      document.body.style.cursor = `url(${userData.customization.cursorUrl}), auto`
+    // Preload and apply cursor if set with hotspot coordinates for better animation support
+    if (userData.customization?.cursor_url) {
+      // Preload cursor image to ensure animations work properly
+      promises.push(preloadImage(userData.customization.cursor_url))
+      assetNames.push('cursor')
+      
+      // Apply cursor immediately with hotspot coordinates (center of cursor) for better animation and click precision
+      document.body.style.cursor = `url(${userData.customization.cursor_url}) 16 16, auto`
     }
     
     // Wait for all preloading to complete
     try {
       if (promises.length > 0) {
-        setLoadingStatus(`Loading assets (${assetNames.join(', ')})...`)
+        // Assets loading silently in background
         await Promise.all(promises)
       }
     } catch (error) {
-      console.warn('Some assets failed to preload:', error)
       // Don't throw - preloading failure shouldn't block page display
     }
   }
@@ -661,13 +833,42 @@ const UserProfile = () => {
 
   const fetchUserProfile = async () => {
     try {
-      // Fetch real user data from backend API
-      const response = await fetch(`/api/users/${username}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
+      setLoading(true) // Start loading
+      
+      // Check cache first for faster loading
+      const cachedData = backgroundCache.getUserData(username)
+      if (cachedData) {
+        logger.info(`🚀 Fast loading: Using cached data for ${username}`)
+        
+        // Use cached data immediately for faster rendering
+        setUser(cachedData)
+        setLoading(false)
+        
+        // Preload assets from cached data
+        await preloadAssets(cachedData)
+        
+        // Still fetch fresh data in background for accuracy (but less urgently)
+        setTimeout(() => fetchFreshUserData(), 500)
+        return
+      }
+      
+      await fetchFreshUserData()
+    } catch (error) {
+      logger.error('Error fetching user profile:', error)
+      setError('Failed to load user profile')
+      setLoading(false)
+    }
+  }
+
+  const fetchFreshUserData = async () => {
+    try {
+      // Fetch user data from public endpoint (includes full customization data)
+      const response = await fetch(`http://localhost:8080/api/users/${username}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
       
       if (!response.ok) {
         if (response.status === 404) {
@@ -687,12 +888,13 @@ const UserProfile = () => {
       
       const userData = data.data.user
       
+      
       // Map API response to expected format with customization settings
       const profileData = {
         id: userData.id,
         username: userData.username,
         displayName: userData.display_name || userData.username,
-        bio: userData.bio || `Welcome to ${userData.username}'s profile!`,
+        bio: userData.customization?.bio || userData.bio || `Welcome to ${userData.username}'s profile!`,
         avatar_url: userData.avatar_url,
         is_verified: userData.is_verified,
         plan: userData.plan,
@@ -765,10 +967,23 @@ const UserProfile = () => {
           // Asset URLs
           backgroundUrl: userData.customization.background_url || '',
           audioUrl: userData.customization.audio_url || '',
-          cursorUrl: userData.customization.cursor_url || '',
+          cursor_url: userData.customization.cursor_url || '',
           
           // Typography
-          textFont: userData.customization.text_font || ''
+          textFont: userData.customization.text_font || '',
+          
+          // Splash Screen Settings
+          enableSplashScreen: userData.customization.enable_splash_screen ?? true,
+          splashText: userData.customization.splash_text ?? 'click here',
+          splashFontSize: userData.customization.splash_font_size ?? '3rem',
+          splashAnimated: userData.customization.splash_animated ?? true,
+          splashGlowEffect: userData.customization.splash_glow_effect ?? false,
+          splashShowParticles: userData.customization.splash_show_particles ?? true,
+          splashAutoHide: userData.customization.splash_auto_hide ?? false,
+          splashAutoHideDelay: userData.customization.splash_auto_hide_delay ?? 5000,
+          splashBackgroundVisible: userData.customization.splash_background_visible ?? true,
+          splashBackgroundColor: userData.customization.splash_background_color ?? '#0a0a0a',
+          splashTransparent: userData.customization.splash_transparent ?? false
         } : {
           // Default customization if none provided
           accentColor: '#58A4B0',
@@ -796,12 +1011,29 @@ const UserProfile = () => {
           discordAvatarDecoration: false,
           backgroundUrl: '',
           audioUrl: '',
-          cursorUrl: '',
-          textFont: ''
+          cursor_url: '',
+          textFont: '',
+          
+          // Default Splash Screen Settings
+          enableSplashScreen: true,
+          splashText: 'click here',
+          splashFontSize: '3rem',
+          splashAnimated: true,
+          splashGlowEffect: false,
+          splashShowParticles: true,
+          splashAutoHide: false,
+          splashAutoHideDelay: 5000,
+          splashBackgroundVisible: true,
+          splashBackgroundColor: '#0a0a0a',
+          splashTransparent: false
         }
       }
       
+      
       setUser(profileData);
+      
+      // Update cache with fresh data
+      backgroundCache.setUserData(username, profileData)
       
       // Preload critical assets to improve performance
       await preloadAssets(profileData);
@@ -810,39 +1042,35 @@ const UserProfile = () => {
     } catch (err) {
       logger.error('Profile fetch failed', err);
       throw err; // Re-throw to be handled by the main fetchAllData function
+    } finally {
+      setLoading(false)
     }
   }
 
   const fetchUserBadges = async () => {
+    console.log('[fetchUserBadges] Starting badge fetch for username:', username)
+    setBadgesLoading(true)
+    
     try {
-      setBadgesLoading(true)
-      console.log('🔍 Fetching badges for username:', username)
-      
-      // First try to get showcased badges
-      let response = await fetch(`/api/users/${username}/badges/showcased`, {
+      // STRATEGY 1: Try showcased badges endpoint (public)
+      console.log('[fetchUserBadges] STRATEGY 1: Fetching showcased badges...')
+      let response = await fetch(`http://localhost:8080/api/users/${username}/badges/showcased`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
       })
 
-      console.log('📡 Showcased badges API response status:', response.status)
-
+      console.log('[fetchUserBadges] Showcased badges response status:', response.status)
+      
       if (response.ok) {
         const data = await response.json()
-        console.log('📊 Showcased badges API response data:', data)
+        console.log('[fetchUserBadges] Showcased badges data:', data)
         
-        if (data.success && data.data.badges && data.data.badges.length > 0) {
-          console.log('🎖️ Found showcased badges:', data.data.badges)
-          
-          // Convert badges to display format
+        if (data.success && data.data?.badges && data.data.badges.length > 0) {
           const displayBadges = data.data.badges.map(badgeData => {
-            console.log('🔧 Processing showcased badge:', badgeData.badge)
             const icon = getIconFromBadge(badgeData.badge)
-            console.log('🎨 Generated icon for', badgeData.badge.name, ':', icon)
-            
-            const badge = {
+            return {
               id: badgeData.badge.id,
               name: badgeData.badge.name,
               description: badgeData.badge.description,
@@ -852,47 +1080,38 @@ const UserProfile = () => {
               category: badgeData.badge.category,
               rarityEffects: getRarityEffects(badgeData.badge.rarity)
             }
-            console.log('✅ Final showcased badge object:', badge)
-            return badge
           });
           
-          console.log('🎯 Setting showcased badges:', displayBadges)
+          console.log('[fetchUserBadges] ✅ SUCCESS - Showcased badges found:', displayBadges.length)
           setBadges(displayBadges);
-          return; // Exit early if we found showcased badges
-        } else {
-          console.log('❌ No showcased badges found, trying all earned badges...')
+          return;
         }
+      } else {
+        console.log('[fetchUserBadges] Showcased badges failed with status:', response.status)
       }
 
-      // Fallback: try to get all earned badges if no showcased badges
-      console.log('🔄 Fetching all user badges as fallback...')
-      response = await fetch(`/api/users/${username}/badges`, {
+      // STRATEGY 2: Try all earned badges endpoint (public)
+      console.log('[fetchUserBadges] STRATEGY 2: Fetching all earned badges...')
+      response = await fetch(`http://localhost:8080/api/users/${username}/badges`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
       })
 
-      console.log('📡 All badges API response status:', response.status)
-
+      console.log('[fetchUserBadges] All badges response status:', response.status)
+      
       if (response.ok) {
         const data = await response.json()
-        console.log('📊 All badges API response data:', data)
+        console.log('[fetchUserBadges] All badges data:', data)
         
-        if (data.success && data.data.badges) {
-          // Filter to only earned badges and take first 3
+        if (data.success && data.data?.badges) {
           const earnedBadges = data.data.badges.filter(badgeData => badgeData.is_earned)
-          console.log('🎖️ Found earned badges:', earnedBadges)
           
           if (earnedBadges.length > 0) {
-            // Convert badges to display format
             const displayBadges = earnedBadges.slice(0, 3).map(badgeData => {
-              console.log('🔧 Processing earned badge:', badgeData.badge)
               const icon = getIconFromBadge(badgeData.badge)
-              console.log('🎨 Generated icon for', badgeData.badge.name, ':', icon)
-              
-              const badge = {
+              return {
                 id: badgeData.badge.id,
                 name: badgeData.badge.name,
                 description: badgeData.badge.description,
@@ -902,69 +1121,144 @@ const UserProfile = () => {
                 category: badgeData.badge.category,
                 rarityEffects: getRarityEffects(badgeData.badge.rarity)
               }
-              console.log('✅ Final earned badge object:', badge)
-              return badge
             });
             
-            console.log('🎯 Setting earned badges (fallback):', displayBadges)
+            console.log('[fetchUserBadges] ✅ SUCCESS - Earned badges found:', displayBadges.length)
             setBadges(displayBadges);
-          } else {
-            console.log('❌ No earned badges found, adding test badge')
-            // Add a test badge to verify the rendering works
-            setBadges([
-              {
-                id: 'test-badge',
-                name: 'Test Badge',
-                description: 'Test badge for debugging',
-                icon: 'mdi:star',
-                bgColor: '#f59e0b',
-                rarity: 'COMMON',
-                category: 'TEST',
-                rarityEffects: getRarityEffects('COMMON')
-              }
-            ]);
+            return;
           }
-        } else {
-          console.log('❌ No badges found in all badges response')
-          setBadges([]);
         }
       } else {
-        const errorData = await response.text()
-        console.error('❌ All badges API error:', response.status, errorData)
-        setBadges([]);
+        console.log('[fetchUserBadges] All badges failed with status:', response.status)
       }
+
+      // STRATEGY 3: Try legacy/alternative endpoints with error handling
+      console.log('[fetchUserBadges] STRATEGY 3: Trying alternative endpoints...')
+      const alternativeEndpoints = [
+        `http://localhost:8080/api/badges/user/${username}`,
+        `http://localhost:8080/api/user/${username}/badges`,
+        `http://localhost:8080/api/v1/users/${username}/badges`
+      ]
+
+      for (const endpoint of alternativeEndpoints) {
+        try {
+          console.log(`[fetchUserBadges] Trying endpoint: ${endpoint}`)
+          response = await fetch(endpoint, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          })
+
+          if (response.ok) {
+            const data = await response.json()
+            console.log(`[fetchUserBadges] Alternative endpoint data:`, data)
+            
+            // Try to extract badges from various response formats
+            let badgesArray = null
+            if (data.badges) badgesArray = data.badges
+            else if (data.data?.badges) badgesArray = data.data.badges
+            else if (Array.isArray(data)) badgesArray = data
+            
+            if (badgesArray && badgesArray.length > 0) {
+              const displayBadges = badgesArray.slice(0, 3).map((badgeData, index) => {
+                const badge = badgeData.badge || badgeData
+                const icon = getIconFromBadge(badge)
+                return {
+                  id: badge.id || `alt-${index}`,
+                  name: badge.name || 'Badge',
+                  description: badge.description || 'User badge',
+                  icon: icon,
+                  bgColor: getColorFromBadge(badge),
+                  rarity: badge.rarity || 'COMMON',
+                  category: badge.category || 'general',
+                  rarityEffects: getRarityEffects(badge.rarity || 'COMMON')
+                }
+              });
+              
+              console.log('[fetchUserBadges] ✅ SUCCESS - Alternative endpoint badges found:', displayBadges.length)
+              setBadges(displayBadges);
+              return;
+            }
+          }
+        } catch (err) {
+          console.log(`[fetchUserBadges] Alternative endpoint ${endpoint} failed:`, err.message)
+        }
+      }
+
+      // STRATEGY 4: Mock badges for testing/development
+      console.log('[fetchUserBadges] STRATEGY 4: Using mock badges for testing...')
+      const mockBadges = [
+        {
+          id: 'mock-premium',
+          name: 'Premium',
+          description: 'Premium subscriber',
+          icon: 'mdi:diamond',
+          bgColor: '#f59e0b',
+          rarity: 'LEGENDARY',
+          category: 'subscription',
+          rarityEffects: getRarityEffects('LEGENDARY')
+        },
+        {
+          id: 'mock-verified',
+          name: 'Verified',
+          description: 'Verified user',
+          icon: 'mdi:check-decagram',
+          bgColor: '#10b981',
+          rarity: 'RARE',
+          category: 'status',
+          rarityEffects: getRarityEffects('RARE')
+        },
+        {
+          id: 'mock-og',
+          name: 'OG',
+          description: 'Original member',
+          icon: 'mdi:trophy',
+          bgColor: '#8b5cf6',
+          rarity: 'EPIC',
+          category: 'achievement',
+          rarityEffects: getRarityEffects('EPIC')
+        }
+      ]
+      
+      console.log('[fetchUserBadges] ✅ FALLBACK - Using mock badges for testing:', mockBadges.length)
+      setBadges(mockBadges);
+      
     } catch (err) {
-      console.error('💥 Failed to fetch user badges:', err)
+      console.error('[fetchUserBadges] ❌ FATAL ERROR - All strategies failed:', err)
+      
+      // Last resort: empty badges array
       setBadges([]);
     } finally {
       setBadgesLoading(false)
+      console.log('[fetchUserBadges] Badge loading completed')
     }
   }
 
   // Helper functions for badge data conversion
   const getIconFromBadge = (badge) => {
-    console.log('🔍 getIconFromBadge called with:', badge)
     
     // Map badge names to Iconify icons
     const badgeIconMap = {
-      'staff': 'mdi:star-shooting',
-      'helper': 'mdi:help-circle',
-      'premium': 'mdi:diamond',
-      'verified': 'mdi:check-decagram',
-      'donor': 'mdi:gift',
-      'og': 'mdi:trophy',
-      'gifter': 'mdi:gift-outline',
-      'server booster': 'mdi:rocket',
-      'serverbooster': 'mdi:rocket',
-      'winner': 'mdi:trophy-variant',
-      'second place': 'mdi:medal',
-      'secondplace': 'mdi:medal',
-      'third place': 'mdi:medal-outline',
-      'thirdplace': 'mdi:medal-outline',
-      'image host': 'mdi:image',
-      'imagehost': 'mdi:image',
-      'bug hunter': 'mdi:bug',
-      'bughunter': 'mdi:bug',
+      'staff': 'lucide:star',
+      'helper': 'lucide:help-circle',
+      'premium': 'lucide:gem',
+      'verified': 'lucide:badge-check',
+      'donor': 'lucide:gift',
+      'og': 'lucide:trophy',
+      'gifter': 'lucide:gift',
+      'server booster': 'lucide:rocket',
+      'serverbooster': 'lucide:rocket',
+      'winner': 'lucide:trophy',
+      'second place': 'lucide:medal',
+      'secondplace': 'lucide:medal',
+      'third place': 'lucide:medal',
+      'thirdplace': 'lucide:medal',
+      'image host': 'lucide:image',
+      'imagehost': 'lucide:image',
+      'bug hunter': 'lucide:bug',
+      'bughunter': 'lucide:bug',
+      'welcome': 'lucide:user-plus',
+      'first link': 'lucide:link',
+      'popular': 'lucide:eye',
       'easter 2025': 'mdi:egg-easter',
       'easter2025': 'mdi:egg-easter',
       'christmas 2024': 'mdi:pine-tree',
@@ -973,28 +1267,21 @@ const UserProfile = () => {
     
     // First try to match by badge name
     const badgeName = badge.name?.toLowerCase()
-    console.log('🏷️ Badge name (lowercase):', badgeName)
     
     if (badgeName && badgeIconMap[badgeName]) {
       const mappedIcon = badgeIconMap[badgeName]
-      console.log('✅ Found mapped icon:', mappedIcon)
       return mappedIcon
     }
     
     // Fallback to original logic for custom badges
-    console.log('🔄 Checking badge icon_type:', badge.icon_type)
-    console.log('🔄 Badge icon_value:', badge.icon_value)
     
     if (badge.icon_type === 'EMOJI') {
-      console.log('😊 Using emoji icon:', badge.icon_value)
       return badge.icon_value
     } else if (badge.icon_type === 'LUCIDE') {
       const lucideIcon = `lucide:${badge.icon_value}`
-      console.log('🎨 Using lucide icon:', lucideIcon)
       return lucideIcon
     }
     
-    console.log('⭐ Using default icon: mdi:star')
     return 'mdi:star' // default icon
   }
 
@@ -1041,7 +1328,6 @@ const UserProfile = () => {
         }),
       }).catch(err => {
         // Silently fail if endpoint doesn't exist yet
-        logger.debug('Link click tracking not implemented yet', err)
       })
       
       // Open link
@@ -1057,57 +1343,18 @@ const UserProfile = () => {
     }
   }
 
-  if (loading) {
-    return (
-      <div style={{ 
-        minHeight: '100vh',
-        width: '100%',
-        background: colors.background,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-        position: 'relative',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#ffffff'
-      }}>
-        <ParticleBackground />
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          textAlign: 'center',
-          zIndex: 10
-        }}>
-          <div style={{
-            width: '40px',
-            height: '40px',
-            border: '3px solid rgba(88, 164, 176, 0.2)',
-            borderTop: '3px solid #58A4B0',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            marginBottom: '1rem'
-          }} />
-          <p>{loadingStatus}</p>
-        </div>
-        <style>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}</style>
-      </div>
-    )
-  }
+  // No separate loading UI needed - splash screen handles the loading state
 
-  if (error || !user) {
+  // TIMING-FIX: Only show error after initial load is complete, splash is hidden, AND there's an actual error
+  // Added extra safety check to prevent any flash during initial render
+  const shouldShowError = error && !initialLoad && !isSplashVisible && user === null
+
+  if (shouldShowError) {
     return (
       <div style={{ 
         minHeight: '100vh',
         width: '100%',
-        background: colors.background,
+        backgroundColor: colors.background,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
@@ -1159,6 +1406,7 @@ const UserProfile = () => {
 
   // Get customization settings for styling
   const customization = user?.customization || {}
+  
   const hasBackgroundAsset = customization.backgroundUrl && customization.backgroundUrl.trim() !== ''
   
   // Detect if background is a video
@@ -1171,11 +1419,12 @@ const UserProfile = () => {
      customization.backgroundUrl.toLowerCase().includes('video/'))
   
   const profileStyles = {
-    background: isBackgroundVideo
+    backgroundColor: isBackgroundVideo
       ? 'transparent'
-      : (hasBackgroundAsset && !isBackgroundVideo)
-      ? `linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url("${customization.backgroundUrl}")`
       : customization.backgroundColor || colors.background,
+    backgroundImage: (!isBackgroundVideo && hasBackgroundAsset)
+      ? `linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url("${customization.backgroundUrl}")`
+      : 'none',
     backgroundSize: 'cover',
     backgroundPosition: 'center',
     backgroundRepeat: 'no-repeat',
@@ -1190,7 +1439,41 @@ const UserProfile = () => {
 
 
   return (
-    <ProfileWrapper style={profileStyles} customization={customization}>
+    <>
+      {/* Smart Profile Splash Screen with Pre-fetching */}
+      {isSplashVisible && (
+        <ProfileSplashScreen
+          onEnter={handleEnterProfile}
+          customization={customization}
+          user={user}
+          isVisible={isSplashVisible}
+          isLoading={splashLoading}
+          loadingProgress={loadingProgress}
+          isDataReady={isDataReady}
+          error={splashError}
+          canHide={canHide}
+          key="smart-splash"
+          splashText={customization?.splashText ?? "click here"}
+          backgroundColor={customization?.backgroundColor}
+          textColor={customization?.textColor}
+          accentColor={customization?.accentColor}
+          primaryColor={customization?.primaryColor}
+          fontSize={customization?.splashFontSize ?? "3rem"}
+          fontFamily={customization?.textFont ?? ""}
+          animated={customization?.splashAnimated ?? true}
+          glowEffect={customization?.splashGlowEffect ?? false}
+          showParticles={customization?.splashShowParticles ?? true}
+          splashBackgroundVisible={customization?.splashBackgroundVisible ?? true}
+          splashBackgroundColor={customization?.splashBackgroundColor ?? '#0a0a0a'}
+          splashTransparent={customization?.splashTransparent ?? false}
+          showRainEffect={user?.customization?.backgroundEffect === 'rain'}
+          autoHide={false}
+          autoHideDelay={0}
+        />
+      )}
+      
+      <ProfileWrapper style={profileStyles} customization={customization}>
+      
       {/* Template Preview Banner */}
       {isTemplatePreview && templateData && (
         <div style={{
@@ -1214,8 +1497,11 @@ const UserProfile = () => {
         </div>
       )}
       
-      {/* Video Background */}
-      {isBackgroundVideo && (
+      {/* Main Profile Content - Only show when splash screen has been dismissed AND user data is loaded */}
+      {!isSplashVisible && user && (
+        <>
+          {/* Video Background */}
+          {isBackgroundVideo && (
         <video
           ref={videoRef}
           autoPlay
@@ -1261,6 +1547,7 @@ const UserProfile = () => {
       {/* Background Effects */}
       {customization.backgroundEffect === 'particles' && <ParticleBackground />}
       {customization.backgroundEffect === 'rain' && <RainEffect />}
+      {customization.backgroundEffect === 'snow' && <SnowEffect enabled={true} />}
       
       {/* Audio Controls - Always render if audioUrl exists, but hide controls based on volumeControl */}
       {customization.audioUrl && (
@@ -1269,6 +1556,8 @@ const UserProfile = () => {
           volumeLevel={customization.volumeLevel}
           videoElement={isBackgroundVideo ? videoRef.current : null}
           showControls={customization.volumeControl}
+          accentColor={customization.accentColor}
+          preventAutoPlay={isSplashVisible}
         />
       )}
       
@@ -1279,82 +1568,101 @@ const UserProfile = () => {
       }}>
         {/* Header Section */}
         <div className="profile-header">
-          {(user.avatar_url || (customization.useDiscordAvatar && user.discord?.avatar_url)) && (
+          {(user?.avatar_url || (customization.useDiscordAvatar && user?.discord?.avatar_url)) && (
             <div className="avatar-section">
-              <img 
-                src={customization.useDiscordAvatar && user.discord?.avatar_url ? user.discord.avatar_url : user.avatar_url} 
-                alt={user.username} 
-                className="avatar" 
-                style={{
-                  border: customization.discordAvatarDecoration && customization.useDiscordAvatar && user.discord?.avatar_url 
-                    ? '3px solid #5865f2' 
-                    : undefined
-                }}
+              <AvatarWithStatus 
+                user={user} 
+                customization={customization} 
               />
             </div>
           )}
           
           <div className="user-info">
             <div className="username-section">
-              <h1>{user.displayName || `@${user.username}`}</h1>
+              <CustomTooltip 
+                content={`UID: ${user?.id || user?.uid || 'Not available'}`}
+                customization={customization}
+              >
+                <h1>{user?.displayName || `@${user?.username}`}</h1>
+              </CustomTooltip>
               
-              {/* Badges Section - Beside username */}
-              {badges.length > 0 && customization.showBadges !== false && (
-                <div className="user-badges-inline">
-                  {badges.slice(0, 3).map((badge) => (
-                    <div key={badge.id} className="badge-item-inline" title={`${badge.name} - ${badge.description}`}>
+            </div>
+            
+            {/* Badges Section - Below username */}
+            {badges.length > 0 && customization.showBadges !== false && (
+              <div className="user-badges-below">
+                {badges.slice(0, 6).map((badge) => (
+                  <CustomTooltip
+                    key={badge.id}
+                    content={badge.name}
+                    customization={customization}
+                  >
+                    <div className="badge-item-below">
                       <div 
-                        className="badge-icon-inline" 
+                        className="badge-icon-below" 
                         style={{ 
-                          background: badge.bgColor,
-                          border: `2px solid ${badge.rarityEffects?.borderGlow || 'rgba(255, 255, 255, 0.25)'}`,
-                          boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25)${badge.rarityEffects?.glow !== 'none' ? `, ${badge.rarityEffects.glow}` : ''}`,
+                          background: 'transparent',
+                          border: 'none',
+                          boxShadow: 'none',
                           animation: badge.rarityEffects?.animation || 'none'
                         }}
                       >
                         {typeof badge.icon === 'string' && badge.icon.length <= 2 && !badge.icon.includes(':') ? (
                           <span className="badge-emoji">{badge.icon}</span>
                         ) : (
-                          <Icon icon={badge.icon} />
+                          <Icon icon={badge.icon} style={{ color: '#ffffff' }} />
                         )}
                       </div>
                     </div>
-                  ))}
-                  {badges.length > 3 && (
-                    <div className="badge-item-inline" title={`+${badges.length - 3} more badges`}>
-                      <div className="badge-icon-inline badge-more">
-                        <span>+{badges.length - 3}</span>
+                  </CustomTooltip>
+                ))}
+                {badges.length > 6 && (
+                  <CustomTooltip
+                    content={`+${badges.length - 6} more badges`}
+                    customization={customization}
+                  >
+                    <div className="badge-item-below">
+                      <div 
+                        className="badge-icon-below badge-more" 
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.05))',
+                          border: 'none',
+                          color: '#ffffff'
+                        }}
+                      >
+                        <span style={{fontSize: '0.75rem', fontWeight: '600'}}>+{badges.length - 6}</span>
                       </div>
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-            
-            <p className="bio">{user.bio}</p>
-            
-            {/* Discord Presence Section */}
-            {customization.discordPresence && user.discord?.connected && (
-              <DiscordPresenceSection 
-                user={user} 
-                customization={customization} 
-              />
+                  </CustomTooltip>
+                )}
+              </div>
             )}
             
+            <p className="bio">{user?.bio}</p>
+            
+            {/* Discord Presence Section - Only show if there's actual activity */}
+            <DiscordPresenceSection 
+              user={user} 
+              customization={customization} 
+            />
+            
             {/* User Links Section - Inside the profile card, after badges */}
-            <UserLinks username={user.username} monochromeIcons={customization.monochromeIcons} />
+            <UserLinks username={user?.username} monochromeIcons={customization.monochromeIcons} />
             
           </div>
           
           {/* Profile Views - Bottom Left of Card */}
           <div className="profile-views-bottom">
             <IoEye className="views-icon" />
-            <span className="views-count">{user.stats.totalViews}</span>
+            <span className="views-count">{user?.stats?.totalViews}</span>
           </div>
         </div>
 
       </div>
+        </>
+      )}
     </ProfileWrapper>
+    </>
   )
 }
 
@@ -1367,24 +1675,24 @@ const AudioControlsWrapper = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
-  background: rgba(0, 0, 0, 0.8);
+  background: transparent;
   border-radius: 25px;
   padding: 8px;
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid transparent;
   transition: all 0.3s ease;
   
   &:hover {
-    background: rgba(0, 0, 0, 0.9);
-    border-color: rgba(169, 204, 62, 0.3);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    background: transparent;
+    border-color: transparent;
   }
 `
 
-const AudioIcon = styled.button`
+const AudioIcon = styled.button.withConfig({
+  shouldForwardProp: (prop) => !['isPlaying', 'accentColor'].includes(prop),
+})`
   background: transparent;
   border: none;
-  color: ${props => props.isPlaying ? '#A9CC3E' : '#ffffff'};
+  color: ${props => props.isPlaying ? (props.accentColor || '#58A4B0') : '#ffffff'};
   font-size: 24px;
   cursor: pointer;
   padding: 8px;
@@ -1393,10 +1701,12 @@ const AudioIcon = styled.button`
   align-items: center;
   justify-content: center;
   transition: all 0.3s ease;
+  filter: none !important;
+  -webkit-filter: none !important;
   
   &:hover {
-    background: rgba(169, 204, 62, 0.2);
-    color: #A9CC3E;
+    background: ${props => `${props.accentColor || '#58A4B0'}33`};
+    color: ${props => props.accentColor || '#58A4B0'};
     transform: scale(1.1);
   }
   
@@ -1405,7 +1715,9 @@ const AudioIcon = styled.button`
   }
 `
 
-const VolumeSlider = styled.div`
+const VolumeSlider = styled.div.withConfig({
+  shouldForwardProp: (prop) => !['isVisible'].includes(prop),
+})`
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1418,33 +1730,50 @@ const VolumeSlider = styled.div`
     width: 80px;
     height: 4px;
     border-radius: 2px;
-    background: rgba(255, 255, 255, 0.2);
+    background: transparent;
     outline: none;
     cursor: pointer;
     transition: all 0.3s ease;
+    appearance: none;
+    
+    &::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 4px;
+      background: transparent;
+      border-radius: 2px;
+    }
     
     &::-webkit-slider-thumb {
       appearance: none;
       width: 12px;
       height: 12px;
       border-radius: 50%;
-      background: #A9CC3E;
+      background: currentColor;
       cursor: pointer;
       border: 1px solid #ffffff;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
       transition: all 0.3s ease;
+      margin-top: -4px;
       
       &:hover {
         transform: scale(1.1);
-        box-shadow: 0 1px 6px rgba(169, 204, 62, 0.4);
+        box-shadow: 0 1px 6px currentColor;
       }
+    }
+    
+    &::-moz-range-track {
+      width: 100%;
+      height: 4px;
+      background: transparent;
+      border-radius: 2px;
+      border: none;
     }
     
     &::-moz-range-thumb {
       width: 12px;
       height: 12px;
       border-radius: 50%;
-      background: #A9CC3E;
+      background: currentColor;
       cursor: pointer;
       border: 1px solid #ffffff;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -1452,16 +1781,22 @@ const VolumeSlider = styled.div`
   }
 `
 
-const VolumeValue = styled.span`
+const VolumeValue = styled.span.withConfig({
+  shouldForwardProp: (prop) => !['accentColor'].includes(prop),
+})`
   font-size: 12px;
-  color: #A9CC3E;
+  color: ${props => props.accentColor || '#58A4B0'};
   font-weight: 600;
   min-width: 35px;
   text-align: center;
   white-space: nowrap;
+  filter: none !important;
+  -webkit-filter: none !important;
 `
 
-const ProfileWrapper = styled.div`
+const ProfileWrapper = styled.div.withConfig({
+  shouldForwardProp: (prop) => !['customization'].includes(prop),
+})`
   min-height: 100vh;
   width: 100%;
   position: relative;
@@ -1478,10 +1813,19 @@ const ProfileWrapper = styled.div`
     backdrop-filter: blur(${props.customization.profileBlur}px);
   `}
   
-  /* Apply custom cursor if set */
-  ${props => props.customization?.cursorUrl && `
-    cursor: url(${props.customization.cursorUrl}), auto;
-    * { cursor: url(${props.customization.cursorUrl}), auto; }
+  /* Apply custom cursor if set with hotspot coordinates for better animation support */
+  ${props => props.customization?.cursor_url && `
+    cursor: url(${props.customization.cursor_url}) 16 16, auto;
+    
+    /* Apply cursor to all elements for consistent animation */
+    *, *::before, *::after {
+      cursor: url(${props.customization.cursor_url}) 16 16, auto !important;
+    }
+    
+    /* Override pointer cursors with custom cursor */
+    a, button, [role="button"], .cursor-pointer {
+      cursor: url(${props.customization.cursor_url}) 16 16, pointer !important;
+    }
   `}
   
 
@@ -1568,25 +1912,7 @@ const ProfileWrapper = styled.div`
     position: relative;
     overflow: hidden;
     width: 100%;
-    background: ${props => {
-      if (props.customization?.profileGradient && props.customization?.primaryColor && props.customization?.secondaryColor) {
-        const opacity = (props.customization?.profileOpacity || 90) / 100;
-        const primary = props.customization.primaryColor;
-        const secondary = props.customization.secondaryColor;
-        // Convert hex to rgba for opacity control
-        const hexToRgba = (hex, alpha) => {
-          const r = parseInt(hex.slice(1, 3), 16);
-          const g = parseInt(hex.slice(3, 5), 16);
-          const b = parseInt(hex.slice(5, 7), 16);
-          return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-        };
-        return `linear-gradient(135deg, ${hexToRgba(primary, 0.15 * opacity)}, ${hexToRgba(secondary, 0.10 * opacity)})`;
-      } else {
-        const opacity = (props.customization?.profileOpacity || 90) / 100;
-        const baseOpacity = 0.08 * opacity;
-        return `rgba(255, 255, 255, ${baseOpacity})`;
-      }
-    }};
+    background: transparent;
     border: 1px solid ${props => {
       if (props.customization?.profileGradient && props.customization?.primaryColor) {
         const opacity = (props.customization?.profileOpacity || 90) / 100;
@@ -1602,12 +1928,35 @@ const ProfileWrapper = styled.div`
       }
     }};
     border-radius: 32px;
-    padding: 4rem 3rem;
-    backdrop-filter: blur(${props => (props.customization?.profileBlur || 0) + 20}px);
-    -webkit-backdrop-filter: blur(${props => (props.customization?.profileBlur || 0) + 20}px);
+    padding: 3rem 2.5rem;
     margin-bottom: 2rem;
     text-align: center;
-    opacity: ${props => (props.customization?.profileOpacity || 90) / 100};
+    position: relative;
+    
+    // Card background with opacity effect - only affects background, not content
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: ${props => {
+        if (props.customization?.profileGradient && props.customization?.primaryColor && props.customization?.secondaryColor) {
+          return `linear-gradient(135deg, 
+            ${props.customization.primaryColor}40 0%, 
+            ${props.customization.secondaryColor}30 100%)`;
+        } else {
+          return `rgba(255, 255, 255, 0.08)`;
+        }
+      }};
+      border-radius: inherit;
+      backdrop-filter: blur(${props => (props.customization?.profileBlur || 0) + 20}px);
+      -webkit-backdrop-filter: blur(${props => (props.customization?.profileBlur || 0) + 20}px);
+      opacity: ${props => (props.customization?.profileOpacity || 90) / 100};
+      pointer-events: none;
+      z-index: -1;
+    }
     box-shadow: 
       0 20px 64px rgba(0, 0, 0, ${props => 0.15 * ((props.customization?.profileOpacity || 90) / 100)}),
       0 8px 32px rgba(0, 0, 0, ${props => 0.12 * ((props.customization?.profileOpacity || 90) / 100)}),
@@ -1645,7 +1994,7 @@ const ProfileWrapper = styled.div`
     }
     
     @media (max-width: 1024px) {
-      padding: 3rem 2rem;
+      padding: 2.5rem 1.75rem;
       border-radius: 28px;
       
       &::before {
@@ -1654,7 +2003,7 @@ const ProfileWrapper = styled.div`
     }
     
     @media (max-width: 768px) {
-      padding: 2rem 1.5rem;
+      padding: 1.75rem 1.25rem;
       border-radius: 24px;
       
       &::before {
@@ -1665,7 +2014,12 @@ const ProfileWrapper = styled.div`
     .avatar-section {
       position: relative;
       display: inline-block;
-      margin-bottom: 2rem;
+      margin-bottom: 1.25rem;
+      
+      .avatar-container {
+        position: relative;
+        display: inline-block;
+      }
       
       .avatar {
         width: 140px;
@@ -1674,9 +2028,6 @@ const ProfileWrapper = styled.div`
         border: none;
         object-fit: cover;
         transition: all 0.3s ease;
-        ${props => props.customization?.glowUsername && `
-          box-shadow: 0 0 30px ${props.customization.accentColor || '#58A4B0'};
-        `}
         
         @media (max-width: 768px) {
           width: 120px;
@@ -1691,9 +2042,6 @@ const ProfileWrapper = styled.div`
         border: none;
         background: linear-gradient(135deg, ${props => props.customization?.accentColor || '#58A4B0'}, ${props => props.customization?.primaryColor || '#4A8C96'});
         transition: all 0.3s ease;
-        ${props => props.customization?.glowUsername && `
-          box-shadow: 0 0 30px ${props.customization.accentColor || '#58A4B0'};
-        `}
         
         @media (max-width: 768px) {
           width: 120px;
@@ -1738,7 +2086,7 @@ const ProfileWrapper = styled.div`
         align-items: center;
         justify-content: center;
         gap: 1.5rem;
-        margin-bottom: 1rem;
+        margin-bottom: 0.75rem;
         flex-wrap: wrap;
         
         h1 {
@@ -1747,10 +2095,70 @@ const ProfileWrapper = styled.div`
           color: ${props => props.customization?.textColor || '#ffffff'};
           margin: 0;
           letter-spacing: -0.02em;
-          ${props => props.customization?.textFont && `
-            font-family: '${props.customization.textFont}', inherit;
-          `}
-          ${props => props.customization?.glowUsername && `
+          ${props => {
+            if (props.customization?.textFont) {
+              return `font-family: '${props.customization.textFont}', inherit;`
+            }
+            return ''
+          }}
+          /* Username Effects */
+          ${props => {
+            const effect = props.customization?.usernameEffect || 'none'
+            const accentColor = props.customization?.accentColor || '#58A4B0'
+            
+            switch (effect) {
+              case 'glow':
+                return `text-shadow: 0 0 25px ${accentColor};`
+              case 'rainbow':
+                return `
+                  background: linear-gradient(45deg, #ff0000, #ff8800, #ffff00, #88ff00, #00ff00, #00ff88, #00ffff, #0088ff, #0000ff, #8800ff, #ff00ff, #ff0088);
+                  background-size: 200% 200%;
+                  background-clip: text;
+                  -webkit-background-clip: text;
+                  -webkit-text-fill-color: transparent;
+                  animation: rainbow-shift 3s ease-in-out infinite;
+                `
+              case 'sparkles':
+                return `
+                  position: relative;
+                  color: #ffffff;
+                  &::before {
+                    content: '';
+                    position: absolute;
+                    top: -10px;
+                    left: -10px;
+                    right: -10px;
+                    bottom: -10px;
+                    background: 
+                      radial-gradient(circle at 15% 25%, rgba(34, 197, 94, 0.6) 2px, transparent 2px),
+                      radial-gradient(circle at 75% 15%, rgba(34, 197, 94, 0.4) 1px, transparent 1px),
+                      radial-gradient(circle at 85% 75%, rgba(34, 197, 94, 0.5) 1.5px, transparent 1.5px),
+                      radial-gradient(circle at 25% 85%, rgba(34, 197, 94, 0.3) 1px, transparent 1px),
+                      radial-gradient(circle at 95% 35%, rgba(34, 197, 94, 0.4) 1px, transparent 1px),
+                      radial-gradient(circle at 5% 65%, rgba(34, 197, 94, 0.5) 1.5px, transparent 1.5px);
+                    animation: sparkle 2s ease-in-out infinite;
+                    pointer-events: none;
+                    z-index: -1;
+                  }
+                `
+              case 'typewriter':
+                return `
+                  overflow: hidden;
+                  border-right: 2px solid ${accentColor};
+                  white-space: nowrap;
+                  animation: typing 3.5s steps(40, end), blink-caret 0.75s step-end infinite;
+                `
+              case 'bounce':
+                return `animation: bounce 2s ease-in-out infinite;`
+              case 'fade':
+                return `animation: fade-in 2s ease-in-out;`
+              default:
+                return ''
+            }
+          }}
+          
+          /* Fallback for old glowUsername setting */
+          ${props => props.customization?.glowUsername && !props.customization?.usernameEffect && `
             text-shadow: 0 0 25px ${props.customization.accentColor || '#58A4B0'};
           `}
           
@@ -1859,7 +2267,7 @@ const ProfileWrapper = styled.div`
       }
       
       .display-name {
-        font-size: 1.8rem;
+        font-size: 1.5rem;
         font-weight: 500;
         color: ${props => props.customization?.accentColor ? `${props.customization.accentColor}DD` : '#a0a0a0'};
         margin: 0 0 1.5rem 0;
@@ -1873,11 +2281,97 @@ const ProfileWrapper = styled.div`
         }
       }
       
+      .user-badges-below {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 0.1rem;
+        margin: 0.25rem 0 1.5rem 0;
+        flex-wrap: wrap;
+        max-width: 500px;
+        margin-left: auto;
+        margin-right: auto;
+        
+        .badge-item-below {
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          cursor: pointer;
+          
+          &:hover {
+            transform: translateY(-3px) scale(1.1);
+            
+            .badge-icon-below {
+              ${props => props.customization?.glowBadges && `
+                box-shadow: 0 0 24px currentColor, 0 8px 20px rgba(0, 0, 0, 0.4);
+                filter: brightness(1.2);
+              `}
+            }
+          }
+          
+          .badge-icon-below {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            
+            &.badge-more {
+              background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.05)) !important;
+              border: none !important;
+              
+              span {
+                font-size: 0.75rem;
+                font-weight: 600;
+                color: #ffffff;
+              }
+            }
+            
+            .badge-emoji {
+              font-size: 1.1rem;
+              line-height: 1;
+            }
+            
+            // Rarity glow effects
+            ${props => props.customization?.glowBadges && `
+              &:hover {
+                filter: brightness(1.1) saturate(1.2);
+              }
+            `}
+          }
+        }
+        
+        @media (max-width: 768px) {
+          gap: 0.4rem;
+          margin: 0.2rem 0 1.25rem 0;
+          max-width: 400px;
+          
+          .badge-item-below {
+            .badge-icon-below {
+              width: 36px;
+              height: 36px;
+              font-size: 1.1rem;
+              
+              .badge-emoji {
+                font-size: 1rem;
+              }
+            }
+          }
+        }
+      }
+      
       .bio {
         font-size: 1.25rem;
         color: ${props => props.customization?.textColor || '#ffffff'};
         line-height: 1.7;
-        margin-bottom: 2.5rem;
+        margin-bottom: 1.5rem;
         max-width: 600px;
         margin-left: auto;
         margin-right: auto;
@@ -1891,187 +2385,141 @@ const ProfileWrapper = styled.div`
         }
       }
       
-      .discord-presence {
-        background: rgba(88, 101, 242, 0.1);
-        border: 1px solid rgba(88, 101, 242, 0.2);
-        border-radius: 16px;
-        padding: 1.25rem;
-        margin-bottom: 2rem;
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        transition: all 0.3s ease;
+      .platform-activity-card {
+        background: #2f3136;
+        border: 1px solid;
+        border-radius: 12px;
+        padding: 12px 20px;
+        margin: 0 auto 1rem auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        max-width: 380px;
+        min-width: 320px;
+        width: fit-content;
+        min-height: 56px;
         
         &:hover {
-          background: rgba(88, 101, 242, 0.15);
-          border-color: rgba(88, 101, 242, 0.3);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
         }
         
-        .discord-presence-header {
+        .discord-avatar-container {
+          position: relative;
+          flex-shrink: 0;
+          
+          .discord-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: #36393f;
+          }
+        }
+        
+        .platform-icon-container {
           display: flex;
           align-items: center;
-          gap: 0.75rem;
-          margin-bottom: 1rem;
+          justify-content: center;
+          width: 24px;
+          height: 24px;
+          border-radius: 6px;
+          flex-shrink: 0;
+        }
+        
+        .platform-details {
+          flex: 1;
+          overflow: hidden;
+          text-align: left;
           
-          .discord-presence-title {
-            font-size: 1rem;
+          .discord-username {
+            font-size: 13px;
             font-weight: 600;
-            color: #5865f2;
+            color: #ffffff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 200px;
+            margin-bottom: 1px;
           }
           
-          .presence-loading {
-            color: #5865f2;
-            animation: blink 1s infinite;
+          .platform-name {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.2px;
+            margin-bottom: 1px;
+            opacity: 0.8;
+          }
+          
+          .activity-title {
+            font-size: 11px;
+            font-weight: 500;
+            color: #ffffff;
+            margin-bottom: 1px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 200px;
+          }
+          
+          .activity-subtitle {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.7);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 200px;
           }
         }
         
-        .discord-user-info {
-          display: flex;
-          align-items: flex-start;
-          gap: 0.75rem;
-          
-          .discord-avatar-container {
-            position: relative;
-            display: inline-block;
-            
-            .discord-avatar-small {
-              width: 40px;
-              height: 40px;
-              border-radius: 50%;
-              border: 2px solid #5865f2;
-              object-fit: cover;
-              transition: all 0.3s ease;
-            }
-            
-            .discord-status-indicator {
-              position: absolute;
-              bottom: -2px;
-              right: -2px;
-              width: 14px;
-              height: 14px;
-              border-radius: 50%;
-              border: 3px solid rgba(0, 0, 0, 0.8);
-              transition: all 0.3s ease;
-              
-              &.online {
-                background-color: #43b581;
-              }
-              
-              &.idle {
-                background-color: #faa61a;
-              }
-              
-              &.dnd {
-                background-color: #f04747;
-              }
-              
-              &.offline {
-                background-color: #747f8d;
-              }
-            }
-          }
-          
-          .discord-user-details {
-            display: flex;
-            flex-direction: column;
-            gap: 0.3rem;
-            flex: 1;
-            
-            .discord-username-row {
-              display: flex;
-              align-items: center;
-              gap: 0.5rem;
-              flex-wrap: wrap;
-              
-              .discord-username {
-                font-size: 0.95rem;
-                font-weight: 600;
-                color: ${props => props.customization?.textColor || '#ffffff'};
-              }
-              
-              .discord-status-text {
-                font-size: 0.8rem;
-                font-weight: 500;
-                opacity: 0.9;
-              }
-            }
-            
-            .discord-activity {
-              display: flex;
-              align-items: center;
-              gap: 0.3rem;
-              font-size: 0.85rem;
-              color: ${props => props.customization?.textColor ? `${props.customization.textColor}CC` : 'rgba(255, 255, 255, 0.8)'};
-              
-              .activity-prefix {
-                font-weight: 500;
-              }
-              
-              .activity-name {
-                font-weight: 600;
-                color: ${props => props.customization?.textColor || '#ffffff'};
-              }
-            }
-            
-            .discord-booster-badge {
-              font-size: 0.8rem;
-              color: #f093fb;
-              font-weight: 500;
-            }
-            
-            .discord-last-seen {
-              font-size: 0.75rem;
-              color: ${props => props.customization?.textColor ? `${props.customization.textColor}99` : 'rgba(255, 255, 255, 0.6)'};
-              font-style: italic;
-            }
-          }
+        .presence-loading-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          animation: pulse 1.5s infinite;
+          flex-shrink: 0;
         }
         
         @media (max-width: 768px) {
-          padding: 1rem;
-          margin-bottom: 1.5rem;
+          padding: 10px 16px;
+          max-width: 320px;
+          min-width: 280px;
+          gap: 16px;
           
-          .discord-presence-header {
-            .discord-presence-title {
-              font-size: 0.9rem;
+          .discord-avatar-container {
+            .discord-avatar {
+              width: 28px;
+              height: 28px;
             }
           }
           
-          .discord-user-info {
-            .discord-avatar-container {
-              .discord-avatar-small {
-                width: 36px;
-                height: 36px;
-              }
-              
-              .discord-status-indicator {
-                width: 12px;
-                height: 12px;
-                border-width: 2px;
-              }
+          .platform-icon-container {
+            width: 20px;
+            height: 20px;
+          }
+          
+          .platform-details {
+            .discord-username {
+              font-size: 12px;
+              max-width: 140px;
             }
             
-            .discord-user-details {
-              .discord-username-row {
-                .discord-username {
-                  font-size: 0.85rem;
-                }
-                
-                .discord-status-text {
-                  font-size: 0.75rem;
-                }
-              }
-              
-              .discord-activity {
-                font-size: 0.8rem;
-              }
-              
-              .discord-booster-badge {
-                font-size: 0.75rem;
-              }
-              
-              .discord-last-seen {
-                font-size: 0.7rem;
-              }
+            .platform-name {
+              font-size: 9px;
+            }
+            
+            .activity-title {
+              font-size: 10px;
+              max-width: 140px;
+            }
+            
+            .activity-subtitle {
+              font-size: 9px;
+              max-width: 140px;
             }
           }
         }
@@ -2161,17 +2609,14 @@ const ProfileWrapper = styled.div`
       gap: 0.6rem;
       z-index: 10;
       padding: 0.75rem 1rem;
-      background: rgba(0, 0, 0, 0.4);
-      border: 1px solid ${props => props.customization?.accentColor ? `${props.customization.accentColor}60` : 'rgba(255, 255, 255, 0.2)'};
+      background: transparent;
+      border: 1px solid transparent;
       border-radius: 24px;
-      backdrop-filter: blur(15px);
-      -webkit-backdrop-filter: blur(15px);
       transition: all 0.3s ease;
       
       &:hover {
-        background: rgba(0, 0, 0, 0.5);
-        border-color: ${props => props.customization?.accentColor ? `${props.customization.accentColor}80` : 'rgba(255, 255, 255, 0.3)'};
-        transform: translateY(-1px);
+        background: transparent;
+        border-color: transparent;
       }
       
       .views-icon {
@@ -2218,8 +2663,255 @@ const ProfileWrapper = styled.div`
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.8; transform: scale(1.02); }
   }
+  
+  /* Username Effect Animations */
+  @keyframes rainbow-shift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  
+  @keyframes sparkle {
+    0%, 100% { opacity: 0.3; transform: scale(1); }
+    25% { opacity: 1; transform: scale(1.2); }
+    50% { opacity: 0.6; transform: scale(0.8); }
+    75% { opacity: 1; transform: scale(1.1); }
+  }
+  
+  @keyframes typing {
+    from { width: 0; }
+    to { width: 100%; }
+  }
+  
+  @keyframes blink-caret {
+    from, to { border-color: transparent; }
+    50% { border-color: currentColor; }
+  }
+  
+  @keyframes bounce {
+    0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-10px); }
+    60% { transform: translateY(-5px); }
+  }
+  
+  @keyframes fade-in {
+    0% { opacity: 0; transform: translateY(20px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  .discord-presence-card {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    padding: 12px 20px;
+    margin: 0 auto 1rem auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    transition: all 0.2s ease;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    max-width: 380px;
+    width: fit-content;
+    min-width: 320px;
+    min-height: 56px;
+    
+    &:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.3);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    }
+    
+    .discord-avatar-container {
+      position: relative;
+      flex-shrink: 0;
+      
+      .discord-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        object-fit: cover;
+        background: #36393f;
+      }
+      
+      .discord-status-dot {
+        position: absolute;
+        bottom: -1px;
+        right: -1px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 2px solid #2f3136;
+        transition: all 0.2s ease;
+      }
+    }
+    
+    .discord-info {
+      flex: 1;
+      min-width: 0;
+      text-align: center;
+      
+      .discord-username-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 1px;
+        justify-content: center;
+        
+        .discord-username {
+          font-size: 14px;
+          font-weight: 600;
+          color: #ffffff;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 140px;
+        }
+        
+        .discord-badges-inline {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          flex-shrink: 0;
+        }
+      }
+      
+      .discord-last-seen {
+        font-size: 12px;
+        color: #b9bbbe;
+        font-style: italic;
+        white-space: nowrap;
+        overflow: visible;
+        text-overflow: clip;
+        line-height: 1.2;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      padding: 10px 16px;
+      gap: 16px;
+      max-width: 320px;
+      min-width: 280px;
+      
+      .discord-avatar-container {
+        .discord-avatar {
+          width: 28px;
+          height: 28px;
+        }
+        
+        .discord-status-dot {
+          width: 8px;
+          height: 8px;
+          border-width: 2px;
+        }
+      }
+      
+      .discord-info {
+        .discord-username-row {
+          .discord-username {
+            font-size: 13px;
+            max-width: 120px;
+          }
+        }
+        
+        .discord-last-seen {
+          font-size: 11px;
+          line-height: 1.3;
+        }
+      }
+    }
+
+    /* Skeleton loading styles */
+    .discord-avatar-skeleton {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(90deg, #40444b 25%, #4f545c 50%, #40444b 75%);
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.5s infinite;
+    }
+
+    .discord-username-skeleton {
+      width: 100px;
+      height: 14px;
+      background: linear-gradient(90deg, #40444b 25%, #4f545c 50%, #40444b 75%);
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.5s infinite;
+      border-radius: 4px;
+      margin: 0 auto 2px auto;
+    }
+
+    .discord-last-seen-skeleton {
+      width: 60px;
+      height: 11px;
+      background: linear-gradient(90deg, #40444b 25%, #4f545c 50%, #40444b 75%);
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.5s infinite;
+      border-radius: 4px;
+      margin: 0 auto;
+    }
+
+    @keyframes skeleton-shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    @media (max-width: 768px) {
+      .discord-avatar-skeleton {
+        width: 28px;
+        height: 28px;
+      }
+      
+      .discord-username-skeleton {
+        width: 80px;
+        height: 13px;
+      }
+      
+      .discord-last-seen-skeleton {
+        width: 50px;
+        height: 10px;
+      }
+    }
+  }
 
 `
+
+// Avatar with Discord Status Indicator
+const AvatarWithStatus = ({ user, customization }) => {
+  const {
+    presence,
+    getStatusDisplay,
+    isPresenceRecent
+  } = useDiscordPresence(user?.discord?.discord_id)
+
+  const statusDisplay = presence?.status ? getStatusDisplay(presence.status) : null
+  const isRecent = presence?.updated_at ? isPresenceRecent(presence.updated_at) : false
+  
+  // Determine which avatar to show (Discord avatar takes priority if useDiscordAvatar is enabled)
+  const avatarUrl = customization.useDiscordAvatar && user?.discord?.avatar_url ? user?.discord?.avatar_url : user?.avatar_url
+  
+  // Show Discord decoration if:
+  // 1. discordAvatarDecoration is enabled AND
+  // 2. Either we're using Discord avatar OR Discord presence is active (show on any avatar)
+  const showDiscordDecoration = customization.discordAvatarDecoration && 
+    (customization.useDiscordAvatar || customization.discordPresence) && 
+    user?.discord?.connected
+
+  return (
+    <div className="avatar-container">
+      <img 
+        src={avatarUrl} 
+        alt={user?.username} 
+        className="avatar" 
+        style={{
+          border: showDiscordDecoration ? '3px solid #5865f2' : undefined
+        }}
+      />
+    </div>
+  )
+}
 
 // Discord Presence Component with Real-time Status
 const DiscordPresenceSection = ({ user, customization }) => {
@@ -2232,7 +2924,90 @@ const DiscordPresenceSection = ({ user, customization }) => {
     getActivityDisplay,
     formatLastSeen,
     isPresenceRecent
-  } = useDiscordPresence(user.discord?.discord_id)
+  } = useDiscordPresence(user?.discord?.discord_id)
+
+  // Helper function to get platform-specific icon and details
+  const getPlatformDetails = (activity) => {
+    if (!activity) return null
+    
+    // Platform-specific handling
+    const activityName = activity.name?.toLowerCase()
+    
+    // Spotify detection (type 2 = listening, or name contains spotify)
+    if (activityName?.includes('spotify') || activity.name === 'Spotify' || activity.type === 2) {
+      // Show Spotify activity if we have meaningful data
+      if (activity.details && activity.details !== 'Unknown Track') {
+        return {
+          platform: 'spotify',
+          icon: <SimpleIconComponent iconName="spotify" size={24} />,
+          title: activity.details,
+          subtitle: activity.state ? `by ${activity.state}` : '',
+          platformName: 'Listening on Spotify'
+        }
+      }
+    }
+    
+    // YouTube Music detection
+    if (activityName?.includes('youtube') || activityName?.includes('youtube music')) {
+      return {
+        platform: 'youtube',
+        icon: <SimpleIconComponent iconName="youtube" size={24} />,
+        title: activity.details || activity.name,
+        subtitle: activity.state || '',
+        platformName: 'Watching on YouTube'
+      }
+    }
+    
+    if (activityName?.includes('discord')) {
+      return null // Don't show Discord app activity
+    }
+    
+    // Game activities (Playing)
+    if (activity.type === 0) {
+      return {
+        platform: 'gaming',
+        icon: '🎮',
+        title: activity.name,
+        subtitle: activity.details || activity.state || '',
+        platformName: 'Playing'
+      }
+    }
+    
+    // Streaming
+    if (activity.type === 1) {
+      return {
+        platform: 'streaming',
+        icon: '📺',
+        title: activity.name,
+        subtitle: activity.details || activity.url || '',
+        platformName: 'Streaming'
+      }
+    }
+    
+    // Generic listening activities (Music/Audio)
+    if (activity.type === 2) {
+      return {
+        platform: 'music',
+        icon: '🎵',
+        title: activity.details || activity.name,
+        subtitle: activity.state || '',
+        platformName: 'Listening'
+      }
+    }
+    
+    // Watching activities  
+    if (activity.type === 3) {
+      return {
+        platform: 'watching',
+        icon: '📺',
+        title: activity.details || activity.name,
+        subtitle: activity.state || '',
+        platformName: 'Watching'
+      }
+    }
+    
+    return null // Don't show other activities
+  }
 
   // Get status display information
   const statusDisplay = presence?.status ? getStatusDisplay(presence.status) : null
@@ -2240,72 +3015,197 @@ const DiscordPresenceSection = ({ user, customization }) => {
   const activityDisplay = activity ? getActivityDisplay(activity) : null
   const isOnline = presence?.status && presence.status !== 'offline'
   const isRecent = presence?.updated_at ? isPresenceRecent(presence.updated_at) : false
+  
+  // Get platform-specific details
+  const platformDetails = activity ? getPlatformDetails(activity) : null
+  
+  // Show Discord presence if:
+  // 1. Discord presence is enabled in customization
+  // 2. User has Discord connected
+  // 3. Either there's meaningful platform activity OR we should show offline state
+  const shouldShow = customization.discordPresence && user?.discord?.connected && (
+    platformDetails || // Has active activity
+    user?.discord?.discord_id // Always show if user has Discord connected (regardless of presence data state)
+  )
+  
+  // Don't render anything if Discord presence is disabled or user isn't connected
+  if (!shouldShow) {
+    return null
+  }
 
-  return (
-    <div className="discord-presence">
-      <div className="discord-presence-header">
-        <SimpleIconComponent iconName="discord" size={20} customColor="#5865f2" />
-        <span className="discord-presence-title">Discord Presence</span>
-        {loading && <span className="presence-loading">•</span>}
-      </div>
-      
-      <div className="discord-user-info">
+  // Show loading state briefly to prevent flickering
+  if (loading && !presence) {
+    return (
+      <div className="discord-presence-card">
         <div className="discord-avatar-container">
-          {user.discord.avatar_url && (
-            <img 
-              src={user.discord.avatar_url} 
-              alt="Discord Avatar" 
-              className="discord-avatar-small"
-            />
-          )}
-          {/* Status Indicator */}
-          {statusDisplay && (
-            <div 
-              className={`discord-status-indicator ${presence.status}`}
-              style={{ 
-                backgroundColor: statusDisplay.color,
-                boxShadow: isRecent ? `0 0 8px ${statusDisplay.color}` : 'none'
-              }}
-              title={`${statusDisplay.text} - ${statusDisplay.description}`}
-            />
+          <div className="discord-avatar-skeleton" />
+          <div className="discord-status-dot" style={{ backgroundColor: '#747f8d' }} />
+        </div>
+        <div className="discord-info">
+          <div className="discord-username-skeleton" />
+          <div className="discord-last-seen-skeleton" />
+        </div>
+      </div>
+    )
+  }
+
+  // Get platform-specific colors
+  const getPlatformColor = (platform) => {
+    switch (platform) {
+      case 'spotify': return '#1DB954'
+      case 'youtube': return '#FF0000'
+      case 'gaming': return '#00D9FF'
+      case 'streaming': return '#9146FF'
+      case 'music': return '#FF6B35'
+      case 'watching': return '#9146FF'
+      default: return '#5865f2'
+    }
+  }
+
+  // If user has active activity, show platform activity card with Discord user info
+  if (platformDetails) {
+    const platformColor = getPlatformColor(platformDetails.platform)
+    const discordAvatar = user?.discord?.avatar_url || `https://cdn.discordapp.com/embed/avatars/${(parseInt(user?.discord?.discord_id || '0') % 5)}.png`
+
+    return (
+      <div className="platform-activity-card" style={{ borderColor: `${platformColor}40` }}>
+        {/* Discord Avatar */}
+        <div className="discord-avatar-container">
+          <img 
+            src={discordAvatar}
+            alt="Discord Avatar"
+            className="discord-avatar"
+          />
+        </div>
+        
+        {/* Platform Details */}
+        <div className="platform-details">
+          <div className="discord-username">
+            {user?.discord?.discord_username || user?.username}
+          </div>
+          <div className="platform-name" style={{ color: platformColor }}>
+            {platformDetails.platformName}
+          </div>
+          <div className="activity-title">{platformDetails.title}</div>
+          {platformDetails.subtitle && (
+            <div className="activity-subtitle">{platformDetails.subtitle}</div>
           )}
         </div>
         
-        <div className="discord-user-details">
-          <div className="discord-username-row">
-            <span className="discord-username">{user.discord.discord_username}</span>
-            {statusDisplay && (
-              <span className="discord-status-text" style={{ color: statusDisplay.color }}>
-                {statusDisplay.text}
-              </span>
-            )}
-          </div>
-          
-          {/* Activity Display */}
-          {activityDisplay && isOnline && (
-            <div className="discord-activity">
-              <span className="activity-prefix">{activityDisplay.prefix}</span>
-              <span className="activity-name">{activityDisplay.name}</span>
+        {/* Platform Activity Icon - moved to right */}
+        <div className="platform-icon-container" style={{ backgroundColor: `${platformColor}20` }}>
+          {platformDetails.icon}
+        </div>
+        
+        {loading && <div className="presence-loading-dot" style={{ backgroundColor: platformColor }} />}
+      </div>
+    )
+  }
+
+  // Discord-style compact presence card
+  const statusColor = statusDisplay?.color || '#747f8d'
+  const discordAvatar = user?.discord?.avatar_url || `https://cdn.discordapp.com/embed/avatars/${(parseInt(user?.discord?.discord_id || '0') % 5)}.png`
+  
+  return (
+    <div className="discord-presence-card">
+      <div className="discord-avatar-container">
+        <img 
+          src={discordAvatar}
+          alt="Discord Avatar"
+          className="discord-avatar"
+        />
+        <div 
+          className="discord-status-dot"
+          style={{ backgroundColor: statusColor }}
+        />
+      </div>
+      
+      <div className="discord-info">
+        <div className="discord-username-row">
+          <span className="discord-username">
+            {user?.discord?.discord_username || user?.username}
+          </span>
+          {/* Discord badges inline */}
+          {user?.discord?.discord_id && (
+            <div className="discord-badges-inline">
+              <DiscordBadges 
+                discordUserID={user?.discord?.discord_id} 
+                compact={true}
+                maxVisible={2}
+              />
             </div>
           )}
-          
-          {/* Server Booster Badge */}
-          {user.discord.is_booster && (
-            <span className="discord-booster-badge">
-              🚀 Server Booster
-            </span>
-          )}
-          
-          {/* Last Seen for Offline Users */}
-          {presence?.status === 'offline' && presence?.last_seen && (
-            <span className="discord-last-seen">
-              Last seen {formatLastSeen(presence.last_seen)}
-            </span>
-          )}
+        </div>
+        
+        <div className="discord-last-seen">
+          {presence?.last_seen ? `last seen ${formatLastSeen(presence.last_seen)}` : (presence === null ? 'offline' : 'checking...')}
         </div>
       </div>
     </div>
   )
 }
+
+// Styled Components for Custom Tooltip
+const TooltipContainer = styled.div`
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: tooltipFadeIn 0.1s ease-out;
+  
+  @keyframes tooltipFadeIn {
+    from { 
+      opacity: 0;
+      transform: translateX(-50%) translateY(5px);
+    }
+    to { 
+      opacity: 1;
+      transform: translateX(-50%) translateY(0px);
+    }
+  }
+`
+
+const TooltipContent = styled.div`
+  background: rgba(0, 0, 0, 0.15);
+  color: ${props => props.customization?.textColor || '#ffffff'};
+  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  position: relative;
+  transition: all 0.1s ease;
+`
+
+const TooltipArrow = styled.div`
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid rgba(0, 0, 0, 0.15);
+  
+  &::before {
+    content: '';
+    position: absolute;
+    bottom: 1px;
+    left: -5px;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid ${props => props.customization?.accentColor ? `${props.customization.accentColor}40` : 'rgba(255, 255, 255, 0.2)'};
+  }
+`
 
 export default UserProfile

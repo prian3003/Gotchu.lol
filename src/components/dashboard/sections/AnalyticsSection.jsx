@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { 
   HiChartBar, 
   HiEye, 
@@ -24,8 +25,6 @@ import { SimpleIconComponent } from '../../../utils/simpleIconsHelper.jsx'
 
 // Helper function to render social icons using Simple Icons
 const renderSocialIcon = (iconName) => {
-  console.log('DEBUG: renderSocialIcon called with:', iconName)
-  
   if (!iconName) return <HiLink size={18} />
   
   // Skip emoji detection for now and force Simple Icons
@@ -40,10 +39,7 @@ const renderSocialIcon = (iconName) => {
 
 // Helper function to render country flags using flag-icons package
 const renderCountryFlag = (countryName) => {
-  console.log('DEBUG: renderCountryFlag called with:', countryName)
-  
   if (!countryName) {
-    console.log('DEBUG: No country name provided')
     return <HiGlobeAlt size={18} style={{ color: '#666' }} />
   }
   
@@ -81,7 +77,6 @@ const renderCountryFlag = (countryName) => {
   }
   
   const countryCode = countryCodeMap[countryName] || countryName.toLowerCase().slice(0, 2)
-  console.log('DEBUG: Country code mapped to:', countryCode)
   
   return (
     <span 
@@ -110,15 +105,44 @@ const renderCountryFlag = (countryName) => {
 }
 
 const AnalyticsSection = ({ user }) => {
-  const [timeRange, setTimeRange] = useState('Last 3 days')
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  
+  // Get time range from URL params or default
+  const urlTimeRange = searchParams.get('period') || 'Today'
+  const [timeRange, setTimeRange] = useState(urlTimeRange)
   const [showTimeDropdown, setShowTimeDropdown] = useState(false)
   const [analyticsData, setAnalyticsData] = useState(null)
+  const [previousPeriodData, setPreviousPeriodData] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [hoveredBar, setHoveredBar] = useState(null)
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
   const { colors, isDarkMode } = useTheme()
   
-  const timeRangeOptions = ['Last 3 days', 'Last 7 days', 'Last 30 days', 'Last 90 days']
+  // Time range options based on user plan
+  const timeRangeOptions = user?.is_premium || user?.plan === 'premium' 
+    ? ['Today', 'Last 7 days', 'Last 14 days', 'Last 30 days', 'All Time'] 
+    : ['Today', 'Last 7 days', 'Last 14 days', 'All Time']
   
+  // Helper function to get days from time range
+  const getDaysFromTimeRange = (range) => {
+    switch (range) {
+      case 'Today': return 1
+      case 'Last 7 days': return 7
+      case 'Last 14 days': return 14
+      case 'Last 30 days': return 30
+      case 'All Time': return 0 // 0 means no time limit - all historical data
+      default: return 7 // Default to 7 days instead of 14
+    }
+  }
+
+  // Helper function to calculate growth percentage
+  const calculateGrowthPercentage = (current, previous) => {
+    if (!previous || previous === 0) return current > 0 ? 100 : 0
+    return Math.round(((current - previous) / previous) * 100 * 10) / 10
+  }
+
   // Fetch analytics data from API
   useEffect(() => {
     const fetchAnalytics = async () => {
@@ -126,18 +150,13 @@ const AnalyticsSection = ({ user }) => {
         setIsLoading(true)
         setError(null)
         
-        const authToken = localStorage.getItem('authToken')
-        const sessionId = localStorage.getItem('sessionId')
+        const days = getDaysFromTimeRange(timeRange)
         
-        if (!authToken || !sessionId) {
-          throw new Error('Authentication required')
-        }
-        
-        const response = await fetch('http://localhost:8080/api/dashboard/analytics', {
+        // Fetch current period data
+        const response = await fetch(`http://localhost:8080/api/dashboard/analytics?days=${days}`, {
           method: 'GET',
+          credentials: 'include', // Use httpOnly cookies for auth
           headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'X-Session-ID': sessionId,
             'Content-Type': 'application/json'
           }
         })
@@ -150,62 +169,41 @@ const AnalyticsSection = ({ user }) => {
         
         if (result.success) {
           setAnalyticsData(result.data)
+          
+          // Fetch previous period data for growth calculation
+          try {
+            const prevResponse = await fetch(`http://localhost:8080/api/dashboard/analytics?days=${days}&offset=${days}`, {
+              method: 'GET',
+              credentials: 'include', // Use httpOnly cookies for auth
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            })
+            
+            if (prevResponse.ok) {
+              const prevResult = await prevResponse.json()
+              if (prevResult.success) {
+                setPreviousPeriodData(prevResult.data)
+              }
+            }
+          } catch (prevErr) {
+            console.warn('Could not fetch previous period data for growth calculation:', prevErr)
+          }
         } else {
           throw new Error(result.message || 'Failed to fetch analytics data')
         }
       } catch (err) {
         console.error('Error fetching analytics:', err)
         setError(err.message)
-        // Set fallback data
-        setAnalyticsData({
-          total_link_clicks: 1247,
-          click_rate: 8.3,
-          profile_views: user?.profileViews || 2847,
-          average_daily_views: 94,
-          profile_views_chart: [
-            { day: 'Mon', views: 120 },
-            { day: 'Tue', views: 85 },
-            { day: 'Wed', views: 140 },
-            { day: 'Thu', views: 95 },
-            { day: 'Fri', views: 110 },
-            { day: 'Sat', views: 75 },
-            { day: 'Sun', views: 90 }
-          ],
-          devices: {
-            mobile: 68.4,
-            desktop: 28.1,
-            tablet: 3.5
-          },
-          top_socials: [
-            { name: 'Instagram', clicks: 342, icon: '📷' },
-            { name: 'Twitter', clicks: 287, icon: '🐦' },
-            { name: 'LinkedIn', clicks: 198, icon: '💼' },
-            { name: 'YouTube', clicks: 156, icon: '📺' },
-            { name: 'TikTok', clicks: 124, icon: '🎵' }
-          ],
-          top_referrers: [
-            { source: 'Direct', visits: 45.2, icon: '🔗' },
-            { source: 'Google', visits: 28.7, icon: '🔍' },
-            { source: 'Twitter', visits: 12.4, icon: '🐦' },
-            { source: 'Instagram', visits: 8.9, icon: '📷' },
-            { source: 'LinkedIn', visits: 4.8, icon: '💼' }
-          ],
-          top_countries: [
-            { name: 'United States', views: 892, percentage: 31.3, code: 'US' },
-            { name: 'Germany', views: 567, percentage: 19.9, code: 'DE' },
-            { name: 'United Kingdom', views: 432, percentage: 15.2, code: 'GB' },
-            { name: 'France', views: 298, percentage: 10.5, code: 'FR' },
-            { name: 'Canada', views: 234, percentage: 8.2, code: 'CA' },
-            { name: 'Australia', views: 187, percentage: 6.6, code: 'AU' }
-          ]
-        })
       } finally {
         setIsLoading(false)
       }
     }
     
-    fetchAnalytics()
-  }, [user])
+    if (user) {
+      fetchAnalytics()
+    }
+  }, [user, timeRange])
 
   const formatNumber = (num) => {
     if (num >= 1000) {
@@ -350,6 +348,10 @@ const AnalyticsSection = ({ user }) => {
                   onClick={() => {
                     setTimeRange(option)
                     setShowTimeDropdown(false)
+                    // Update URL params
+                    const newSearchParams = new URLSearchParams(searchParams)
+                    newSearchParams.set('period', option)
+                    setSearchParams(newSearchParams)
                   }}
                   style={{
                     display: 'block',
@@ -394,10 +396,25 @@ const AnalyticsSection = ({ user }) => {
           <div style={{ fontSize: '32px', fontWeight: '600', color: colors.text, marginBottom: '4px' }}>
             {formatNumber(analyticsData.total_link_clicks || 0)}
           </div>
-          <div style={{ color: '#22c55e', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <HiArrowTrendingUp />
-            +12.5% from last period
-          </div>
+          {(() => {
+            const growth = calculateGrowthPercentage(
+              analyticsData.total_link_clicks || 0,
+              previousPeriodData?.total_link_clicks || 0
+            )
+            const isPositive = growth >= 0
+            return (
+              <div style={{ 
+                color: isPositive ? '#22c55e' : '#ef4444', 
+                fontSize: '12px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '4px' 
+              }}>
+                {isPositive ? <HiArrowTrendingUp /> : <HiArrowTrendingDown />}
+                {isPositive ? '+' : ''}{growth}% from last period
+              </div>
+            )
+          })()}
         </div>
 
         <div style={{
@@ -411,12 +428,27 @@ const AnalyticsSection = ({ user }) => {
             <span style={{ color: colors.muted, fontSize: '14px' }}>Click Rate</span>
           </div>
           <div style={{ fontSize: '32px', fontWeight: '600', color: colors.text, marginBottom: '4px' }}>
-            {analyticsData.click_rate || 0}%
+            {analyticsData.click_rate ? parseFloat(analyticsData.click_rate).toFixed(1) : 0}%
           </div>
-          <div style={{ color: '#22c55e', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <HiArrowTrendingUp />
-            +2.1% from last period
-          </div>
+          {(() => {
+            const growth = calculateGrowthPercentage(
+              analyticsData.click_rate || 0,
+              previousPeriodData?.click_rate || 0
+            )
+            const isPositive = growth >= 0
+            return (
+              <div style={{ 
+                color: isPositive ? '#22c55e' : '#ef4444', 
+                fontSize: '12px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '4px' 
+              }}>
+                {isPositive ? <HiArrowTrendingUp /> : <HiArrowTrendingDown />}
+                {isPositive ? '+' : ''}{growth}% from last period
+              </div>
+            )
+          })()}
         </div>
 
         <div style={{
@@ -432,10 +464,25 @@ const AnalyticsSection = ({ user }) => {
           <div style={{ fontSize: '32px', fontWeight: '600', color: colors.text, marginBottom: '4px' }}>
             {formatNumber(analyticsData.profile_views || 0)}
           </div>
-          <div style={{ color: '#22c55e', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <HiArrowTrendingUp />
-            +8.2% from last period
-          </div>
+          {(() => {
+            const growth = calculateGrowthPercentage(
+              analyticsData.profile_views || 0,
+              previousPeriodData?.profile_views || 0
+            )
+            const isPositive = growth >= 0
+            return (
+              <div style={{ 
+                color: isPositive ? '#22c55e' : '#ef4444', 
+                fontSize: '12px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '4px' 
+              }}>
+                {isPositive ? <HiArrowTrendingUp /> : <HiArrowTrendingDown />}
+                {isPositive ? '+' : ''}{growth}% from last period
+              </div>
+            )
+          })()}
         </div>
 
         <div style={{
@@ -451,10 +498,25 @@ const AnalyticsSection = ({ user }) => {
           <div style={{ fontSize: '32px', fontWeight: '600', color: colors.text, marginBottom: '4px' }}>
             {analyticsData.average_daily_views || 0}
           </div>
-          <div style={{ color: '#22c55e', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <HiArrowTrendingUp />
-            +5.7% from last period
-          </div>
+          {(() => {
+            const growth = calculateGrowthPercentage(
+              analyticsData.average_daily_views || 0,
+              previousPeriodData?.average_daily_views || 0
+            )
+            const isPositive = growth >= 0
+            return (
+              <div style={{ 
+                color: isPositive ? '#22c55e' : '#ef4444', 
+                fontSize: '12px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '4px' 
+              }}>
+                {isPositive ? <HiArrowTrendingUp /> : <HiArrowTrendingDown />}
+                {isPositive ? '+' : ''}{growth}% from last period
+              </div>
+            )
+          })()}
         </div>
       </div>
 
@@ -470,7 +532,8 @@ const AnalyticsSection = ({ user }) => {
           background: colors.surface,
           border: `1px solid ${colors.border}`,
           borderRadius: '12px',
-          padding: '24px'
+          padding: '24px',
+          position: 'relative'
         }}>
           <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: '600', color: colors.text }}>Profile Views</h3>
           <div style={{
@@ -481,25 +544,150 @@ const AnalyticsSection = ({ user }) => {
             gap: '12px',
             paddingTop: '20px'
           }}>
-            {(analyticsData.profile_views_chart || []).map((item, index) => (
-              <div key={index} style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                flex: 1
-              }}>
-                <div style={{
-                  width: '100%',
-                  height: `${(item.views / 140) * 160}px`,
-                  background: `linear-gradient(to top, ${colors.accent}, ${colors.accent}80)`,
-                  borderRadius: '4px 4px 0 0',
-                  marginBottom: '8px',
-                  transition: 'all 0.3s ease'
-                }} />
-                <span style={{ color: colors.muted, fontSize: '12px' }}>{item.day}</span>
-              </div>
-            ))}
+            {(() => {
+              const chartData = analyticsData.profile_views_chart || []
+              const totalProfileViews = analyticsData.profile_views || 0
+              
+              // Check if chart data exists but has all zeros, or no chart data at all
+              const chartHasData = chartData.length > 0 && chartData.some(item => (item.views || 0) > 0)
+              
+              // If no meaningful chart data but we have profile views, create a simple chart
+              if (!chartHasData && totalProfileViews > 0) {
+                const todayData = [{
+                  day: 'Today',
+                  views: totalProfileViews
+                }]
+                const maxViews = Math.max(...todayData.map(item => item.views || 0), 1)
+                const minHeight = 8
+                
+                return todayData.map((item, index) => (
+                  <div key={index} style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    flex: 1,
+                    position: 'relative'
+                  }}>
+                    <div 
+                      style={{
+                        width: '100%',
+                        height: `${Math.max(minHeight, (item.views / maxViews) * 160)}px`,
+                        background: hoveredBar === index 
+                          ? `linear-gradient(to top, ${colors.accent}, ${colors.accent})`
+                          : `linear-gradient(to top, ${colors.accent}, ${colors.accent}80)`,
+                        borderRadius: '4px 4px 0 0',
+                        marginBottom: '8px',
+                        transition: 'all 0.3s ease',
+                        cursor: 'pointer',
+                        transform: hoveredBar === index ? 'scaleY(1.05)' : 'scaleY(1)'
+                      }}
+                      onMouseEnter={(e) => {
+                        setHoveredBar(index)
+                        const rect = e.target.getBoundingClientRect()
+                        setMousePosition({ 
+                          x: rect.left + rect.width / 2, 
+                          y: rect.top - 10 
+                        })
+                      }}
+                      onMouseLeave={() => {
+                        setHoveredBar(null)
+                      }}
+                    />
+                    <span style={{ color: colors.muted, fontSize: '12px' }}>{item.day}</span>
+                  </div>
+                ))
+              }
+              
+              // Calculate dynamic max value for better scaling
+              const maxViews = Math.max(...chartData.map(item => item.views || 0), 1) // Ensure minimum of 1
+              const minHeight = 8 // Minimum bar height in pixels for visibility
+              
+              return chartData.map((item, index) => (
+                <div key={index} style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  flex: 1,
+                  position: 'relative'
+                }}>
+                  <div 
+                    style={{
+                      width: '100%',
+                      height: `${Math.max(minHeight, (item.views / maxViews) * 160)}px`,
+                      background: hoveredBar === index 
+                        ? `linear-gradient(to top, ${colors.accent}, ${colors.accent})`
+                        : `linear-gradient(to top, ${colors.accent}, ${colors.accent}80)`,
+                      borderRadius: '4px 4px 0 0',
+                      marginBottom: '8px',
+                      transition: 'all 0.3s ease',
+                      cursor: 'pointer',
+                      transform: hoveredBar === index ? 'scaleY(1.05)' : 'scaleY(1)'
+                    }}
+                    onMouseEnter={(e) => {
+                      setHoveredBar(index)
+                      const rect = e.target.getBoundingClientRect()
+                      setMousePosition({ 
+                        x: rect.left + rect.width / 2, 
+                        y: rect.top - 10 
+                      })
+                    }}
+                    onMouseLeave={() => {
+                      setHoveredBar(null)
+                    }}
+                  />
+                  <span style={{ color: colors.muted, fontSize: '12px' }}>{item.day}</span>
+                </div>
+              ))
+            })()}
           </div>
+
+          {/* Tooltip */}
+          {hoveredBar !== null && (
+            <div style={{
+              position: 'fixed',
+              left: `${mousePosition.x}px`,
+              top: `${mousePosition.y}px`,
+              transform: 'translate(-50%, -100%)',
+              background: colors.surface,
+              border: `1px solid ${colors.border}`,
+              borderRadius: '8px',
+              padding: '8px 12px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+              zIndex: 1000,
+              pointerEvents: 'none',
+              fontSize: '12px',
+              color: colors.text,
+              whiteSpace: 'nowrap'
+            }}>
+              <div style={{ fontWeight: '600', marginBottom: '2px' }}>
+                {(() => {
+                  const chartData = analyticsData.profile_views_chart || []
+                  const totalProfileViews = analyticsData.profile_views || 0
+                  const chartHasData = chartData.length > 0 && chartData.some(item => (item.views || 0) > 0)
+                  
+                  // Use fallback data if no meaningful chart data
+                  if (!chartHasData && totalProfileViews > 0) {
+                    return 'Today'
+                  }
+                  return chartData[hoveredBar]?.day || 'Unknown'
+                })()}
+              </div>
+              <div style={{ color: colors.accent, fontWeight: '600' }}>
+                {(() => {
+                  const chartData = analyticsData.profile_views_chart || []
+                  const totalProfileViews = analyticsData.profile_views || 0
+                  const chartHasData = chartData.length > 0 && chartData.some(item => (item.views || 0) > 0)
+                  
+                  // Use fallback data if no meaningful chart data
+                  if (!chartHasData && totalProfileViews > 0) {
+                    return `${totalProfileViews} view${totalProfileViews !== 1 ? 's' : ''}`
+                  }
+                  const views = chartData[hoveredBar]?.views || 0
+                  return `${views} view${views !== 1 ? 's' : ''}`
+                })()}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Visitor Devices */}
@@ -517,7 +705,7 @@ const AnalyticsSection = ({ user }) => {
                 <HiDevicePhoneMobile style={{ color: colors.accent, fontSize: '16px' }} />
                 <span style={{ color: colors.text, fontSize: '14px' }}>Mobile</span>
               </div>
-              <span style={{ color: colors.text, fontWeight: '600' }}>{(analyticsData.devices && analyticsData.devices.mobile) || 0}%</span>
+              <span style={{ color: colors.text, fontWeight: '600' }}>{analyticsData.devices?.mobile ? parseFloat(analyticsData.devices.mobile).toFixed(1) : 0}%</span>
             </div>
             
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -525,7 +713,7 @@ const AnalyticsSection = ({ user }) => {
                 <HiComputerDesktop style={{ color: colors.accent, fontSize: '16px' }} />
                 <span style={{ color: colors.text, fontSize: '14px' }}>Desktop</span>
               </div>
-              <span style={{ color: colors.text, fontWeight: '600' }}>{(analyticsData.devices && analyticsData.devices.desktop) || 0}%</span>
+              <span style={{ color: colors.text, fontWeight: '600' }}>{analyticsData.devices?.desktop ? parseFloat(analyticsData.devices.desktop).toFixed(1) : 0}%</span>
             </div>
             
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -533,7 +721,7 @@ const AnalyticsSection = ({ user }) => {
                 <HiChartPie style={{ color: colors.accent, fontSize: '16px' }} />
                 <span style={{ color: colors.text, fontSize: '14px' }}>Tablet</span>
               </div>
-              <span style={{ color: colors.text, fontWeight: '600' }}>{(analyticsData.devices && analyticsData.devices.tablet) || 0}%</span>
+              <span style={{ color: colors.text, fontWeight: '600' }}>{analyticsData.devices?.tablet ? parseFloat(analyticsData.devices.tablet).toFixed(1) : 0}%</span>
             </div>
           </div>
         </div>
@@ -589,7 +777,7 @@ const AnalyticsSection = ({ user }) => {
                   <span style={{ color: colors.text, fontSize: '14px' }}>{referrer.source}</span>
                 </div>
                 <span style={{ color: colors.text, fontWeight: '600', fontSize: '14px' }}>
-                  {referrer.visits}%
+                  {referrer.visits ? parseFloat(referrer.visits).toFixed(1) : 0}%
                 </span>
               </div>
             ))}

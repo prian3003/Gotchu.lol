@@ -34,7 +34,7 @@ const getRarityEffects = (rarity) => {
 }
 
 // Enhanced Badge Item Component
-const EnhancedBadgeItem = ({ badge, isShowcased = false, onToggleShowcase, canReorder = false }) => {
+const EnhancedBadgeItem = ({ badge, isShowcased = false, onToggleShowcase, onClaimBadge, canReorder = false }) => {
   const { colors } = useTheme()
   const rarityEffects = getRarityEffects(badge.rarity)
   
@@ -104,15 +104,28 @@ const EnhancedBadgeItem = ({ badge, isShowcased = false, onToggleShowcase, canRe
           gap: '8px'
         }}>
           {badge.name}
-          <span style={{
-            background: colors.accent,
-            color: 'white',
-            fontSize: '10px',
-            fontWeight: '600',
-            padding: '2px 6px',
-            borderRadius: '12px',
-            textTransform: 'uppercase'
-          }}>Earned</span>
+          {badge.earned ? (
+            <span style={{
+              background: colors.accent,
+              color: 'white',
+              fontSize: '10px',
+              fontWeight: '600',
+              padding: '2px 6px',
+              borderRadius: '12px',
+              textTransform: 'uppercase'
+            }}>Earned</span>
+          ) : badge.is_claimable ? (
+            <span style={{
+              background: '#f59e0b',
+              color: 'white',
+              fontSize: '10px',
+              fontWeight: '600',
+              padding: '2px 6px',
+              borderRadius: '12px',
+              textTransform: 'uppercase',
+              animation: 'pulse 2s infinite'
+            }}>Claimable!</span>
+          ) : null}
           {badge.rarity !== 'COMMON' && (
             <span style={{
               background: getRarityColor(badge.rarity),
@@ -134,7 +147,33 @@ const EnhancedBadgeItem = ({ badge, isShowcased = false, onToggleShowcase, canRe
       </div>
       
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        {onToggleShowcase && (
+        {badge.is_claimable && onClaimBadge && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onClaimBadge(badge.id)
+            }}
+            style={{
+              background: '#f59e0b',
+              border: `1px solid #f59e0b`,
+              borderRadius: '8px',
+              padding: '6px 12px',
+              color: 'white',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '500',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              animation: 'pulse 2s infinite'
+            }}
+          >
+            <Icon icon="mdi:gift" style={{ fontSize: '14px' }} />
+            Claim Badge
+          </button>
+        )}
+        {badge.earned && onToggleShowcase && (
           <button
             onClick={(e) => {
               e.stopPropagation()
@@ -300,6 +339,7 @@ const BadgesSection = ({ user }) => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [earnedBadges, setEarnedBadges] = useState([])
+  const [claimableBadges, setClaimableBadges] = useState([])
   const [unearnedBadges, setUnearnedBadges] = useState([])
   const [showcasedBadges, setShowcasedBadges] = useState([])
   const [nonShowcasedBadges, setNonShowcasedBadges] = useState([])
@@ -323,7 +363,7 @@ const BadgesSection = ({ user }) => {
         throw new Error('User information not available')
       }
       
-      const response = await fetch(`/api/users/${user.username}/badges`, {
+      const response = await fetch(`http://localhost:8080/api/users/${user.username}/badges`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -357,6 +397,7 @@ const BadgesSection = ({ user }) => {
             target_value: badgeData.target_value,
             is_visible: badgeData.is_visible,
             is_showcased: badgeData.is_showcased,
+            is_claimable: badgeData.is_claimable,
             user_progress: {
               is_earned: badgeData.is_earned,
               progress: badgeData.progress,
@@ -372,9 +413,10 @@ const BadgesSection = ({ user }) => {
           return badge
         })
         
-        // Separate earned and unearned badges
+        // Separate badges by status
         const earned = allBadges.filter(badge => badge.earned)
-        const unearned = allBadges.filter(badge => !badge.earned)
+        const claimable = allBadges.filter(badge => !badge.earned && badge.is_claimable)
+        const unearned = allBadges.filter(badge => !badge.earned && !badge.is_claimable)
         
         // Separate showcased and non-showcased earned badges
         const showcased = earned.filter(badge => badge.is_showcased)
@@ -394,6 +436,7 @@ const BadgesSection = ({ user }) => {
         })
         
         setEarnedBadges(earned)
+        setClaimableBadges(claimable)
         setUnearnedBadges(unearned)
         setShowcasedBadges(showcased)
         setNonShowcasedBadges(nonShowcased)
@@ -418,21 +461,16 @@ const BadgesSection = ({ user }) => {
   // Toggle badge showcase status
   const toggleBadgeShowcase = async (badgeId, currentShowcaseStatus) => {
     try {
-      const token = localStorage.getItem('token')
-      const sessionId = localStorage.getItem('sessionId')
-      
       // Find the badge to get its current order
       const badge = earnedBadges.find(b => b.id === badgeId)
       if (!badge) return
       
-      const response = await fetch('/api/badges/order', {
+      const response = await fetch('http://localhost:8080/api/badges/order', {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || '',
+          'Content-Type': 'application/json'
         },
-        credentials: 'include',
+        credentials: 'include', // Use httpOnly cookies for auth
         body: JSON.stringify({
           badge_orders: [{
             badge_id: badgeId,
@@ -459,17 +497,12 @@ const BadgesSection = ({ user }) => {
     try {
       setIsCheckingBadges(true)
       
-      const token = localStorage.getItem('token')
-      const sessionId = localStorage.getItem('sessionId')
-      
-      const response = await fetch('/api/badges/check', {
+      const response = await fetch('http://localhost:8080/api/badges/check', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-Session-ID': sessionId || '',
+          'Content-Type': 'application/json'
         },
-        credentials: 'include',
+        credentials: 'include', // Use httpOnly cookies for auth
       })
 
       const data = await response.json()
@@ -492,29 +525,58 @@ const BadgesSection = ({ user }) => {
     }
   }
 
+  // Claim a badge
+  const claimBadge = async (badgeId) => {
+    try {
+      const response = await fetch(`http://localhost:8080/api/badges/claim/${badgeId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include', // Use httpOnly cookies for auth
+      })
+
+      const data = await response.json()
+      
+      if (data.success) {
+        // Refresh badges after claiming
+        await fetchBadges()
+        // You could add a success toast notification here
+      } else {
+        throw new Error(data.message || 'Failed to claim badge')
+      }
+    } catch (err) {
+      console.error('Error claiming badge:', err)
+      setError(err.message)
+    }
+  }
+
 
   // Helper functions for badge data conversion
   const getIconFromBadge = (badge) => {
     // Map badge names to Iconify icons
     const badgeIconMap = {
-      'staff': 'mdi:star-shooting',
-      'helper': 'mdi:help-circle',
-      'premium': 'mdi:diamond',
-      'verified': 'mdi:check-decagram',
-      'donor': 'mdi:gift',
-      'og': 'mdi:trophy',
-      'gifter': 'mdi:gift-outline',
-      'server booster': 'mdi:rocket',
-      'serverbooster': 'mdi:rocket',
-      'winner': 'mdi:trophy-variant',
-      'second place': 'mdi:medal',
-      'secondplace': 'mdi:medal',
-      'third place': 'mdi:medal-outline',
-      'thirdplace': 'mdi:medal-outline',
-      'image host': 'mdi:image',
-      'imagehost': 'mdi:image',
-      'bug hunter': 'mdi:bug',
-      'bughunter': 'mdi:bug',
+      'staff': 'lucide:star',
+      'helper': 'lucide:help-circle',
+      'premium': 'lucide:gem',
+      'verified': 'lucide:badge-check',
+      'donor': 'lucide:gift',
+      'og': 'lucide:trophy',
+      'gifter': 'lucide:gift',
+      'server booster': 'lucide:rocket',
+      'serverbooster': 'lucide:rocket',
+      'winner': 'lucide:trophy',
+      'second place': 'lucide:medal',
+      'secondplace': 'lucide:medal',
+      'third place': 'lucide:medal',
+      'thirdplace': 'lucide:medal',
+      'image host': 'lucide:image',
+      'imagehost': 'lucide:image',
+      'bug hunter': 'lucide:bug',
+      'bughunter': 'lucide:bug',
+      'welcome': 'lucide:user-plus',
+      'first link': 'lucide:link',
+      'popular': 'lucide:eye',
       'easter 2025': 'mdi:egg-easter',
       'easter2025': 'mdi:egg-easter',
       'christmas 2024': 'mdi:pine-tree',
@@ -601,7 +663,7 @@ const BadgesSection = ({ user }) => {
         is_showcased: true
       }))
       
-      const response = await fetch('/api/badges/order', {
+      const response = await fetch('http://localhost:8080/api/badges/order', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -678,7 +740,7 @@ const BadgesSection = ({ user }) => {
                     animation: isCheckingBadges ? 'spin 1s linear infinite' : 'none',
                     transformOrigin: 'center'
                   }} />
-            {isCheckingBadges ? 'Checking...' : 'Check Badges'}
+            {isCheckingBadges ? 'Checking...' : 'Check for New Badges'}
           </button>
           <div style={{
             position: 'relative',
@@ -829,6 +891,54 @@ const BadgesSection = ({ user }) => {
                     badge={badge}
                     isShowcased={false}
                     onToggleShowcase={toggleBadgeShowcase}
+                    onClaimBadge={claimBadge}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Claimable Badges Section */}
+          {claimableBadges.length > 0 && (
+            <>
+              <h2 style={{
+                fontSize: '20px',
+                fontWeight: '600',
+                margin: '32px 0 16px 0',
+                color: colors.text,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <Icon icon="mdi:gift" style={{ color: '#f59e0b', fontSize: '24px' }} />
+                Claimable Badges ({claimableBadges.length})
+              </h2>
+              <p style={{
+                color: colors.muted,
+                margin: '0 0 16px 0',
+                fontSize: '14px'
+              }}>
+                🎉 You've met the requirements for these badges! Click "Claim Badge" to earn them.
+              </p>
+              
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+                  gap: '16px',
+                  marginBottom: '40px',
+                  padding: '20px',
+                  background: `linear-gradient(135deg, #f59e0b10, #f59e0b20)`,
+                  borderRadius: '16px',
+                  border: `1px solid #f59e0b30`
+                }}
+              >
+                {claimableBadges.map((badge) => (
+                  <EnhancedBadgeItem
+                    key={badge.id}
+                    badge={badge}
+                    isShowcased={false}
+                    onClaimBadge={claimBadge}
                   />
                 ))}
               </div>

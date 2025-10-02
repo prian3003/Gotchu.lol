@@ -1,11 +1,11 @@
-const API_BASE_URL = 'http://localhost:8080/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL 
+  ? `${import.meta.env.VITE_API_URL}/api` 
+  : 'http://localhost:8080/api'
 
-// Helper function to get auth headers
+// Helper function to get auth headers - now uses cookie authentication
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('token')
   return {
-    'Content-Type': 'application/json',
-    ...(token && { 'Authorization': `Bearer ${token}` })
+    'Content-Type': 'application/json'
   }
 }
 
@@ -24,6 +24,7 @@ export const authAPI = {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', // Use httpOnly cookies for auth
       body: JSON.stringify(credentials)
     })
     return handleResponse(response)
@@ -33,6 +34,7 @@ export const authAPI = {
     const response = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', // Use httpOnly cookies for auth
       body: JSON.stringify(userData)
     })
     return handleResponse(response)
@@ -41,7 +43,8 @@ export const authAPI = {
   logout: async () => {
     const response = await fetch(`${API_BASE_URL}/auth/logout`, {
       method: 'POST',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(),
+      credentials: 'include' // Use httpOnly cookies for auth
     })
     return handleResponse(response)
   },
@@ -49,7 +52,8 @@ export const authAPI = {
   refreshToken: async () => {
     const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
       method: 'POST',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(),
+      credentials: 'include' // Use httpOnly cookies for auth
     })
     return handleResponse(response)
   }
@@ -60,7 +64,8 @@ export const userAPI = {
   getProfile: async () => {
     const response = await fetch(`${API_BASE_URL}/user/profile`, {
       method: 'GET',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(),
+      credentials: 'include' // Use httpOnly cookies for auth
     })
     return handleResponse(response)
   },
@@ -69,18 +74,16 @@ export const userAPI = {
     const response = await fetch(`${API_BASE_URL}/user/profile`, {
       method: 'PUT',
       headers: getAuthHeaders(),
+      credentials: 'include', // Use httpOnly cookies for auth
       body: JSON.stringify(profileData)
     })
     return handleResponse(response)
   },
 
   uploadAvatar: async (formData) => {
-    const token = localStorage.getItem('token')
     const response = await fetch(`${API_BASE_URL}/user/avatar`, {
       method: 'POST',
-      headers: {
-        ...(token && { 'Authorization': `Bearer ${token}` })
-      },
+      credentials: 'include', // Use httpOnly cookies for auth
       body: formData
     })
     return handleResponse(response)
@@ -89,18 +92,17 @@ export const userAPI = {
   deleteAccount: async () => {
     const response = await fetch(`${API_BASE_URL}/user/delete`, {
       method: 'DELETE',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(),
+      credentials: 'include' // Use httpOnly cookies for auth
     })
     return handleResponse(response)
   },
 
   exportData: async () => {
-    const token = localStorage.getItem('token')
     const response = await fetch(`${API_BASE_URL}/user/export`, {
       method: 'GET',
-      headers: {
-        ...(token && { 'Authorization': `Bearer ${token}` })
-      }
+      headers: getAuthHeaders(),
+      credentials: 'include' // Use httpOnly cookies for auth
     })
     
     if (!response.ok) {
@@ -114,7 +116,8 @@ export const userAPI = {
   getPublicProfile: async (username) => {
     const response = await fetch(`${API_BASE_URL}/users/${username}`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include' // Use httpOnly cookies for auth
     })
     return handleResponse(response)
   }
@@ -125,7 +128,8 @@ export const dashboardAPI = {
   getDashboard: async () => {
     const response = await fetch(`${API_BASE_URL}/dashboard`, {
       method: 'GET',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(),
+      credentials: 'include' // Use httpOnly cookies for auth
     })
     return handleResponse(response)
   },
@@ -133,7 +137,8 @@ export const dashboardAPI = {
   getAnalytics: async (timeframe = '7d') => {
     const response = await fetch(`${API_BASE_URL}/analytics?timeframe=${timeframe}`, {
       method: 'GET',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(),
+      credentials: 'include' // Use httpOnly cookies for auth
     })
     return handleResponse(response)
   }
@@ -144,7 +149,8 @@ export const linksAPI = {
   getLinks: async () => {
     const response = await fetch(`${API_BASE_URL}/links`, {
       method: 'GET',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(),
+      credentials: 'include' // Use httpOnly cookies for auth
     })
     return handleResponse(response)
   },
@@ -153,6 +159,7 @@ export const linksAPI = {
     const response = await fetch(`${API_BASE_URL}/links`, {
       method: 'POST',
       headers: getAuthHeaders(),
+      credentials: 'include', // Use httpOnly cookies for auth
       body: JSON.stringify(linkData)
     })
     return handleResponse(response)
@@ -162,6 +169,7 @@ export const linksAPI = {
     const response = await fetch(`${API_BASE_URL}/links/${linkId}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
+      credentials: 'include', // Use httpOnly cookies for auth
       body: JSON.stringify(linkData)
     })
     return handleResponse(response)
@@ -170,7 +178,8 @@ export const linksAPI = {
   deleteLink: async (linkId) => {
     const response = await fetch(`${API_BASE_URL}/links/${linkId}`, {
       method: 'DELETE',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(),
+      credentials: 'include' // Use httpOnly cookies for auth
     })
     return handleResponse(response)
   },
@@ -195,7 +204,8 @@ export const customizationAPI = {
   getSettings: async () => {
     const response = await fetch(`${API_BASE_URL}/customization`, {
       method: 'GET',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(),
+      credentials: 'include' // Use httpOnly cookies for auth
     })
     return handleResponse(response)
   },
@@ -204,42 +214,34 @@ export const customizationAPI = {
     const response = await fetch(`${API_BASE_URL}/customization`, {
       method: 'PUT',
       headers: getAuthHeaders(),
+      credentials: 'include', // Use httpOnly cookies for auth
       body: JSON.stringify(settings)
     })
     return handleResponse(response)
   },
 
   uploadBackground: async (formData) => {
-    const token = localStorage.getItem('token')
     const response = await fetch(`${API_BASE_URL}/customization/background`, {
       method: 'POST',
-      headers: {
-        ...(token && { 'Authorization': `Bearer ${token}` })
-      },
+      credentials: 'include', // Use httpOnly cookies for auth
       body: formData
     })
     return handleResponse(response)
   },
 
   uploadAudio: async (formData) => {
-    const token = localStorage.getItem('token')
     const response = await fetch(`${API_BASE_URL}/customization/audio`, {
       method: 'POST',
-      headers: {
-        ...(token && { 'Authorization': `Bearer ${token}` })
-      },
+      credentials: 'include', // Use httpOnly cookies for auth
       body: formData
     })
     return handleResponse(response)
   },
 
   uploadCursor: async (formData) => {
-    const token = localStorage.getItem('token')
     const response = await fetch(`${API_BASE_URL}/customization/cursor`, {
       method: 'POST',
-      headers: {
-        ...(token && { 'Authorization': `Bearer ${token}` })
-      },
+      credentials: 'include', // Use httpOnly cookies for auth
       body: formData
     })
     return handleResponse(response)
@@ -248,7 +250,8 @@ export const customizationAPI = {
   resetSettings: async () => {
     const response = await fetch(`${API_BASE_URL}/customization/reset`, {
       method: 'POST',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(),
+      credentials: 'include' // Use httpOnly cookies for auth
     })
     return handleResponse(response)
   }

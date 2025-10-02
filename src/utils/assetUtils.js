@@ -2,15 +2,11 @@
 
 export const deleteAsset = async (assetType, filePath) => {
   try {
-    const token = localStorage.getItem('authToken')
-    const sessionId = localStorage.getItem('sessionId')
-    
     const response = await fetch('/api/assets/delete', {
       method: 'DELETE',
+      credentials: 'include',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : '',
-        'X-Session-ID': sessionId || '',
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         filePath,

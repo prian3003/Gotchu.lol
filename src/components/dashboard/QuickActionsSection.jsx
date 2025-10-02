@@ -52,12 +52,12 @@ const QuickActionsSection = ({ user, onNavigate }) => {
 
   const handleExportData = async () => {
     try {
-      const token = localStorage.getItem('token')
       const response = await fetch('http://localhost:8080/api/user/export', {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${token}`
-        }
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include' // Use httpOnly cookies for auth
       })
 
       if (response.ok) {

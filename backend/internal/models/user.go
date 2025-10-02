@@ -63,6 +63,22 @@ type User struct {
 	ProfileGradient         bool      `json:"profile_gradient" gorm:"default:true"`
 	TextFont                *string   `json:"text_font,omitempty" gorm:"size:100"`
 	CurrentTemplateID       *uint     `json:"current_template_id,omitempty"`
+	
+	// Splash Screen Settings
+	EnableSplashScreen      bool      `json:"enable_splash_screen" gorm:"default:true"`
+	SplashText              *string   `json:"splash_text,omitempty" gorm:"size:100;default:'click here'"`
+	SplashSubText           *string   `json:"splash_sub_text,omitempty" gorm:"size:200"`
+	ShowSplashSubText       bool      `json:"show_splash_sub_text" gorm:"default:true"`
+	SplashFontSize          *string   `json:"splash_font_size,omitempty" gorm:"size:20;default:'3rem'"`
+	SplashAnimated          bool      `json:"splash_animated" gorm:"default:true"`
+	SplashGlowEffect        bool      `json:"splash_glow_effect" gorm:"default:false"`
+	SplashShowParticles     bool      `json:"splash_show_particles" gorm:"default:true"`
+	SplashAutoHide          bool      `json:"splash_auto_hide" gorm:"default:false"`
+	SplashAutoHideDelay     int       `json:"splash_auto_hide_delay" gorm:"default:5000"`
+	SplashBackgroundVisible bool      `json:"splash_background_visible" gorm:"default:true"`
+	SplashBackgroundColor   *string   `json:"splash_background_color,omitempty" gorm:"size:10;default:'#0a0a0a'"`
+	SplashTransparent       bool      `json:"splash_transparent" gorm:"default:false"`
+	
 	LastLoginAt             *time.Time `json:"last_login_at,omitempty"`
 	
 	// Role and Badge Related Fields

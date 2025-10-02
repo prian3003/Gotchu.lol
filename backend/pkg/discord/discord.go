@@ -39,6 +39,114 @@ type DiscordUser struct {
 	PublicFlags   int    `json:"public_flags"`
 }
 
+// DiscordBadge represents a Discord badge
+type DiscordBadge struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Icon        string `json:"icon"`
+}
+
+// Discord Public Flags constants
+const (
+	DiscordEmployee          = 1 << 0  // Discord Staff
+	DiscordPartner           = 1 << 1  // Partnered Server Owner
+	HypeSquadEvents          = 1 << 2  // HypeSquad Events
+	BugHunterLevel1          = 1 << 3  // Bug Hunter Level 1
+	HouseBravery             = 1 << 6  // House of Bravery
+	HouseBrilliance          = 1 << 7  // House of Brilliance
+	HouseBalance             = 1 << 8  // House of Balance
+	EarlySupporter           = 1 << 9  // Early Supporter
+	TeamUser                 = 1 << 10 // Team User
+	BugHunterLevel2          = 1 << 14 // Bug Hunter Level 2
+	VerifiedBot              = 1 << 16 // Verified Bot
+	EarlyVerifiedBotDeveloper = 1 << 17 // Early Verified Bot Developer
+	DiscordCertifiedModerator = 1 << 18 // Discord Certified Moderator
+	BotHTTPInteractions      = 1 << 19 // Bot uses only HTTP interactions
+)
+
+// GetDiscordBadges converts Discord public flags to badge objects
+func GetDiscordBadges(publicFlags int) []DiscordBadge {
+	var badges []DiscordBadge
+
+	flagMap := map[int]DiscordBadge{
+		DiscordEmployee: {
+			ID:          "discord_employee",
+			Name:        "Discord Staff",
+			Description: "Discord Team Member",
+			Icon:        "https://cdn.discordapp.com/badge-icons/5e74e9b61934fc1f67c65515d1f7e60d.png",
+		},
+		DiscordPartner: {
+			ID:          "discord_partner",
+			Name:        "Discord Partner",
+			Description: "Partnered Server Owner",
+			Icon:        "https://cdn.discordapp.com/badge-icons/3f9748e53446a137a052f3454e2de41e.png",
+		},
+		HypeSquadEvents: {
+			ID:          "hypesquad_events",
+			Name:        "HypeSquad Events",
+			Description: "HypeSquad Events Organizer",
+			Icon:        "https://cdn.discordapp.com/badge-icons/bf01d1073931f921909045f3a39fd264.png",
+		},
+		BugHunterLevel1: {
+			ID:          "bug_hunter_1",
+			Name:        "Bug Hunter",
+			Description: "Discord Bug Hunter Level 1",
+			Icon:        "https://cdn.discordapp.com/badge-icons/2717692c7dca7289b35297368a940dd0.png",
+		},
+		HouseBravery: {
+			ID:          "house_bravery",
+			Name:        "HypeSquad Bravery",
+			Description: "House of Bravery Member",
+			Icon:        "https://cdn.discordapp.com/badge-icons/8a88d63823d8a71cd5e390baa45efa02.png",
+		},
+		HouseBrilliance: {
+			ID:          "house_brilliance",
+			Name:        "HypeSquad Brilliance",
+			Description: "House of Brilliance Member",
+			Icon:        "https://cdn.discordapp.com/badge-icons/011940fd013da3f7fb926e4a1cd2e618.png",
+		},
+		HouseBalance: {
+			ID:          "house_balance",
+			Name:        "HypeSquad Balance",
+			Description: "House of Balance Member",
+			Icon:        "https://cdn.discordapp.com/badge-icons/3aa41de486fa12454c3761e8e223442e.png",
+		},
+		EarlySupporter: {
+			ID:          "early_supporter",
+			Name:        "Early Supporter",
+			Description: "Early Nitro Supporter",
+			Icon:        "https://cdn.discordapp.com/badge-icons/7060786766c9c840eb3019e725d2b358.png",
+		},
+		BugHunterLevel2: {
+			ID:          "bug_hunter_2",
+			Name:        "Bug Hunter Gold",
+			Description: "Discord Bug Hunter Level 2",
+			Icon:        "https://cdn.discordapp.com/badge-icons/848f79194d4be5ff5f81505cbd0ce1e6.png",
+		},
+		EarlyVerifiedBotDeveloper: {
+			ID:          "early_bot_dev",
+			Name:        "Early Bot Developer",
+			Description: "Early Verified Bot Developer",
+			Icon:        "https://cdn.discordapp.com/badge-icons/6bdc42827a38498929a4920da12695d9.png",
+		},
+		DiscordCertifiedModerator: {
+			ID:          "certified_mod",
+			Name:        "Discord Moderator",
+			Description: "Discord Certified Moderator",
+			Icon:        "https://cdn.discordapp.com/badge-icons/fee1624003e2fee35cb398e125dc479b.png",
+		},
+	}
+
+	for flag, badge := range flagMap {
+		if publicFlags&flag != 0 {
+			badges = append(badges, badge)
+		}
+	}
+
+	return badges
+}
+
 // TokenResponse represents Discord OAuth2 token response
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
