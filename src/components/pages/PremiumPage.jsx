@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { Icon } from '@iconify/react'
 import ParticleBackground from '../effects/ParticleBackground'
 
 const PremiumPage = () => {
   const { colors } = useTheme()
+  const { isAuthenticated } = useAuth()
+  const navigate = useNavigate()
   const [openFAQ, setOpenFAQ] = useState(null)
   const [isVisible, setIsVisible] = useState(false)
 
@@ -93,9 +97,27 @@ const PremiumPage = () => {
     setOpenFAQ(openFAQ === index ? null : index)
   }
 
+  const handlePurchase = () => {
+    if (isAuthenticated) {
+      // Navigate to dashboard with premium modal open
+      navigate('/dashboard', { state: { openPremiumModal: true } })
+    } else {
+      // Navigate to signup
+      navigate('/signup')
+    }
+  }
+
+  const handleGetStartedFree = () => {
+    if (isAuthenticated) {
+      navigate('/dashboard')
+    } else {
+      navigate('/signup')
+    }
+  }
+
   return (
     <div style={{
-      background: colors.background,
+      background: `linear-gradient(135deg, ${colors.background} 0%, ${colors.surface} 50%, ${colors.background} 100%)`,
       color: colors.text,
       minHeight: '100vh',
       position: 'relative',
@@ -105,10 +127,11 @@ const PremiumPage = () => {
       
       {/* Hero Section */}
       <div style={{
-        padding: '80px 24px',
+        padding: '120px 24px 80px',
         textAlign: 'center',
         position: 'relative',
-        zIndex: 2
+        zIndex: 2,
+        background: `radial-gradient(ellipse at center, ${colors.accent}08 0%, transparent 70%)`
       }}>
         <div style={{
           maxWidth: '1200px',
@@ -238,18 +261,29 @@ const PremiumPage = () => {
                 ))}
               </div>
 
-              <button style={{
-                width: '100%',
-                padding: '16px',
-                background: 'transparent',
-                border: `2px solid ${colors.border}`,
-                borderRadius: '12px',
-                color: colors.text,
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                transition: 'all 0.3s ease'
-              }}>
+              <button 
+                onClick={handleGetStartedFree}
+                style={{
+                  width: '100%',
+                  padding: '16px',
+                  background: 'transparent',
+                  border: `2px solid ${colors.border}`,
+                  borderRadius: '12px',
+                  color: colors.text,
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.borderColor = colors.accent
+                  e.target.style.background = `${colors.accent}10`
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.borderColor = colors.border
+                  e.target.style.background = 'transparent'
+                }}
+              >
                 Get Started Free
               </button>
             </div>
@@ -350,12 +384,10 @@ const PremiumPage = () => {
                 ))}
               </div>
 
-              <div style={{
-                display: 'flex',
-                gap: '12px'
-              }}>
-                <button style={{
-                  flex: 1,
+              <button 
+                onClick={handlePurchase}
+                style={{
+                  width: '100%',
                   padding: '16px',
                   background: colors.accent,
                   border: 'none',
@@ -369,26 +401,19 @@ const PremiumPage = () => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '8px'
-                }}>
-                  Purchase Now
-                  <Icon icon="mdi:arrow-right" />
-                </button>
-                <button style={{
-                  width: '50px',
-                  height: '50px',
-                  background: `${colors.accent}20`,
-                  border: `1px solid ${colors.accent}`,
-                  borderRadius: '12px',
-                  color: colors.accent,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.3s ease'
-                }}>
-                  <Icon icon="mdi:gift" style={{ fontSize: '20px' }} />
-                </button>
-              </div>
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-2px)'
+                  e.target.style.boxShadow = `0 8px 25px ${colors.accent}40`
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'translateY(0)'
+                  e.target.style.boxShadow = 'none'
+                }}
+              >
+                Purchase Now
+                <Icon icon="mdi:arrow-right" />
+              </button>
             </div>
           </div>
         </div>
@@ -501,19 +526,21 @@ const PremiumPage = () => {
             Everything you need to know about gotchu.lol Premium
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {faqItems.map((item, index) => (
               <div key={index} style={{
                 background: colors.surface,
                 border: `1px solid ${colors.border}`,
-                borderRadius: '12px',
-                overflow: 'hidden'
+                borderRadius: '16px',
+                overflow: 'hidden',
+                transition: 'all 0.3s ease',
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)'
               }}>
                 <button
                   onClick={() => toggleFAQ(index)}
                   style={{
                     width: '100%',
-                    padding: '24px',
+                    padding: '28px',
                     background: 'transparent',
                     border: 'none',
                     color: colors.text,
@@ -523,7 +550,14 @@ const PremiumPage = () => {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    textAlign: 'left'
+                    textAlign: 'left',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.background = `${colors.accent}08`
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.background = 'transparent'
                   }}
                 >
                   <span>{item.question}</span>
@@ -538,10 +572,13 @@ const PremiumPage = () => {
                 </button>
                 {openFAQ === index && (
                   <div style={{
-                    padding: '0 24px 24px',
+                    padding: '0 28px 28px',
                     color: colors.muted,
-                    lineHeight: '1.6',
-                    borderTop: `1px solid ${colors.border}`
+                    lineHeight: '1.7',
+                    fontSize: '1rem',
+                    borderTop: `1px solid ${colors.border}`,
+                    animation: 'fadeInDown 0.3s ease-out',
+                    backgroundColor: `${colors.accent}02`
                   }}>
                     {item.answer}
                   </div>
@@ -556,7 +593,7 @@ const PremiumPage = () => {
       <div style={{
         padding: '80px 24px',
         textAlign: 'center',
-        background: `linear-gradient(135deg, ${colors.accent}10, transparent)`,
+        background: `radial-gradient(ellipse at center, ${colors.accent}08 0%, transparent 70%)`,
         position: 'relative',
         zIndex: 2
       }}>
@@ -577,25 +614,50 @@ const PremiumPage = () => {
           }}>
             Join thousands of users creating amazing profiles with gotchu.lol
           </p>
-          <button style={{
-            background: colors.accent,
-            border: 'none',
-            borderRadius: '12px',
-            padding: '16px 32px',
-            color: 'white',
-            fontSize: '1.1rem',
-            fontWeight: '600',
-            cursor: 'pointer',
-            transition: 'all 0.3s ease',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}>
+          <button 
+            onClick={handlePurchase}
+            style={{
+              background: colors.accent,
+              border: 'none',
+              borderRadius: '12px',
+              padding: '18px 36px',
+              color: 'white',
+              fontSize: '1.1rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: `0 6px 20px ${colors.accent}30`
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.transform = 'translateY(-3px)'
+              e.target.style.boxShadow = `0 10px 30px ${colors.accent}40`
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.transform = 'translateY(0)'
+              e.target.style.boxShadow = `0 6px 20px ${colors.accent}30`
+            }}
+          >
             Get Started Now
             <Icon icon="mdi:rocket-launch" />
           </button>
         </div>
       </div>
+
+      <style>{`
+        @keyframes fadeInDown {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   )
 }

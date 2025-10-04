@@ -109,6 +109,15 @@ const Dashboard = ({ defaultSection = 'overview' }) => {
     }
   }, [activeSection, handleSectionChange])
 
+  // Handle location state for opening premium modal (from pricing page)
+  useEffect(() => {
+    if (location.state?.openPremiumModal) {
+      setShowPremiumModal(true)
+      // Clear the state to prevent modal opening on subsequent visits
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+  }, [location.state, navigate, location.pathname])
+
   // Sidebar configuration
   const sidebarItems = [
     { 
