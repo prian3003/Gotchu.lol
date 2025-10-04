@@ -221,7 +221,6 @@ const SettingsSection = ({ user, onUserUpdate }) => {
       }
       
     } catch (error) {
-      console.error('Settings save error:', error)
       toast.error('Connection Error', 'Failed to save settings. Please check your connection and try again.')
     } finally {
       setIsSaving(false)
@@ -229,15 +228,12 @@ const SettingsSection = ({ user, onUserUpdate }) => {
   }
 
   const handle2FASetup = async () => {
-    console.log('2FA Setup button clicked!')
     try {
-      console.log('Setting show2FAModal to true')
       setShow2FAModal(true)
       setTwoFAStep(1)
       setIsLoading(true)
       
       // API call to generate 2FA secret from backend using cookies
-      console.log('Making 2FA API call with cookie authentication')
       
       const response = await fetch('/api/auth/2fa/generate', {
         method: 'POST',
@@ -260,7 +256,6 @@ const SettingsSection = ({ user, onUserUpdate }) => {
         }
       } else {
         const errorText = await response.text()
-        console.log('2FA Error Response:', { status: response.status, body: errorText })
         
         try {
           const error = JSON.parse(errorText)
@@ -893,7 +888,6 @@ const SettingsSection = ({ user, onUserUpdate }) => {
 
       {/* 2FA Setup Modal */}
       {show2FAModal && <TwoFactorModal />}
-      {console.log('Modal render check:', { show2FAModal })}
       
       {/* Change Password Modal */}
       <ChangePasswordModal 

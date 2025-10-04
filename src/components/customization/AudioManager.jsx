@@ -64,7 +64,6 @@ const AudioManager = ({
   const loadAudioFiles = async () => {
     setLoading(true)
     try {
-      console.log('Loading audio files from backend API...')
       
       const response = await fetch('/api/audio/list', {
         method: 'GET',
@@ -80,11 +79,9 @@ const AudioManager = ({
       }
 
       const data = await response.json()
-      console.log('Backend API response:', data)
       
       if (data.success && data.data && data.data.files) {
         setAudioFiles(data.data.files)
-        console.log('Audio files loaded:', data.data.files.length)
       } else {
         console.error('Failed to load audio files:', data.message || 'Unknown error')
       }
@@ -167,7 +164,6 @@ const AudioManager = ({
         if (onAudioSaved) {
           onAudioSaved({ ...settings, audioUrl: audioFile.url })
         }
-        console.log('Audio saved successfully:', audioFile.url)
       } else {
         console.error('Failed to save audio settings:', response.status)
       }
@@ -233,7 +229,6 @@ const AudioManager = ({
         if (onAudioSaved) {
           onAudioSaved({ ...settings, audioUrl: '' })
         }
-        console.log('Audio removed successfully')
       } else {
         console.error('Failed to remove audio settings:', response.status)
       }
@@ -270,7 +265,6 @@ const AudioManager = ({
           }
           
           setShowDeleteConfirm(null)
-          console.log('Audio file deleted successfully:', audioFile.name)
         } else {
           console.error('Error deleting file:', data.message)
         }

@@ -14,7 +14,7 @@ const Card = ({
 }) => {
   return (
     <StyledCard
-      variant={variant}
+      $variant={variant}
       size={size}
       hover={hover}
       clickable={clickable}

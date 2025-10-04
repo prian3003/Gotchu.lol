@@ -169,12 +169,8 @@ app.use('*', (req, res) => {
 async function initializeApp() {
   try {
     await redisClient.connect()
-    console.log('Redis connected successfully')
     
     app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`)
-      console.log(`📍 Health check: http://localhost:${PORT}/health`)
-      console.log(`🔗 API Base: http://localhost:${PORT}/api`)
     })
   } catch (error) {
     console.error('Failed to initialize app:', error)
@@ -184,13 +180,11 @@ async function initializeApp() {
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down gracefully')
   await redisClient.disconnect()
   process.exit(0)
 })
 
 process.on('SIGINT', async () => {
-  console.log('SIGINT received, shutting down gracefully')
   await redisClient.disconnect()
   process.exit(0)
 })

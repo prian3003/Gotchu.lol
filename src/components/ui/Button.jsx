@@ -34,7 +34,7 @@ const Button = ({
 
   return (
     <StyledButton
-      variant={variant}
+      $variant={variant}
       size={size}
       disabled={disabled || loading}
       fullWidth={fullWidth}

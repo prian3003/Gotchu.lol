@@ -237,7 +237,6 @@ const CustomizationPage = ({ onBack }) => {
 
   // Load settings on component mount 
   useEffect(() => {
-    console.log('🏁 Component mounted - calling loadSettings')
     loadSettings()
   }, [])
 
@@ -272,9 +271,7 @@ const CustomizationPage = ({ onBack }) => {
   }, [hasUnsavedChanges])
 
   const loadSettings = async () => {
-    console.log('🔄 loadSettings called')
     try {
-      console.log('📡 Making API request to /api/customization/settings')
       const response = await fetch('http://localhost:8080/api/customization/settings', {
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -659,9 +656,7 @@ const CustomizationPage = ({ onBack }) => {
 
   // Discard changes function
   const discardChanges = () => {
-    console.log('🔄 discardChanges called')
     if (originalSettings) {
-      console.log('⚠️ Reverting to original settings')
       setSettings({ ...originalSettings })
       setHasUnsavedChanges(false)
       setShowUnsavedDialog(false)
@@ -794,7 +789,6 @@ const CustomizationPage = ({ onBack }) => {
           await saveAudioSettings(true)
         }, 100)
         
-        console.log(`${assetType} removed successfully`)
       } else {
         console.error(`Failed to remove ${assetType}:`, result.error)
       }

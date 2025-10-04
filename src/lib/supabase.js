@@ -78,7 +78,6 @@ export const deleteFile = async (bucket, filePath) => {
 // List files in a bucket for a specific user
 export const listUserFiles = async (bucket, userId) => {
   try {
-    console.log(`Listing files in bucket: ${bucket} for user: ${userId} (folder: user_${userId})`)
     
     const { data, error } = await supabase.storage
       .from(bucket)
@@ -88,23 +87,18 @@ export const listUserFiles = async (bucket, userId) => {
         sortBy: { column: 'created_at', order: 'desc' }
       })
 
-    console.log('Supabase list response:', { data, error })
-    console.log('Query details:', { bucket, folder: `user_${userId}` })
 
     if (error) {
       console.error('Supabase list error:', error)
       throw error
     }
 
-    console.log('Raw files from Supabase:', data)
     
     // Let's also try listing the root to see what folders exist
     const { data: rootFolders, error: rootError } = await supabase.storage
       .from(bucket)
       .list('', { limit: 100 })
     
-    console.log('Root folders in bucket:', rootFolders)
-    console.log('Root error:', rootError)
     
     // Test a direct file access to see if it's a permissions issue
     const testUrl = `user_3/audio_1755526419.opus`
@@ -112,7 +106,6 @@ export const listUserFiles = async (bucket, userId) => {
       .from(bucket)
       .getPublicUrl(testUrl)
     
-    console.log('Direct file test:', { url: testData?.publicUrl, error: testError })
 
     // Get public URLs for all files
     const filesWithUrls = data.map(file => {
@@ -121,7 +114,6 @@ export const listUserFiles = async (bucket, userId) => {
         .from(bucket)
         .getPublicUrl(filePath)
 
-      console.log(`File: ${file.name}, URL: ${publicUrl}`)
 
       return {
         ...file,
@@ -131,7 +123,6 @@ export const listUserFiles = async (bucket, userId) => {
       }
     })
 
-    console.log('Processed files with URLs:', filesWithUrls)
 
     return {
       success: true,

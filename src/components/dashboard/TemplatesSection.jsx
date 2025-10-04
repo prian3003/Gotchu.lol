@@ -126,7 +126,6 @@ const TemplatesSection = () => {
   const fetchUserTemplates = async () => {
     try {
       setLoading(true)
-      console.log('🔍 Fetching user templates...')
       
       const response = await fetch('/api/templates/my-templates', {
         credentials: 'include', // Use httpOnly cookies
@@ -135,24 +134,18 @@ const TemplatesSection = () => {
         }
       })
       
-      console.log('📡 User templates response status:', response.status)
       
       const data = await response.json()
-      console.log('📋 User templates data:', data)
 
       if (data.success) {
         setUserTemplates(data.data.templates)
-        console.log('✅ User templates set:', data.data.templates.length, 'templates')
         
         // Store template limit info for UI
         const limitInfo = data.data.template_limit
-        console.log(`📊 Templates: ${limitInfo.current}/${limitInfo.maximum} (${limitInfo.remaining} remaining)`)
       } else {
-        console.error('❌ Failed to fetch user templates:', data.error)
         logger.error('Failed to fetch user templates:', data.error)
       }
     } catch (error) {
-      console.error('💥 Error fetching user templates:', error)
       logger.error('Error fetching user templates:', error)
     } finally {
       setLoading(false)
@@ -175,7 +168,6 @@ const TemplatesSection = () => {
   const handleLikeTemplate = async (templateId) => {
     // Prevent spam clicking - if already processing this template, ignore
     if (likingTemplates.has(templateId)) {
-      console.log('Like request ignored - already processing template:', templateId)
       return
     }
 
@@ -192,13 +184,6 @@ const TemplatesSection = () => {
       // Determine new state (toggle)
       const willBeLiked = !isCurrentlyLiked
 
-      console.log('Template like toggle:', {
-        templateId,
-        activeTab,
-        isCurrentlyLiked,
-        willBeLiked,
-        currentLikes: currentTemplate?.likes
-      })
 
       // Update templates in all lists optimistically
       const updateTemplateLike = (templatesList, newLikedState, newLikeCount) => {
@@ -258,7 +243,6 @@ const TemplatesSection = () => {
 
       if (!data.success) {
         // Revert optimistic update if API call failed
-        console.error('Failed to update like status, reverting...', data.error)
         
         // Revert favorites list
         if (willBeLiked && activeTab !== 'favorites') {
@@ -279,7 +263,6 @@ const TemplatesSection = () => {
         logger.error('Failed to like template:', data.error)
       }
     } catch (error) {
-      console.error('Error liking template:', error)
       logger.error('Error liking template:', error)
       
       // Revert optimistic updates using original state
@@ -326,7 +309,6 @@ const TemplatesSection = () => {
       if (data.success) {
         setShowUseTemplateModal(false)
         // TODO: Show success notification
-        console.log('Template applied successfully!')
       } else {
         logger.error('Failed to apply template:', data.error)
         // TODO: Show error notification
@@ -366,7 +348,6 @@ const TemplatesSection = () => {
       setCopiedTemplateId(null)
     }, 2000) // Hide after 2 seconds
     
-    console.log('Template preview URL copied to clipboard')
   }
 
   const handlePreview = (template) => {
@@ -409,7 +390,6 @@ const TemplatesSection = () => {
         // Refresh templates list
         fetchTemplates(1)
         // TODO: Show success notification
-        console.log('Template created successfully!')
       } else {
         logger.error('Failed to create template:', data.error)
         // TODO: Show error notification
@@ -426,15 +406,12 @@ const TemplatesSection = () => {
     switch (activeTab) {
       case 'favorites':
         currentTemplates = likedTemplates
-        console.log('💖 Getting favorites templates:', currentTemplates.length)
         break
       case 'uploads':
         currentTemplates = userTemplates
-        console.log('📤 Getting user templates:', currentTemplates.length)
         break
       default:
         currentTemplates = templates
-        console.log('📚 Getting library templates:', currentTemplates.length)
         break
     }
     return currentTemplates
@@ -460,15 +437,11 @@ const TemplatesSection = () => {
   }, [])
 
   useEffect(() => {
-    console.log('🔄 Tab changed to:', activeTab)
     if (activeTab === 'library') {
-      console.log('📚 Fetching library templates...')
       fetchTemplates(1)
     } else if (activeTab === 'favorites') {
-      console.log('❤️ Fetching liked templates...')
       fetchLikedTemplates()
     } else if (activeTab === 'uploads') {
-      console.log('📤 Fetching user uploads...')
       fetchUserTemplates()
     }
   }, [activeTab, sortBy])
@@ -500,7 +473,6 @@ const TemplatesSection = () => {
                 key={tab.id}
                 $active={activeTab === tab.id}
                 onClick={() => {
-                  console.log('🖱️ Tab clicked:', tab.id)
                   setActiveTab(tab.id)
                 }}
               >

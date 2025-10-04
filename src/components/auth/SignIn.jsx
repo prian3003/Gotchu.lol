@@ -1,12 +1,12 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import styled from 'styled-components'
 import ShinyText from '../effects/ShinyText'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useAuth } from '../../contexts/AuthContext'
+import TurnstileModal from '../modals/TurnstileModal'
 import { 
   HiFingerPrint,
-  HiArrowLeft,
   HiShieldCheck
 } from 'react-icons/hi2'
 
@@ -21,10 +21,21 @@ function SignIn() {
   const [show2FA, setShow2FA] = useState(false)
   const [twoFACode, setTwoFACode] = useState('')
   const [tempLoginData, setTempLoginData] = useState(null)
+  const [showTurnstileModal, setShowTurnstileModal] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const [hasAttemptedLogin, setHasAttemptedLogin] = useState(false)
   const { colors, isDarkMode } = useTheme()
   const { login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+
+  // Auto-perform login when turnstile token is received
+  useEffect(() => {
+    if (turnstileToken && formData.identifier && formData.password && !hasAttemptedLogin) {
+      setHasAttemptedLogin(true)
+      performLogin()
+    }
+  }, [turnstileToken])
 
   const handleChange = (e) => {
     setFormData({
@@ -83,10 +94,21 @@ function SignIn() {
   }
 
   const goBackToLogin = () => {
+    // Reset all 2FA related state
     setShow2FA(false)
     setTwoFACode('')
     setTempLoginData(null)
+    
+    // Reset form state
     setErrors({})
+    setIsLoading(false)
+    
+    // Reset Turnstile verification
+    setTurnstileToken('')
+    setShowTurnstileModal(false)
+    
+    // Optionally reset form data to prevent confusion
+    // setFormData({ identifier: '', password: '' })
   }
 
   const handleSocialLogin = async (provider) => {
@@ -137,14 +159,37 @@ function SignIn() {
     if (!validateForm()) {
       return
     }
-    
+
+    // If no Turnstile token yet, show the modal first
+    if (!turnstileToken) {
+      setShowTurnstileModal(true)
+      setHasAttemptedLogin(false) // Reset flag
+      return
+    }
+
+    // Proceed with actual login if we have a token
+    if (!hasAttemptedLogin) {
+      setHasAttemptedLogin(true)
+      await performLogin()
+    }
+  }
+
+  const handleTurnstileVerified = (token) => {
+    setTurnstileToken(token)
+    setShowTurnstileModal(false)
+    setHasAttemptedLogin(false) // Reset flag for new attempt
+    // Note: performLogin will be called when turnstileToken state updates
+  }
+
+  const performLogin = async () => {
     setIsLoading(true)
     setErrors({}) // Clear previous errors
     
     try {
       const loginData = {
         identifier: formData.identifier.toLowerCase(),
-        password: formData.password
+        password: formData.password,
+        turnstile_token: turnstileToken
       }
       
       const response = await fetch('http://localhost:8080/api/auth/login', {
@@ -165,7 +210,6 @@ function SignIn() {
       }
 
       if (response.ok && data.success) {
-        console.log('Login success - data received:', data)
         
         // Check if user has 2FA enabled
         if (data.requires_2fa) {
@@ -178,7 +222,6 @@ function SignIn() {
         
         // Store authentication data using auth context (no tokens needed - using cookies)
         login(data.data.user)
-        console.log('Auth data stored via context')
 
         // Check if user is verified
         if (data.data?.user?.is_verified) {
@@ -193,11 +236,13 @@ function SignIn() {
         }
       } else {
         setErrors({ general: data.message || 'Invalid username/email or password' })
+        setHasAttemptedLogin(false) // Reset flag on failure to allow retry
       }
       
     } catch (error) {
       console.error('Sign in error:', error)
       setErrors({ general: 'Network error. Please try again.' })
+      setHasAttemptedLogin(false) // Reset flag on error to allow retry
     } finally {
       setIsLoading(false)
     }
@@ -340,9 +385,6 @@ function SignIn() {
           ) : (
             <div className="twofa-form">
               <div className="twofa-header">
-                <button type="button" className="back-button" onClick={goBackToLogin}>
-                  <HiArrowLeft />
-                </button>
                 <div className="header-content">
                   <div className="twofa-icon">
                     <HiShieldCheck />
@@ -368,7 +410,13 @@ function SignIn() {
                     id="twofa-code"
                     name="twofa-code"
                     value={twoFACode}
-                    onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    onChange={(e) => {
+                      setTwoFACode(e.target.value.replace(/\D/g, '').slice(0, 6))
+                      // Clear errors when user starts typing
+                      if (errors.twoFA) {
+                        setErrors({})
+                      }
+                    }}
                     required
                     placeholder="000000"
                     className={`twofa-input ${errors.twoFA ? 'error' : ''}`}
@@ -379,7 +427,6 @@ function SignIn() {
                   <small className="input-help">
                     Check your authenticator app for the 6-digit code
                   </small>
-                  {errors.twoFA && <span className="error-message">{errors.twoFA}</span>}
                 </div>
 
                 <StyledButtonWrapper>
@@ -393,6 +440,12 @@ function SignIn() {
                   </button>
                 </StyledButtonWrapper>
 
+                <div className="back-to-login">
+                  <button type="button" className="back-link" onClick={goBackToLogin}>
+                    ← Back to login
+                  </button>
+                </div>
+
                 <div className="help-text">
                   <p>Having trouble? Contact support or use backup codes if available.</p>
                 </div>
@@ -401,6 +454,15 @@ function SignIn() {
           )}
         </div>
       </div>
+
+      {/* Turnstile Security Modal */}
+      <TurnstileModal
+        isOpen={showTurnstileModal}
+        onClose={() => setShowTurnstileModal(false)}
+        onVerified={handleTurnstileVerified}
+        title="Security Verification"
+        description="Please complete the security verification to sign in"
+      />
     </PageWrapper>
   )
 }
@@ -736,43 +798,19 @@ const PageWrapper = styled.div`
     }
   }
 
+
   /* 2FA Form Styles */
   .twofa-form {
     .twofa-header {
-      display: flex;
-      align-items: flex-start;
-      gap: 1rem;
       margin-bottom: 2rem;
 
-      .back-button {
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 8px;
-        padding: 0.5rem;
-        color: #ffffff;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-top: 0.25rem;
-
-        &:hover {
-          background: rgba(255, 255, 255, 0.2);
-          border-color: #58A4B0;
-        }
-
-        svg {
-          width: 20px;
-          height: 20px;
-        }
-      }
-
       .header-content {
-        flex: 1;
         display: flex;
+        flex-direction: column;
         align-items: center;
         gap: 1rem;
+        justify-content: center;
+        text-align: center;
 
         .twofa-icon {
           width: 48px;
@@ -829,6 +867,36 @@ const PageWrapper = styled.div`
       text-align: center;
       margin-top: 0.5rem;
       display: block;
+    }
+
+    .back-to-login {
+      text-align: center;
+      margin-top: 1rem;
+
+      .back-link {
+        background: none;
+        border: none;
+        color: #58A4B0;
+        font-size: 0.9rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+
+        &:hover {
+          color: #4A8C96;
+          background: rgba(88, 164, 176, 0.1);
+        }
+
+        &:focus {
+          outline: none;
+          box-shadow: 0 0 0 2px rgba(88, 164, 176, 0.3);
+        }
+      }
     }
 
     .help-text {

@@ -239,7 +239,6 @@ const LinksSection = ({
         type: 'DEFAULT'
       }
       
-      console.log('Sending payload:', payload)
       
       const response = await fetch('http://localhost:8080/api/links', {
         method: 'POST',
@@ -547,13 +546,13 @@ const LinksSection = ({
               </SocialModeLabel>
               <ModeToggleButtons>
                 <ModeButton 
-                  active={modalMode === 'link'}
+                  $active={modalMode === 'link'}
                   onClick={() => setModalMode('link')}
                 >
                   🔗 Link
                 </ModeButton>
                 <ModeButton 
-                  active={modalMode === 'text'}
+                  $active={modalMode === 'text'}
                   onClick={() => setModalMode('text')}
                 >
                   ⚠️ Text
@@ -1790,8 +1789,8 @@ const ModeToggleButtons = styled.div`
 const ModeButton = styled.button`
   flex: 1;
   padding: 0.75rem 1.5rem;
-  background: ${props => props.active ? 'rgba(88, 164, 176, 0.2)' : 'rgba(255, 255, 255, 0.05)'};
-  border: 1px solid ${props => props.active ? 'rgba(88, 164, 176, 0.5)' : 'rgba(255, 255, 255, 0.1)'};
+  background: ${props => props.$active ? 'rgba(88, 164, 176, 0.2)' : 'rgba(255, 255, 255, 0.05)'};
+  border: 1px solid ${props => props.$active ? 'rgba(88, 164, 176, 0.5)' : 'rgba(255, 255, 255, 0.1)'};
   border-radius: 8px;
   color: #ffffff;
   font-weight: 500;

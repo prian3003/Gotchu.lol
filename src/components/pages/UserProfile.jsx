@@ -468,11 +468,46 @@ const UserProfile = () => {
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [isDataReady, setIsDataReady] = useState(false)
   const [splashError, setSplashError] = useState(null)
+  const [cachedSplashText, setCachedSplashText] = useState("click here")
   const canHide = true
 
+
   const handleEnterProfile = () => {
-    console.log('🚀 Hiding splash screen')
+    // Hide splash immediately
     setIsSplashVisible(false)
+    
+    // Trigger audio playback immediately after splash hides
+    setTimeout(() => {
+      if (customization?.audioUrl) {
+        const audioElements = document.querySelectorAll('audio')
+        audioElements.forEach(audio => {
+          if (audio.paused) {
+            audio.play().catch(() => {
+              // If autoplay fails, add click listener for next user interaction
+              const enableAudio = () => {
+                audio.play().catch(() => {})
+                document.removeEventListener('click', enableAudio, { once: true })
+                document.removeEventListener('touchstart', enableAudio, { once: true })
+              }
+              document.addEventListener('click', enableAudio, { once: true })
+              document.addEventListener('touchstart', enableAudio, { once: true })
+            })
+          }
+        })
+      }
+      
+      // Trigger any background effects that should start
+      if (customization?.backgroundEffect) {
+        // Background effects should already be rendered, but ensure they're active
+        const effectElements = document.querySelectorAll('[class*="effect"], [class*="background-effect"]')
+        effectElements.forEach(element => {
+          if (element.style) {
+            element.style.opacity = '1'
+            element.style.visibility = 'visible'
+          }
+        })
+      }
+    }, 100) // Small delay to ensure splash transition completes
   }
 
   // Start data fetching when component mounts
@@ -1048,12 +1083,10 @@ const UserProfile = () => {
   }
 
   const fetchUserBadges = async () => {
-    console.log('[fetchUserBadges] Starting badge fetch for username:', username)
     setBadgesLoading(true)
     
     try {
       // STRATEGY 1: Try showcased badges endpoint (public)
-      console.log('[fetchUserBadges] STRATEGY 1: Fetching showcased badges...')
       let response = await fetch(`http://localhost:8080/api/users/${username}/badges/showcased`, {
         method: 'GET',
         headers: {
@@ -1061,11 +1094,9 @@ const UserProfile = () => {
         },
       })
 
-      console.log('[fetchUserBadges] Showcased badges response status:', response.status)
       
       if (response.ok) {
         const data = await response.json()
-        console.log('[fetchUserBadges] Showcased badges data:', data)
         
         if (data.success && data.data?.badges && data.data.badges.length > 0) {
           const displayBadges = data.data.badges.map(badgeData => {
@@ -1082,16 +1113,13 @@ const UserProfile = () => {
             }
           });
           
-          console.log('[fetchUserBadges] ✅ SUCCESS - Showcased badges found:', displayBadges.length)
           setBadges(displayBadges);
           return;
         }
       } else {
-        console.log('[fetchUserBadges] Showcased badges failed with status:', response.status)
       }
 
       // STRATEGY 2: Try all earned badges endpoint (public)
-      console.log('[fetchUserBadges] STRATEGY 2: Fetching all earned badges...')
       response = await fetch(`http://localhost:8080/api/users/${username}/badges`, {
         method: 'GET',
         headers: {
@@ -1099,11 +1127,9 @@ const UserProfile = () => {
         },
       })
 
-      console.log('[fetchUserBadges] All badges response status:', response.status)
       
       if (response.ok) {
         const data = await response.json()
-        console.log('[fetchUserBadges] All badges data:', data)
         
         if (data.success && data.data?.badges) {
           const earnedBadges = data.data.badges.filter(badgeData => badgeData.is_earned)
@@ -1123,17 +1149,14 @@ const UserProfile = () => {
               }
             });
             
-            console.log('[fetchUserBadges] ✅ SUCCESS - Earned badges found:', displayBadges.length)
             setBadges(displayBadges);
             return;
           }
         }
       } else {
-        console.log('[fetchUserBadges] All badges failed with status:', response.status)
       }
 
       // STRATEGY 3: Try legacy/alternative endpoints with error handling
-      console.log('[fetchUserBadges] STRATEGY 3: Trying alternative endpoints...')
       const alternativeEndpoints = [
         `http://localhost:8080/api/badges/user/${username}`,
         `http://localhost:8080/api/user/${username}/badges`,
@@ -1142,7 +1165,6 @@ const UserProfile = () => {
 
       for (const endpoint of alternativeEndpoints) {
         try {
-          console.log(`[fetchUserBadges] Trying endpoint: ${endpoint}`)
           response = await fetch(endpoint, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' },
@@ -1150,7 +1172,6 @@ const UserProfile = () => {
 
           if (response.ok) {
             const data = await response.json()
-            console.log(`[fetchUserBadges] Alternative endpoint data:`, data)
             
             // Try to extract badges from various response formats
             let badgesArray = null
@@ -1174,53 +1195,16 @@ const UserProfile = () => {
                 }
               });
               
-              console.log('[fetchUserBadges] ✅ SUCCESS - Alternative endpoint badges found:', displayBadges.length)
               setBadges(displayBadges);
               return;
             }
           }
         } catch (err) {
-          console.log(`[fetchUserBadges] Alternative endpoint ${endpoint} failed:`, err.message)
         }
       }
 
-      // STRATEGY 4: Mock badges for testing/development
-      console.log('[fetchUserBadges] STRATEGY 4: Using mock badges for testing...')
-      const mockBadges = [
-        {
-          id: 'mock-premium',
-          name: 'Premium',
-          description: 'Premium subscriber',
-          icon: 'mdi:diamond',
-          bgColor: '#f59e0b',
-          rarity: 'LEGENDARY',
-          category: 'subscription',
-          rarityEffects: getRarityEffects('LEGENDARY')
-        },
-        {
-          id: 'mock-verified',
-          name: 'Verified',
-          description: 'Verified user',
-          icon: 'mdi:check-decagram',
-          bgColor: '#10b981',
-          rarity: 'RARE',
-          category: 'status',
-          rarityEffects: getRarityEffects('RARE')
-        },
-        {
-          id: 'mock-og',
-          name: 'OG',
-          description: 'Original member',
-          icon: 'mdi:trophy',
-          bgColor: '#8b5cf6',
-          rarity: 'EPIC',
-          category: 'achievement',
-          rarityEffects: getRarityEffects('EPIC')
-        }
-      ]
-      
-      console.log('[fetchUserBadges] ✅ FALLBACK - Using mock badges for testing:', mockBadges.length)
-      setBadges(mockBadges);
+      // No badges found - set empty array
+      setBadges([]);
       
     } catch (err) {
       console.error('[fetchUserBadges] ❌ FATAL ERROR - All strategies failed:', err)
@@ -1229,7 +1213,6 @@ const UserProfile = () => {
       setBadges([]);
     } finally {
       setBadgesLoading(false)
-      console.log('[fetchUserBadges] Badge loading completed')
     }
   }
 
@@ -1407,6 +1390,13 @@ const UserProfile = () => {
   // Get customization settings for styling
   const customization = user?.customization || {}
   
+  // Update cached splash text when customization loads
+  useEffect(() => {
+    if (customization?.splashText || customization?.splash_text) {
+      setCachedSplashText(customization.splashText || customization.splash_text)
+    }
+  }, [customization?.splashText, customization?.splash_text])
+  
   const hasBackgroundAsset = customization.backgroundUrl && customization.backgroundUrl.trim() !== ''
   
   // Detect if background is a video
@@ -1453,7 +1443,7 @@ const UserProfile = () => {
           error={splashError}
           canHide={canHide}
           key="smart-splash"
-          splashText={customization?.splashText ?? "click here"}
+          splashText={cachedSplashText}
           backgroundColor={customization?.backgroundColor}
           textColor={customization?.textColor}
           accentColor={customization?.accentColor}

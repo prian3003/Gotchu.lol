@@ -29,7 +29,6 @@ class RedisClient {
       await this.client.connect()
       
       this.client.on('connect', () => {
-        console.log('Redis connected successfully')
         this.isConnected = true
       })
 
@@ -39,7 +38,6 @@ class RedisClient {
       })
 
       this.client.on('close', () => {
-        console.log('Redis connection closed')
         this.isConnected = false
       })
 

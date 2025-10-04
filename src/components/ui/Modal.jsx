@@ -95,7 +95,7 @@ export const ConfirmModal = ({
         <ConfirmButton onClick={onClose} variant="ghost">
           {cancelText}
         </ConfirmButton>
-        <ConfirmButton onClick={onConfirm} variant={variant}>
+        <ConfirmButton onClick={onConfirm} $variant={variant}>
           {confirmText}
         </ConfirmButton>
       </ConfirmActions>
@@ -122,7 +122,7 @@ export const AlertModal = ({
     <AlertContent>
       <AlertMessage>{message}</AlertMessage>
       <AlertActions>
-        <ConfirmButton onClick={onClose} variant={variant}>
+        <ConfirmButton onClick={onClose} $variant={variant}>
           {buttonText}
         </ConfirmButton>
       </AlertActions>

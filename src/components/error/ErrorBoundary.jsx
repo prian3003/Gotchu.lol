@@ -108,8 +108,8 @@ class ErrorBoundary extends React.Component {
       // Default fallback UI
       return (
         <ErrorContainer>
-          <ErrorContent variant={this.props.variant}>
-            <ErrorIcon variant={this.props.variant}>
+          <ErrorContent $variant={this.props.variant}>
+            <ErrorIcon $variant={this.props.variant}>
               <HiExclamationTriangle />
             </ErrorIcon>
             

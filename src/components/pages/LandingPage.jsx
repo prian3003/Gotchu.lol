@@ -3,6 +3,7 @@ import styled from 'styled-components'
 import { useTheme } from '../../contexts/ThemeContext'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import ProfileClaimSection from '../sections/ProfileClaimSection'
 
 const LandingPage = () => {
   const { colors } = useTheme()
@@ -39,156 +40,130 @@ const LandingPage = () => {
   }
 
   return (
-    <LandingContainer colors={colors}>
-      <BackgroundOverlay />
-      
-      <ContentSection>
-        <HeroSection>
-          <MainHeading colors={colors}>
-            Everything you want, right here.
-          </MainHeading>
-          
-          <SubHeading colors={colors}>
-            gotchu.lol is your go-to for modern, feature-rich biolinks and fast, secure file hosting.
-            <br />
-            Everything you need — right here.
-          </SubHeading>
-          
-          <ButtonGroup>
-            <PrimaryButton colors={colors} onClick={handleGetStarted}>
-              {isAuthenticated ? 'Go to Dashboard' : 'Sign Up for Free'}
-            </PrimaryButton>
-            <SecondaryButton colors={colors} as={Link} to="/pricing">
-              View Pricing
-            </SecondaryButton>
-          </ButtonGroup>
-        </HeroSection>
+    <>
+      <LandingContainer colors={colors}>
+        <BackgroundOverlay />
         
-        <MockupSection ref={mockupRef}>
-          <MockupContainer>
-            <DesktopMockup colors={colors}>
-              <MockupScreen colors={colors}>
-                <DashboardPreview>
-                  <Sidebar colors={colors}>
-                    <SidebarItem colors={colors}>
-                      <SidebarIcon />
-                      <span>account</span>
-                    </SidebarItem>
-                    <SidebarItem colors={colors}>
-                      <SidebarIcon />
-                      <span>customize</span>
-                    </SidebarItem>
-                    <SidebarItem colors={colors} active>
-                      <SidebarIcon />
-                      <span>links</span>
-                    </SidebarItem>
-                    <SidebarItem colors={colors}>
-                      <SidebarIcon />
-                      <span>premium</span>
-                    </SidebarItem>
-                    <SidebarItem colors={colors}>
-                      <SidebarIcon />
-                      <span>image host</span>
-                    </SidebarItem>
-                  </Sidebar>
-                  
-                  <MainContent>
-                    <ContentHeader>
-                      <HeaderTitle colors={colors}>Account Overview</HeaderTitle>
-                      <StatsGrid>
-                        <StatCard colors={colors}>
-                          <StatIcon colors={colors} />
-                          <StatLabel colors={colors}>Links</StatLabel>
-                        </StatCard>
-                        <StatCard colors={colors}>
-                          <StatIcon colors={colors} />
-                          <StatLabel colors={colors}>Customize</StatLabel>
-                        </StatCard>
-                        <StatCard colors={colors}>
-                          <StatIcon colors={colors} />
-                          <StatLabel colors={colors}>Alias</StatLabel>
-                        </StatCard>
-                        <StatCard colors={colors}>
-                          <StatIcon colors={colors} />
-                          <StatLabel colors={colors}>Profile Views</StatLabel>
-                        </StatCard>
-                      </StatsGrid>
-                    </ContentHeader>
-                    
-                    <ChartSection colors={colors}>
-                      <ChartContainer>
-                        <ChartBar colors={colors} style={{ height: '60%' }} />
-                        <ChartBar colors={colors} style={{ height: '80%' }} />
-                        <ChartBar colors={colors} style={{ height: '45%' }} />
-                        <ChartBar colors={colors} style={{ height: '90%' }} />
-                        <ChartBar colors={colors} style={{ height: '70%' }} />
-                        <ChartBar colors={colors} style={{ height: '55%' }} />
-                      </ChartContainer>
-                    </ChartSection>
-                    
-                    <ActionSection>
-                      <ActionButton colors={colors}>Check out your page</ActionButton>
-                      <ActionButton colors={colors} primary>My Page</ActionButton>
-                    </ActionSection>
-                  </MainContent>
-                </DashboardPreview>
-              </MockupScreen>
-            </DesktopMockup>
+        <ContentSection>
+          <HeroSection>
+            <MainHeading colors={colors}>
+              Everything you want, right here.
+            </MainHeading>
             
-            <MobileMockups>
-              <MobileMockup colors={colors} style={{ transform: 'rotate(-15deg)', zIndex: 3 }}>
-                <MobileScreen colors={colors}>
-                  <MobileContent>
-                    <ProfileHeader>
-                      <ProfileAvatar colors={colors} />
-                      <ProfileInfo>
-                        <ProfileName colors={colors}>hris</ProfileName>
-                        <ProfileHandle colors={colors}>@check.on.top!</ProfileHandle>
-                      </ProfileInfo>
-                    </ProfileHeader>
-                    <SocialIcons>
-                      <SocialIcon colors={colors} />
-                      <SocialIcon colors={colors} />
-                      <SocialIcon colors={colors} />
-                    </SocialIcons>
-                  </MobileContent>
-                </MobileScreen>
-              </MobileMockup>
+            <SubHeading colors={colors}>
+              gotchu.lol is your go-to for modern, feature-rich biolinks and fast, secure file hosting.
+              <br />
+              Everything you need — right here.
+            </SubHeading>
+            
+            <ButtonGroup>
+              <PrimaryButton colors={colors} onClick={handleGetStarted}>
+                {isAuthenticated ? 'Go to Dashboard' : 'Sign Up for Free'}
+              </PrimaryButton>
+              <SecondaryButton colors={colors} as={Link} to="/pricing">
+                View Pricing
+              </SecondaryButton>
+            </ButtonGroup>
+          </HeroSection>
+          
+          <MockupSection ref={mockupRef}>
+            <MockupContainer>
+              <DesktopMockup colors={colors}>
+                <MockupScreen colors={colors}>
+                  <DashboardPreview>
+                    <Sidebar colors={colors}>
+                      <SidebarItem colors={colors}>
+                        <SidebarIcon />
+                        <span>account</span>
+                      </SidebarItem>
+                      <SidebarItem colors={colors}>
+                        <SidebarIcon />
+                        <span>customize</span>
+                      </SidebarItem>
+                      <SidebarItem colors={colors} $active>
+                        <SidebarIcon />
+                        <span>links</span>
+                      </SidebarItem>
+                      <SidebarItem colors={colors}>
+                        <SidebarIcon />
+                        <span>premium</span>
+                      </SidebarItem>
+                      <SidebarItem colors={colors}>
+                        <SidebarIcon />
+                        <span>image host</span>
+                      </SidebarItem>
+                    </Sidebar>
+                    
+                    <MainContent>
+                      <ContentHeader>
+                        <HeaderTitle colors={colors}>Account Overview</HeaderTitle>
+                        <StatsGrid>
+                          <StatCard colors={colors}>
+                            <StatIcon colors={colors} />
+                            <StatLabel colors={colors}>Links</StatLabel>
+                          </StatCard>
+                          <StatCard colors={colors}>
+                            <StatIcon colors={colors} />
+                            <StatLabel colors={colors}>Customize</StatLabel>
+                          </StatCard>
+                          <StatCard colors={colors}>
+                            <StatIcon colors={colors} />
+                            <StatLabel colors={colors}>Alias</StatLabel>
+                          </StatCard>
+                          <StatCard colors={colors}>
+                            <StatIcon colors={colors} />
+                            <StatLabel colors={colors}>Profile Views</StatLabel>
+                          </StatCard>
+                        </StatsGrid>
+                      </ContentHeader>
+                      
+                      <ChartSection colors={colors}>
+                        <ChartContainer>
+                          <ChartBar colors={colors} style={{ height: '60%' }} />
+                          <ChartBar colors={colors} style={{ height: '80%' }} />
+                          <ChartBar colors={colors} style={{ height: '45%' }} />
+                          <ChartBar colors={colors} style={{ height: '90%' }} />
+                          <ChartBar colors={colors} style={{ height: '70%' }} />
+                          <ChartBar colors={colors} style={{ height: '55%' }} />
+                        </ChartContainer>
+                      </ChartSection>
+                      
+                      <ActionSection>
+                        <ActionButton colors={colors}>Check out your page</ActionButton>
+                        <ActionButton colors={colors} $primary>My Page</ActionButton>
+                      </ActionSection>
+                    </MainContent>
+                  </DashboardPreview>
+                </MockupScreen>
+              </DesktopMockup>
               
-              <MobileMockup colors={colors} style={{ transform: 'rotate(5deg)', zIndex: 2 }}>
-                <MobileScreen colors={colors}>
-                  <MobileContent>
-                    <ProfileSection>
-                      <MobileProfileAvatar />
-                      <MobileProfileName colors={colors}>VS8</MobileProfileName>
-                      <MobileProfileHandle colors={colors}>@subscribe to me plzzzz!</MobileProfileHandle>
-                    </ProfileSection>
-                    <LinksList>
-                      <MobileLink colors={colors}>My Shop</MobileLink>
-                      <MobileLink colors={colors}>My Blog</MobileLink>
-                      <MobileLink colors={colors}>Contact</MobileLink>
-                    </LinksList>
-                  </MobileContent>
-                </MobileScreen>
-              </MobileMockup>
-              
-              <MobileMockup colors={colors} style={{ transform: 'rotate(10deg)', zIndex: 1 }}>
-                <MobileScreen colors={colors} style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-                  <MobileContent>
-                    <CenterContent>
-                      <LargePfp />
-                      <CenterName colors={colors}>popenon</CenterName>
-                      <CenterHandle colors={colors}>@popenon.com</CenterHandle>
-                      <CenterBadge colors={colors} />
-                    </CenterContent>
-                  </MobileContent>
-                </MobileScreen>
-              </MobileMockup>
-            </MobileMockups>
-          </MockupContainer>
-        </MockupSection>
-      </ContentSection>
-    </LandingContainer>
+              <MobileMockups>
+                <MobileMockup colors={colors} style={{ transform: 'rotate(-15deg)', zIndex: 3 }}>
+                  <MobileScreen colors={colors}>
+                    <MobileContent>
+                      <ProfileHeader>
+                        <ProfileAvatar colors={colors} />
+                        <ProfileInfo>
+                          <ProfileName colors={colors}>hris</ProfileName>
+                          <ProfileHandle colors={colors}>@check.on.top!</ProfileHandle>
+                        </ProfileInfo>
+                      </ProfileHeader>
+                      <SocialIcons>
+                        <SocialIcon colors={colors} />
+                        <SocialIcon colors={colors} />
+                        <SocialIcon colors={colors} />
+                      </SocialIcons>
+                    </MobileContent>
+                  </MobileScreen>
+                </MobileMockup>
+              </MobileMockups>
+            </MockupContainer>
+          </MockupSection>
+        </ContentSection>
+      </LandingContainer>
+      
+      <ProfileClaimSection />
+    </>
   )
 }
 
@@ -519,10 +494,10 @@ const ActionButton = styled.button`
 
 const MobileMockups = styled.div`
   position: absolute;
-  right: -150px;
+  right: -70px;
   top: -50px;
   display: flex;
-  gap: 1rem;
+  justify-content: center;
   
   @media (max-width: 968px) {
     position: relative;

@@ -31,8 +31,8 @@ const Loading = ({
 
   const content = (
     <LoadingContainer 
-      fullscreen={fullscreen} 
-      overlay={overlay} 
+      $fullscreen={fullscreen} 
+      $overlay={overlay} 
       className={className}
       {...props}
     >

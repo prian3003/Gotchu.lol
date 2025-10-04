@@ -41,7 +41,6 @@ const TestCustomization = () => {
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 2000))
       
-      console.log('Saving settings:', settings)
       
       // In real implementation, this would save to your backend/database
       // await saveUserSettings(settings)

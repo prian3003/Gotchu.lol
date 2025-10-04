@@ -233,7 +233,7 @@ const Dashboard = ({ defaultSection = 'overview' }) => {
         )}
 
         {activeSection === 'badges' && (
-          <BadgesSection user={user} />
+          <BadgesSection user={user} onOpenPremiumModal={() => setShowPremiumModal(true)} />
         )}
 
         {activeSection === 'settings' && (

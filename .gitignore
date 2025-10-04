@@ -31,6 +31,9 @@ backend/.env
 *.sln
 *.sw?
 
+# Claude Code
+.claude
+
 # Windows-specific files that should not be tracked
 nul
 CON

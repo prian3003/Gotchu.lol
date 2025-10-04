@@ -312,7 +312,7 @@ const SortableBadgeItem = ({ badge, id }) => {
   )
 }
 
-const BadgesSection = ({ user }) => {
+const BadgesSection = ({ user, onOpenPremiumModal }) => {
   const { colors } = useTheme()
 
   // Add CSS for animations
@@ -817,7 +817,7 @@ const BadgesSection = ({ user }) => {
                 fontSize: '14px',
                 fontStyle: 'italic'
               }}>
-                ✨ These badges appear on your public profile. Drag to reorder them.
+                These badges appear on your public profile. Drag to reorder them.
               </p>
               
               <DndContext 
@@ -918,7 +918,7 @@ const BadgesSection = ({ user }) => {
                 margin: '0 0 16px 0',
                 fontSize: '14px'
               }}>
-                🎉 You've met the requirements for these badges! Click "Claim Badge" to earn them.
+                You've met the requirements for these badges! Click "Claim Badge" to earn them.
               </p>
               
               <div
@@ -1105,17 +1105,37 @@ const BadgesSection = ({ user }) => {
                     )}
                   </div>
                   {badge.action && !isEarned && (
-                    <button style={{
-                      background: badge.type === 'premium' ? colors.accent : 'transparent',
-                      border: `1px solid ${badge.type === 'premium' ? colors.accent : colors.border}`,
-                      borderRadius: '8px',
-                      padding: '8px 16px',
-                      color: badge.type === 'premium' ? 'white' : colors.text,
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: '500',
-                      transition: 'all 0.2s ease'
-                    }}>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (badge.type === 'premium' && onOpenPremiumModal) {
+                          onOpenPremiumModal()
+                        }
+                      }}
+                      style={{
+                        background: badge.type === 'premium' ? colors.accent : 'transparent',
+                        border: `1px solid ${badge.type === 'premium' ? colors.accent : colors.border}`,
+                        borderRadius: '8px',
+                        padding: '8px 16px',
+                        color: badge.type === 'premium' ? 'white' : colors.text,
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        transition: 'all 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (badge.type === 'premium') {
+                          e.currentTarget.style.background = colors.accentHover || colors.accent
+                          e.currentTarget.style.transform = 'translateY(-1px)'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (badge.type === 'premium') {
+                          e.currentTarget.style.background = colors.accent
+                          e.currentTarget.style.transform = 'translateY(0)'
+                        }
+                      }}
+                    >
                       {badge.action}
                     </button>
                   )}
@@ -1126,127 +1146,69 @@ const BadgesSection = ({ user }) => {
         </>
       )}
 
-      {/* Custom Badges Section */}
-      <h2 style={{
-        fontSize: '20px',
-        fontWeight: '600',
-        margin: '40px 0 20px 0',
-        color: colors.text,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px'
-      }}>
-        Custom Badges 
-        <span style={{
-          background: colors.accent,
-          color: 'white',
-          fontSize: '12px',
-          fontWeight: '600',
-          padding: '2px 6px',
-          borderRadius: '4px',
-          textTransform: 'uppercase'
-        }}>New</span>
-      </h2>
 
-      <div style={{
-        background: colors.surface,
-        border: `1px solid ${colors.border}`,
-        borderRadius: '12px',
-        padding: '24px',
-        marginTop: '20px'
-      }}>
-        <p style={{
-          color: colors.muted,
-          margin: '0 0 20px 0',
-          lineHeight: '1.6'
-        }}>
-          Custom badges allow you to create your own badges with a custom icon and name. You can edit your custom badges by using edit credits.
-        </p>
+      {/* Premium Upgrade - Only show for non-premium users */}
+      {!user?.is_premium && (
         <div style={{
-          display: 'flex',
-          gap: '12px',
-          flexWrap: 'wrap'
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          borderRadius: '12px',
+          padding: '24px',
+          marginTop: '32px',
+          textAlign: 'left',
+          position: 'relative',
+          overflow: 'hidden'
         }}>
-          <button style={{
-            background: colors.accent,
-            border: `1px solid ${colors.accent}`,
-            borderRadius: '8px',
-            padding: '8px 16px',
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: '200px',
+            height: '200px',
+            backgroundImage: 'url("data:image/svg+xml,<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 100 100\\"><circle cx=\\"50\\" cy=\\"50\\" r=\\"3\\" fill=\\"rgba(255,255,255,0.1)\\"/><circle cx=\\"20\\" cy=\\"20\\" r=\\"2\\" fill=\\"rgba(255,255,255,0.1)\\"/><circle cx=\\"80\\" cy=\\"30\\" r=\\"1\\" fill=\\"rgba(255,255,255,0.1)\\"/></svg>")',
+            opacity: 0.3
+          }} />
+          <h3 style={{
             color: 'white',
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontWeight: '500',
-            transition: 'all 0.2s ease'
+            fontSize: '18px',
+            fontWeight: '600',
+            margin: '0 0 8px 0',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}>
-            Purchase
-          </button>
-          <button style={{
-            background: 'transparent',
-            border: `1px solid ${colors.border}`,
-            borderRadius: '8px',
-            padding: '8px 16px',
-            color: colors.text,
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontWeight: '500',
-            transition: 'all 0.2s ease'
+            <Icon icon="mdi:diamond" />
+            Upgrade to Premium
+          </h3>
+          <p style={{
+            color: 'rgba(255, 255, 255, 0.9)',
+            margin: '0 0 16px 0',
+            lineHeight: '1.5'
           }}>
-            Preview Custom Badge
+            With gotchu.lol Premium you can reorder, recolor, and toggle each badge individually.
+          </p>
+          <button 
+            onClick={onOpenPremiumModal}
+            style={{
+              background: 'rgba(255, 255, 255, 0.2)',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              borderRadius: '8px',
+              padding: '12px 24px',
+              color: 'white',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'
+            }}
+          >
+            Upgrade Now
           </button>
         </div>
-      </div>
-
-      {/* Premium Upgrade */}
-      <div style={{
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        borderRadius: '12px',
-        padding: '24px',
-        marginTop: '32px',
-        textAlign: 'left',
-        position: 'relative',
-        overflow: 'hidden'
-      }}>
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          right: 0,
-          width: '200px',
-          height: '200px',
-          backgroundImage: 'url("data:image/svg+xml,<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 100 100\\"><circle cx=\\"50\\" cy=\\"50\\" r=\\"3\\" fill=\\"rgba(255,255,255,0.1)\\"/><circle cx=\\"20\\" cy=\\"20\\" r=\\"2\\" fill=\\"rgba(255,255,255,0.1)\\"/><circle cx=\\"80\\" cy=\\"30\\" r=\\"1\\" fill=\\"rgba(255,255,255,0.1)\\"/></svg>")',
-          opacity: 0.3
-        }} />
-        <h3 style={{
-          color: 'white',
-          fontSize: '18px',
-          fontWeight: '600',
-          margin: '0 0 8px 0',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px'
-        }}>
-          <Icon icon="mdi:diamond" />
-          Upgrade to Premium
-        </h3>
-        <p style={{
-          color: 'rgba(255, 255, 255, 0.9)',
-          margin: '0 0 16px 0',
-          lineHeight: '1.5'
-        }}>
-          With gotchu.lol Premium you can reorder, recolor, and toggle each badge individually.
-        </p>
-        <button style={{
-          background: 'rgba(255, 255, 255, 0.2)',
-          border: '1px solid rgba(255, 255, 255, 0.3)',
-          borderRadius: '8px',
-          padding: '12px 24px',
-          color: 'white',
-          fontWeight: '600',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease'
-        }}>
-          Upgrade Now
-        </button>
-      </div>
+      )}
         </>
       )}
     </div>

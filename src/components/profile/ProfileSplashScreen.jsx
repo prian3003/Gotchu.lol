@@ -145,7 +145,16 @@ const SplashContainer = styled.div.withConfig({
   }
   
   &:hover {
-    /* Removed hover transform that might cause issues */
+    /* Completely disable any hover effects that might change background */
+    background: inherit !important;
+    background-color: inherit !important;
+    background-image: inherit !important;
+    background-size: inherit !important;
+    background-position: inherit !important;
+    background-repeat: inherit !important;
+    filter: none !important;
+    transform: none !important;
+    box-shadow: none !important;
   }
   
   /* Force override any parent container styles */
@@ -183,9 +192,9 @@ const SplashText = styled.div.withConfig({
   ${props => props.animated && css`
     background: linear-gradient(
       45deg,
-      #ffffff 0%,
+      ${props.textColor || '#ffffff'} 0%,
       ${props.accentColor || '#60A5FA'} 50%,
-      #ffffff 100%
+      ${props.textColor || '#ffffff'} 100%
     );
     background-size: 200% 200%;
     background-clip: text;
@@ -195,16 +204,16 @@ const SplashText = styled.div.withConfig({
   `}
   
   ${props => props.glowEffect && css`
-    color: ${props.accentColor || '#60A5FA'} !important;
+    color: ${props.textColor || '#ffffff'} !important;
     text-shadow: 
-      0 0 20px currentColor,
+      0 0 20px ${props.accentColor || '#60A5FA'},
       0 2px 10px rgba(0, 0, 0, 0.3);
     animation: ${glowEffect} 2s ease-in-out infinite;
   `}
   
   &:hover {
     transform: scale(1.05);
-    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    /* Remove all color/appearance changes on hover - keep text stable */
   }
   
   @media (max-width: 768px) {
@@ -332,7 +341,7 @@ const ProfileSplashScreen = ({
   customization = {},
   user = {},
   isVisible = true,
-  splashText = "click here",
+  splashText,
   isLoading = false,
   loadingProgress = 0,
   isDataReady = false,
@@ -473,6 +482,9 @@ const ProfileSplashScreen = ({
   // Use customization text color or fallback to white
   const splashTextColor = customization?.textColor || '#ffffff'
   
+  // Determine splash text with consistent fallback
+  const finalSplashText = splashText || customization?.splashText || customization?.splash_text || "click here"
+  
   const finalCustomization = {
     ...customization,
     backgroundUrl: splashTransparent ? null : customization?.backgroundUrl, // Don't show background image if transparent
@@ -523,6 +535,37 @@ const ProfileSplashScreen = ({
           clip-path: none !important;
           mask: none !important;
           overflow: hidden !important;
+        }
+        
+        /* Prevent background changes on hover - force all properties */
+        .profile-splash-screen:hover,
+        .profile-splash-screen:focus,
+        .profile-splash-screen:active {
+          background: ${getSplashBackground()} !important;
+          background-color: inherit !important;
+          background-image: inherit !important;
+          background-size: cover !important;
+          background-position: center !important;
+          background-repeat: no-repeat !important;
+          background-attachment: inherit !important;
+          filter: none !important;
+          transform: none !important;
+          box-shadow: none !important;
+          border: none !important;
+          outline: none !important;
+        }
+        
+        /* Prevent any text color changes on hover */
+        .profile-splash-screen *:hover {
+          /* Don't change any text appearance properties */
+          color: inherit !important;
+          background: inherit !important;
+          background-color: inherit !important;
+          background-image: inherit !important;
+          text-shadow: inherit !important;
+          -webkit-text-fill-color: inherit !important;
+          background-clip: inherit !important;
+          -webkit-background-clip: inherit !important;
         }
         
         /* Force opacity override */
@@ -630,7 +673,7 @@ const ProfileSplashScreen = ({
       }}
       role="button"
       tabIndex={0}
-      aria-label={splashText}
+      aria-label={finalSplashText}
       {...props}
     >
       {/* Video Background for transparent splash screens with video backgrounds */}
@@ -682,7 +725,7 @@ const ProfileSplashScreen = ({
             animated={animated}
             glowEffect={glowEffect}
           >
-            {splashText}
+            {finalSplashText}
           </SplashText>
         )}
       </ContentWrapper>

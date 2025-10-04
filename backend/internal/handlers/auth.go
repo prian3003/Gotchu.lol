@@ -17,6 +17,7 @@ import (
 	"gotchu-backend/pkg/auth"
 	"gotchu-backend/pkg/email"
 	"gotchu-backend/pkg/redis"
+	"gotchu-backend/pkg/security"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pquerna/otp/totp"
@@ -60,15 +61,17 @@ func InitOAuthConfig(googleClientID, googleClientSecret, discordClientID, discor
 
 // RegisterRequest represents registration request
 type RegisterRequest struct {
-	Username string `json:"username" binding:"required,min=1,max=30"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8"`
+	Username      string `json:"username" binding:"required,min=1,max=30"`
+	Email         string `json:"email" binding:"required,email"`
+	Password      string `json:"password" binding:"required,min=8"`
+	TurnstileToken string `json:"turnstile_token"`
 }
 
 // LoginRequest represents login request
 type LoginRequest struct {
-	Identifier string `json:"identifier" binding:"required"` // username or email
-	Password   string `json:"password" binding:"required"`
+	Identifier     string `json:"identifier" binding:"required"` // username or email
+	Password       string `json:"password" binding:"required"`
+	TurnstileToken string `json:"turnstile_token"`
 }
 
 // Login2FARequest represents login with 2FA request
@@ -144,6 +147,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	// Normalize input
 	req.Username = strings.ToLower(strings.TrimSpace(req.Username))
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	// Validate Turnstile token first
+	clientIP := security.GetClientIP(c.Request)
+	if err := security.ValidateTurnstileToken(req.TurnstileToken, clientIP); err != nil {
+		c.JSON(http.StatusBadRequest, AuthResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+		return
+	}
 
 	// Validate input
 	if err := h.authService.ValidateUsername(req.Username); err != nil {
@@ -345,7 +358,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// Login request received
+	// Validate Turnstile token first
+	clientIP := security.GetClientIP(c.Request)
+	if err := security.ValidateTurnstileToken(req.TurnstileToken, clientIP); err != nil {
+		c.JSON(http.StatusBadRequest, AuthResponse{
+			Success: false,
+			Message: err.Error(),
+		})
+		return
+	}
 
 	// Normalize identifier
 	req.Identifier = strings.ToLower(strings.TrimSpace(req.Identifier))
@@ -1175,6 +1196,9 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 		})
 		return
 	}
+
+	// Set session cookie for automatic authentication
+	h.setSecureCookie(c, "sessionId", authResult.SessionID, int(h.authService.GetSessionExpiry()))
 
 	// Respond with success and session data
 	c.JSON(http.StatusOK, AuthResponse{

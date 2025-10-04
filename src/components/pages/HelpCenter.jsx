@@ -235,12 +235,10 @@ const HelpCenter = () => {
 
   const handleSectionClick = (sectionId) => {
     // Navigate to specific help section (future implementation)
-    console.log(`Navigate to help section: ${sectionId}`)
   }
 
   const handleArticleClick = (articleId) => {
     // Navigate to specific article (future implementation)
-    console.log(`Navigate to article: ${articleId}`)
   }
 
   return (

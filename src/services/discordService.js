@@ -57,13 +57,11 @@ class DiscordService {
 
       const data = await response.json()
 
-      console.log('DEBUG: Discord status response:', response.status, data)
 
       if (!response.ok) {
         throw new Error(data.message || 'Failed to get Discord status')
       }
 
-      console.log('DEBUG: Discord status data:', data.data)
       return data.data
     } catch (error) {
       console.error('Failed to get Discord status:', error)

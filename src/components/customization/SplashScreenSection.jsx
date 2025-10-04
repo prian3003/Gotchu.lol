@@ -81,15 +81,15 @@ const ToggleButton = styled.button`
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  background: ${props => props.active ? 'rgba(88, 164, 176, 0.2)' : 'rgba(255, 255, 255, 0.1)'};
-  border: 1px solid ${props => props.active ? '#58A4B0' : 'rgba(255, 255, 255, 0.2)'};
+  background: ${props => props.$active ? 'rgba(88, 164, 176, 0.2)' : 'rgba(255, 255, 255, 0.1)'};
+  border: 1px solid ${props => props.$active ? '#58A4B0' : 'rgba(255, 255, 255, 0.2)'};
   border-radius: 10px;
   color: #ffffff;
   cursor: pointer;
   transition: all 0.3s ease;
   
   &:hover {
-    background: ${props => props.active ? 'rgba(88, 164, 176, 0.3)' : 'rgba(255, 255, 255, 0.2)'};
+    background: ${props => props.$active ? 'rgba(88, 164, 176, 0.3)' : 'rgba(255, 255, 255, 0.2)'};
   }
 `
 
@@ -190,8 +190,8 @@ const CompactToggle = styled.button`
   justify-content: center;
   gap: 0.4rem;
   padding: 0.6rem;
-  background: ${props => props.active ? 'rgba(88, 164, 176, 0.2)' : 'rgba(255, 255, 255, 0.08)'};
-  border: 1px solid ${props => props.active ? '#58A4B0' : 'rgba(255, 255, 255, 0.15)'};
+  background: ${props => props.$active ? 'rgba(88, 164, 176, 0.2)' : 'rgba(255, 255, 255, 0.08)'};
+  border: 1px solid ${props => props.$active ? '#58A4B0' : 'rgba(255, 255, 255, 0.15)'};
   border-radius: 8px;
   color: #ffffff;
   cursor: pointer;
@@ -201,8 +201,8 @@ const CompactToggle = styled.button`
   height: 40px;
   
   &:hover {
-    background: ${props => props.active ? 'rgba(88, 164, 176, 0.3)' : 'rgba(255, 255, 255, 0.15)'};
-    border-color: ${props => props.active ? '#58A4B0' : 'rgba(255, 255, 255, 0.3)'};
+    background: ${props => props.$active ? 'rgba(88, 164, 176, 0.3)' : 'rgba(255, 255, 255, 0.15)'};
+    border-color: ${props => props.$active ? '#58A4B0' : 'rgba(255, 255, 255, 0.3)'};
     transform: translateY(-1px);
   }
   
@@ -338,7 +338,7 @@ const SplashScreenSection = ({
         <CompactControlGroup>
           <label>Status</label>
           <CompactToggle
-            active={customization.enableSplashScreen !== false}
+            $active={customization.enableSplashScreen !== false}
             onClick={() => handleUpdate('enableSplashScreen', customization.enableSplashScreen === false)}
           >
             {customization.enableSplashScreen !== false ? <HiEye /> : <HiEyeSlash />}
@@ -381,7 +381,7 @@ const SplashScreenSection = ({
             <CompactControlGroup>
               <label>Animation</label>
               <CompactToggle
-                active={customization.splashAnimated !== false}
+                $active={customization.splashAnimated !== false}
                 onClick={() => handleUpdate('splashAnimated', customization.splashAnimated === false)}
               >
                 <HiSparkles />
@@ -392,7 +392,7 @@ const SplashScreenSection = ({
             <CompactControlGroup>
               <label>Glow Effect</label>
               <CompactToggle
-                active={customization.splashGlowEffect === true}
+                $active={customization.splashGlowEffect === true}
                 onClick={() => handleUpdate('splashGlowEffect', !customization.splashGlowEffect)}
               >
                 <HiSparkles />
@@ -406,7 +406,7 @@ const SplashScreenSection = ({
             <CompactControlGroup>
               <label>Background</label>
               <CompactToggle
-                active={customization.splashBackgroundVisible !== false}
+                $active={customization.splashBackgroundVisible !== false}
                 onClick={() => handleUpdate('splashBackgroundVisible', customization.splashBackgroundVisible === false)}
               >
                 {customization.splashBackgroundVisible !== false ? <HiEye /> : <HiEyeSlash />}
@@ -419,7 +419,7 @@ const SplashScreenSection = ({
                 <CompactControlGroup>
                   <label>Transparency</label>
                   <CompactToggle
-                    active={customization.splashTransparent === true}
+                    $active={customization.splashTransparent === true}
                     onClick={() => handleUpdate('splashTransparent', !customization.splashTransparent)}
                   >
                     <HiSwatch />
@@ -453,7 +453,7 @@ const SplashScreenSection = ({
             <CompactControlGroup>
               <label>Particles</label>
               <CompactToggle
-                active={customization.splashShowParticles !== false}
+                $active={customization.splashShowParticles !== false}
                 onClick={() => handleUpdate('splashShowParticles', customization.splashShowParticles === false)}
               >
                 <HiSparkles />
@@ -464,7 +464,7 @@ const SplashScreenSection = ({
             <CompactControlGroup>
               <label>Auto Hide</label>
               <CompactToggle
-                active={customization.splashAutoHide === true}
+                $active={customization.splashAutoHide === true}
                 onClick={() => handleUpdate('splashAutoHide', !customization.splashAutoHide)}
               >
                 {customization.splashAutoHide ? <HiPlay /> : <HiPause />}

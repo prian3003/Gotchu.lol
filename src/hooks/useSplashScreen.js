@@ -35,14 +35,7 @@ const useSplashScreen = ({
 
   // Debug isVisible changes
   useEffect(() => {
-    console.log('[useSplashScreen] isVisible changed:', isVisible)
     if (!isVisible && isInitialized) {
-      console.log('[useSplashScreen] SPLASH HIDDEN - checking localStorage:', {
-        storageKey,
-        storedValue: localStorage.getItem(storageKey),
-        rememberChoice
-      })
-      console.trace('[useSplashScreen] Splash hidden stack trace')
     }
   }, [isVisible])
 
@@ -62,7 +55,6 @@ const useSplashScreen = ({
       const cachedData = backgroundCache.getUserData(username)
       if (cachedData) {
         setLoadingProgress(60)
-        console.log('[useSplashScreen] Using cached data for:', username)
         
         // Simulate smooth loading for better UX
         setTimeout(() => {
@@ -74,7 +66,6 @@ const useSplashScreen = ({
       }
 
       // Fetch fresh data with progress updates
-      console.log('[useSplashScreen] Fetching fresh data for:', username)
       setLoadingProgress(30)
 
       const userData = await onDataFetch(username, (progress) => {
@@ -137,14 +128,6 @@ const useSplashScreen = ({
     const hasBeenDismissedInSession = sessionStorage.getItem(sessionKey) === 'true'
     const hasBeenDismissedPermanently = rememberChoice && localStorage.getItem(storageKey) === 'true'
     
-    console.log('[useSplashScreen] Initialization check:', {
-      enabled,
-      rememberChoice, 
-      storageKey,
-      hasBeenDismissedInSession,
-      hasBeenDismissedPermanently,
-      localStorageValue: localStorage.getItem(storageKey)
-    })
     
     // Check if this is first visit
     const isFirstVisit = showOnFirstVisit && !localStorage.getItem(`${storageKey}_visited`)
@@ -189,7 +172,6 @@ const useSplashScreen = ({
   }, [isVisible, autoHideDelay])
 
   const hideSplash = useCallback(() => {
-    console.log('[useSplashScreen] hideSplash called - HIDING SPLASH')
     console.trace('[useSplashScreen] Hide splash stack trace')
     setIsVisible(false)
     

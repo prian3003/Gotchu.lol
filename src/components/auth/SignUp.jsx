@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import styled from 'styled-components'
 import ShinyText from '../effects/ShinyText'
 import { useTheme } from '../../contexts/ThemeContext'
+import TurnstileModal from '../modals/TurnstileModal'
 
 function SignUp() {
   const [formData, setFormData] = useState({
@@ -22,9 +23,34 @@ function SignUp() {
   })
   const { colors, isDarkMode } = useTheme()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const [showTurnstileModal, setShowTurnstileModal] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const [hasAttemptedRegistration, setHasAttemptedRegistration] = useState(false)
 
   // Debounce timer for username checking
   const [usernameCheckTimer, setUsernameCheckTimer] = useState(null)
+
+  // Auto-perform registration when turnstile token is received
+  useEffect(() => {
+    if (turnstileToken && formData.username && formData.email && formData.password && !hasAttemptedRegistration) {
+      setHasAttemptedRegistration(true)
+      performRegistration()
+    }
+  }, [turnstileToken])
+
+  // Initialize username from URL parameter
+  useEffect(() => {
+    const usernameParam = searchParams.get('username')
+    if (usernameParam) {
+      setFormData(prev => ({
+        ...prev,
+        username: usernameParam
+      }))
+      // Check availability of the prefilled username
+      checkUsernameAvailability(usernameParam)
+    }
+  }, [searchParams])
 
   // Check username availability with backend
   const checkUsernameAvailability = async (username) => {
@@ -44,7 +70,6 @@ function SignUp() {
     })
 
     try {
-      console.log('Checking username:', username) // Debug log
       
       const response = await fetch(`http://localhost:8080/api/auth/check-username/${encodeURIComponent(username)}`, {
         method: 'GET',
@@ -53,10 +78,8 @@ function SignUp() {
         },
       })
 
-      console.log('Response status:', response.status) // Debug log
       
       const data = await response.json()
-      console.log('Response data:', data) // Debug log
 
       if (data.success) {
         setUsernameValidation({
@@ -148,6 +171,7 @@ function SignUp() {
       newErrors.confirmPassword = 'Passwords do not match'
     }
     
+    
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -158,17 +182,39 @@ function SignUp() {
     if (!validateForm()) {
       return
     }
-    
+
+    // If no Turnstile token yet, show the modal first
+    if (!turnstileToken) {
+      setShowTurnstileModal(true)
+      setHasAttemptedRegistration(false) // Reset flag
+      return
+    }
+
+    // Proceed with actual registration if we have a token
+    if (!hasAttemptedRegistration) {
+      setHasAttemptedRegistration(true)
+      await performRegistration()
+    }
+  }
+
+  const handleTurnstileVerified = (token) => {
+    setTurnstileToken(token)
+    setShowTurnstileModal(false)
+    setHasAttemptedRegistration(false) // Reset flag for new attempt
+    // Note: performRegistration will be called when turnstileToken state updates
+  }
+
+  const performRegistration = async () => {
     setIsLoading(true)
     
     try {
       const userData = {
         username: formData.username.toLowerCase(),
         email: formData.email.toLowerCase(),
-        password: formData.password
+        password: formData.password,
+        turnstile_token: turnstileToken
       }
       
-      console.log('Sending registration data:', userData)
       
       const response = await fetch('http://localhost:8080/api/auth/register', {
         method: 'POST',
@@ -179,7 +225,6 @@ function SignUp() {
         body: JSON.stringify(userData)
       })
       
-      console.log('Registration response status:', response.status)
       
       const data = await response.json()
       
@@ -217,6 +262,7 @@ function SignUp() {
       } else {
         setErrors({ general: error.message || 'Failed to create account. Please try again.' })
       }
+      setHasAttemptedRegistration(false) // Reset flag on error to allow retry
     } finally {
       setIsLoading(false)
     }
@@ -408,6 +454,15 @@ function SignUp() {
           </form>
         </div>
       </div>
+
+      {/* Turnstile Security Modal */}
+      <TurnstileModal
+        isOpen={showTurnstileModal}
+        onClose={() => setShowTurnstileModal(false)}
+        onVerified={handleTurnstileVerified}
+        title="Security Verification"
+        description="Please complete the security verification to create your account"
+      />
     </PageWrapper>
   )
 }
@@ -656,6 +711,7 @@ const PageWrapper = styled.div`
       color: #4A8C96;
     }
   }
+
 `;
 
 const StyledButtonWrapper = styled.div`

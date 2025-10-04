@@ -4,11 +4,13 @@ import styled from 'styled-components'
 import ParticleBackground from '../effects/ParticleBackground'
 import ShinyText from '../effects/ShinyText'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useAuth } from '../../contexts/AuthContext'
 
 function VerifyEmail() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { colors, isDarkMode } = useTheme()
+  const { login } = useAuth()
   
   const [status, setStatus] = useState('verifying') // 'verifying', 'success', 'error'
   const [message, setMessage] = useState('')
@@ -46,7 +48,8 @@ function VerifyEmail() {
         method: 'GET',
         headers: {
           'Accept': 'application/json'
-        }
+        },
+        credentials: 'include' // Include cookies for httpOnly session
       })
 
       const data = await response.json()
@@ -56,10 +59,9 @@ function VerifyEmail() {
         setMessage(data.message || 'Email verified successfully!')
         setUserEmail(data.data?.user?.email || '')
         
-        // Store auth data
-        if (data.data?.token && data.data?.session_id) {
-          localStorage.setItem('authToken', data.data.token)
-          localStorage.setItem('sessionId', data.data.session_id)
+        // Store auth data using auth context
+        if (data.data?.user) {
+          await login(data.data?.token, data.data?.session_id, data.data.user)
         }
       } else {
         setStatus('error')
@@ -124,8 +126,8 @@ function VerifyEmail() {
       case 'success':
         return (
           <div className="status-content">
-                         <div className="icon-wrapper success" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%' }}>
-               <svg width="64" height="64" viewBox="0 0 24 24" fill="none" className="success-icon" style={{ display: 'block', margin: '0 auto' }}>
+            <div className="icon-wrapper success">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" className="success-icon">
                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
                  <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                </svg>
@@ -156,8 +158,8 @@ function VerifyEmail() {
       case 'error':
         return (
           <div className="status-content">
-                         <div className="icon-wrapper error" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%' }}>
-               <svg width="64" height="64" viewBox="0 0 24 24" fill="none" className="error-icon" style={{ display: 'block', margin: '0 auto' }}>
+            <div className="icon-wrapper error">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" className="error-icon">
                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
                  <path d="M15 9l-6 6M9 9l6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                </svg>
@@ -269,6 +271,10 @@ const PageWrapper = styled.div`
 
     .icon-wrapper {
       margin-bottom: 1.5rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
       
       &.verifying .verify-icon {
         color: #58A4B0;

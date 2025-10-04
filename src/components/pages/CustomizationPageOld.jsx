@@ -163,7 +163,6 @@ const CustomizationPage = ({ onBack }) => {
 
   // Load settings on component mount 
   useEffect(() => {
-    console.log('🏁 Component mounted - calling loadSettings')
     loadSettings()
   }, []) // Only run once on mount
 
@@ -191,16 +190,13 @@ const CustomizationPage = ({ onBack }) => {
   }, [hasUnsavedChanges])
 
   const loadSettings = async () => {
-    console.log('🔄 loadSettings called')
     try {
       const sessionId = localStorage.getItem('sessionId')
       if (!sessionId) {
-        console.log('❌ No session ID found')
         setLoading(false)
         return
       }
 
-      console.log('📡 Making API request to /api/customization/settings')
       const response = await fetch('/api/customization/settings', {
         headers: {
           'X-Session-ID': sessionId
@@ -254,7 +250,6 @@ const CustomizationPage = ({ onBack }) => {
             useDiscordAvatar: typeof backendSettings.use_discord_avatar === 'boolean' ? backendSettings.use_discord_avatar : settings.useDiscordAvatar,
             discordAvatarDecoration: typeof backendSettings.discord_avatar_decoration === 'boolean' ? backendSettings.discord_avatar_decoration : settings.discordAvatarDecoration
           }
-          console.log('✅ Setting loaded settings from API')
           setSettings(loadedSettings)
           setOriginalSettings(JSON.parse(JSON.stringify(loadedSettings)))
           setCurrentBio(backendSettings.bio || '')
@@ -518,9 +513,7 @@ const CustomizationPage = ({ onBack }) => {
 
   // Discard changes function
   const discardChanges = () => {
-    console.log('🔄 discardChanges called')
     if (originalSettings) {
-      console.log('⚠️ Reverting to original settings')
       setSettings({ ...originalSettings })
       setHasUnsavedChanges(false)
       setShowUnsavedDialog(false)

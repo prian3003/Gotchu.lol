@@ -110,8 +110,6 @@ export const useDashboard = (defaultSection = 'profile') => {
       const { user: userData } = data.data
       
       // Debug: Log the raw user data from backend
-      console.log('Raw userData from backend:', userData)
-      console.log('MFA enabled from backend:', userData.mfa_enabled)
 
       // Map API response to expected format
       const mappedUser = {

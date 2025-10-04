@@ -121,6 +121,36 @@ func (s *Service) buildVerificationEmailHTML(username, verificationLink string) 
             max-width: 600px;
             margin: 0 auto;
             padding: 40px 20px;
+            position: relative;
+        }
+        .geometric-shape {
+            position: absolute;
+            z-index: -1;
+        }
+        .shape-1 {
+            top: 80px;
+            left: -50px;
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(45deg, rgba(88, 164, 176, 0.1), rgba(74, 140, 150, 0.1));
+            border-radius: 20px;
+            transform: rotate(45deg);
+        }
+        .shape-2 {
+            top: 200px;
+            right: -30px;
+            width: 60px;
+            height: 60px;
+            background: rgba(88, 164, 176, 0.08);
+            border-radius: 50%%;
+        }
+        .shape-3 {
+            bottom: 150px;
+            left: -20px;
+            width: 80px;
+            height: 80px;
+            background: rgba(88, 164, 176, 0.06);
+            clip-path: polygon(50%% 0%%, 0%% 100%%, 100%% 100%%);
         }
         .header {
             text-align: center;
@@ -155,14 +185,17 @@ func (s *Service) buildVerificationEmailHTML(username, verificationLink string) 
         .verify-btn {
             display: inline-block;
             background: linear-gradient(135deg, #58A4B0 0%%, #4A8C96 100%%);
-            color: #ffffff;
-            text-decoration: none;
+            background-color: #58A4B0;
+            color: #ffffff !important;
+            text-decoration: none !important;
             padding: 16px 32px;
             border-radius: 12px;
             font-weight: 600;
             font-size: 16px;
             box-shadow: 0 8px 32px rgba(88, 164, 176, 0.3);
             transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
         }
         .verify-btn:hover {
             transform: translateY(-2px);
@@ -185,15 +218,19 @@ func (s *Service) buildVerificationEmailHTML(username, verificationLink string) 
 </head>
 <body>
     <div class="container">
+        <div class="geometric-shape shape-1"></div>
+        <div class="geometric-shape shape-2"></div>
+        <div class="geometric-shape shape-3"></div>
+        
         <div class="header">
             <div class="logo">gotchu</div>
         </div>
         
         <div class="content">
-            <div class="welcome">Welcome to Gotchu, %s! 🎉</div>
+            <div class="welcome">Welcome to Gotchu, %s!</div>
             
             <div class="message">
-                Thanks for joining our community! To get started and access all features, 
+                Thank you for creating your account. To complete your registration and access all platform features, 
                 please verify your email address by clicking the button below.
             </div>
             
@@ -202,13 +239,13 @@ func (s *Service) buildVerificationEmailHTML(username, verificationLink string) 
             </a>
             
             <div class="security">
-                🔒 This link will expire in 24 hours for security.<br>
-                If you didn't create this account, you can safely ignore this email.
+                This verification link will expire in 24 hours for security purposes.<br>
+                If you did not create this account, please disregard this email.
             </div>
         </div>
         
         <div class="footer">
-            © 2025 Gotchu. Made with ❤️ for creators.
+            © 2025 Gotchu. Professional platform for creators.
         </div>
     </div>
 </body>
