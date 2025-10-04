@@ -10,6 +10,7 @@ const LandingPage = () => {
   const { isAuthenticated } = useAuth()
   const navigate = useNavigate()
   const mockupRef = useRef(null)
+  const videoRef = useRef(null)
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -29,6 +30,43 @@ const LandingPage = () => {
     }
 
     return () => observer.disconnect()
+  }, [])
+
+  // Force video autoplay
+  useEffect(() => {
+    const video = videoRef.current
+    if (video) {
+      video.muted = true
+      video.autoplay = true
+      video.loop = true
+      video.playsInline = true
+      
+      const playVideo = async () => {
+        try {
+          await video.play()
+        } catch (err) {
+          console.log('Video autoplay failed:', err)
+          // Fallback: try again after user interaction
+          const handleInteraction = async () => {
+            try {
+              await video.play()
+              document.removeEventListener('click', handleInteraction)
+              document.removeEventListener('touchstart', handleInteraction)
+            } catch (e) {
+              console.log('Video play failed after interaction:', e)
+            }
+          }
+          document.addEventListener('click', handleInteraction, { once: true })
+          document.addEventListener('touchstart', handleInteraction, { once: true })
+        }
+      }
+      
+      if (video.readyState >= 4) {
+        playVideo()
+      } else {
+        video.addEventListener('canplaythrough', playVideo, { once: true })
+      }
+    }
   }, [])
 
   const handleGetStarted = () => {
@@ -88,10 +126,6 @@ const LandingPage = () => {
                         <SidebarIcon />
                         <span>premium</span>
                       </SidebarItem>
-                      <SidebarItem colors={colors}>
-                        <SidebarIcon />
-                        <span>image host</span>
-                      </SidebarItem>
                     </Sidebar>
                     
                     <MainContent>
@@ -140,20 +174,21 @@ const LandingPage = () => {
               <MobileMockups>
                 <MobileMockup colors={colors} style={{ transform: 'rotate(-15deg)', zIndex: 3 }}>
                   <MobileScreen colors={colors}>
-                    <MobileContent>
-                      <ProfileHeader>
-                        <ProfileAvatar colors={colors} />
-                        <ProfileInfo>
-                          <ProfileName colors={colors}>hris</ProfileName>
-                          <ProfileHandle colors={colors}>@check.on.top!</ProfileHandle>
-                        </ProfileInfo>
-                      </ProfileHeader>
-                      <SocialIcons>
-                        <SocialIcon colors={colors} />
-                        <SocialIcon colors={colors} />
-                        <SocialIcon colors={colors} />
-                      </SocialIcons>
-                    </MobileContent>
+                    <MockupVideo
+                      ref={videoRef}
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      preload="metadata"
+                      controls={false}
+                      disablePictureInPicture
+                      poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 640'%3E%3Crect width='360' height='640' fill='%23000'/%3E%3C/svg%3E"
+                    >
+                      <source src="https://raw.githubusercontent.com/prian3003/Gotchu.lol/main/public/demo.mp4" type="video/mp4" />
+                      <source src="/demo.mp4" type="video/mp4" />
+                      Your browser does not support the video tag.
+                    </MockupVideo>
                   </MobileScreen>
                 </MobileMockup>
               </MobileMockups>
@@ -536,139 +571,22 @@ const MobileScreen = styled.div`
   position: relative;
 `
 
-const MobileContent = styled.div`
-  padding: 1rem;
+const MockupVideo = styled.video`
+  width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-`
-
-const ProfileHeader = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-`
-
-const ProfileAvatar = styled.div`
-  width: 32px;
-  height: 32px;
-  background: ${props => props.colors.accent};
-  border-radius: 50%;
-`
-
-const ProfileInfo = styled.div`
-  flex: 1;
-`
-
-const ProfileName = styled.div`
-  color: ${props => props.colors.text};
-  font-weight: 600;
-  font-size: 0.9rem;
-`
-
-const ProfileHandle = styled.div`
-  color: ${props => props.colors.textSecondary};
-  font-size: 0.7rem;
-`
-
-const SocialIcons = styled.div`
-  display: flex;
-  gap: 0.5rem;
-  margin-top: auto;
-`
-
-const SocialIcon = styled.div`
-  width: 24px;
-  height: 24px;
-  background: ${props => props.colors.surface || 'rgba(255, 255, 255, 0.1)'};
-  border-radius: 6px;
-`
-
-const ProfileSection = styled.div`
-  text-align: center;
-  margin-bottom: 2rem;
-`
-
-const MobileProfileAvatar = styled.div`
-  width: 48px;
-  height: 48px;
-  background: linear-gradient(135deg, #f093fb, #f5576c);
-  border-radius: 50%;
-  margin: 0 auto 0.5rem;
-`
-
-const MobileProfileName = styled.div`
-  color: ${props => props.colors.text};
-  font-weight: 700;
-  font-size: 1.1rem;
-  margin-bottom: 0.25rem;
-`
-
-const MobileProfileHandle = styled.div`
-  color: ${props => props.colors.textSecondary};
-  font-size: 0.7rem;
-`
-
-const LinksList = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-`
-
-const MobileLink = styled.div`
-  background: ${props => props.colors.surface || 'rgba(255, 255, 255, 0.05)'};
-  border: 1px solid ${props => props.colors.border};
-  border-radius: 12px;
-  padding: 0.75rem;
-  color: ${props => props.colors.text};
-  font-size: 0.8rem;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  object-fit: cover;
+  border-radius: 20px;
+  pointer-events: none; /* Prevent user interaction */
   
-  &:hover {
-    background: ${props => props.colors.accent}10;
-    transform: translateY(-1px);
+  /* Force autoplay styles */
+  &::-webkit-media-controls {
+    display: none !important;
+  }
+  
+  &::-webkit-media-controls-panel {
+    display: none !important;
   }
 `
 
-const CenterContent = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  text-align: center;
-`
-
-const LargePfp = styled.div`
-  width: 60px;
-  height: 60px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  border-radius: 50%;
-  margin-bottom: 1rem;
-`
-
-const CenterName = styled.div`
-  color: ${props => props.colors.text};
-  font-weight: 700;
-  font-size: 1.2rem;
-  margin-bottom: 0.25rem;
-`
-
-const CenterHandle = styled.div`
-  color: ${props => props.colors.textSecondary};
-  font-size: 0.8rem;
-  margin-bottom: 1rem;
-`
-
-const CenterBadge = styled.div`
-  width: 20px;
-  height: 20px;
-  background: ${props => props.colors.accent};
-  border-radius: 50%;
-  border: 2px solid ${props => props.colors.text};
-`
 
 export default LandingPage
