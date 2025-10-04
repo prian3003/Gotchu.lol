@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
+import { API_BASE_URL } from '../config/api'
 
 const AuthContext = createContext({})
 
@@ -101,7 +102,7 @@ export const AuthProvider = ({ children }) => {
         
         while (attempts < maxAttempts) {
           try {
-            response = await fetch('http://localhost:8080/api/auth/me', {
+            response = await fetch(`${API_BASE_URL}/auth/me`, {
               credentials: 'include',
               headers: {
                 'Accept': 'application/json',
@@ -197,7 +198,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       // Call logout endpoint to clear httpOnly session cookie
-      await fetch('http://localhost:8080/api/auth/logout', {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
         method: 'POST',
         credentials: 'include',
       })
@@ -222,7 +223,7 @@ export const AuthProvider = ({ children }) => {
     authCache.clear()
     
     try {
-      const response = await fetch('http://localhost:8080/api/auth/me', {
+      const response = await fetch(`${API_BASE_URL}/auth/me`, {
         credentials: 'include',
         headers: {
           'Accept': 'application/json',

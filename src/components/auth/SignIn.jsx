@@ -5,6 +5,7 @@ import ShinyText from '../effects/ShinyText'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useAuth } from '../../contexts/AuthContext'
 import TurnstileModal from '../modals/TurnstileModal'
+import { API_BASE_URL } from '../../config/api'
 import { 
   HiFingerPrint,
   HiShieldCheck
@@ -57,7 +58,7 @@ function SignIn() {
     
     try {
       // Send the 2FA code along with the stored login credentials
-      const response = await fetch('http://localhost:8080/api/auth/login/2fa', {
+      const response = await fetch('${API_BASE_URL}/auth/login/2fa', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -124,7 +125,7 @@ function SignIn() {
       }))
       
       // Redirect to backend OAuth initiation endpoint
-      const authUrl = `http://localhost:8080/api/auth/oauth/${provider}?state=${encodeURIComponent(state)}`
+      const authUrl = `${API_BASE_URL}/auth/oauth/${provider}?state=${encodeURIComponent(state)}`
       
       // Clear loading state before redirect to prevent glitches if user comes back
       setTimeout(() => {
@@ -192,7 +193,7 @@ function SignIn() {
         turnstile_token: turnstileToken
       }
       
-      const response = await fetch('http://localhost:8080/api/auth/login', {
+      const response = await fetch('${API_BASE_URL}/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

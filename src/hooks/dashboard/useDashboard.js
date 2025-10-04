@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import logger from '../../utils/logger'
+import { API_BASE_URL } from '../../config/api'
 
 // Global flag to prevent multiple concurrent dashboard fetches
 let globalDashboardFetching = false
@@ -47,7 +48,7 @@ export const useDashboard = (defaultSection = 'profile') => {
   // Define fetchLinks with useCallback to avoid dependency issues
   const fetchLinks = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:8080/api/links', {
+      const response = await fetch('${API_BASE_URL}/links', {
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
           'Content-Type': 'application/json'
@@ -84,7 +85,7 @@ export const useDashboard = (defaultSection = 'profile') => {
       setError(null)
 
       // Fetch real dashboard data from backend API using cookies
-      const response = await fetch('http://localhost:8080/api/dashboard', {
+      const response = await fetch('${API_BASE_URL}/dashboard', {
         method: 'GET',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -170,7 +171,7 @@ export const useDashboard = (defaultSection = 'profile') => {
   // Handle account logout
   const handleLogout = useCallback(async () => {
     try {
-      await fetch('http://localhost:8080/api/auth/logout', {
+      await fetch('${API_BASE_URL}/auth/logout', {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -209,7 +210,7 @@ export const useDashboard = (defaultSection = 'profile') => {
     if (!window.confirm('Are you sure you want to delete this link?')) return
     
     try {
-      const response = await fetch(`http://localhost:8080/api/links/${linkId}`, {
+      const response = await fetch(`${API_BASE_URL}/links/${linkId}`, {
         method: 'DELETE',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -234,7 +235,7 @@ export const useDashboard = (defaultSection = 'profile') => {
       const link = userLinks.find(l => l.id === linkId)
       if (!link) return
       
-      const response = await fetch(`http://localhost:8080/api/links/${linkId}`, {
+      const response = await fetch(`${API_BASE_URL}/links/${linkId}`, {
         method: 'PUT',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -267,7 +268,7 @@ export const useDashboard = (defaultSection = 'profile') => {
     
     try {
       const method = editingLink ? 'PUT' : 'POST'
-      const url = editingLink ? `http://localhost:8080/api/links/${editingLink.id}` : 'http://localhost:8080/api/links'
+      const url = editingLink ? `${API_BASE_URL}/links/${editingLink.id}` : '${API_BASE_URL}/links'
       
       const response = await fetch(url, {
         method,
@@ -320,7 +321,7 @@ export const useDashboard = (defaultSection = 'profile') => {
     formData.append('file', file)
     
     try {
-      const response = await fetch('http://localhost:8080/api/upload/icon', {
+      const response = await fetch('${API_BASE_URL}/upload/icon', {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         body: formData

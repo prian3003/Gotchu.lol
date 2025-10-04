@@ -4,6 +4,7 @@ import styled from 'styled-components'
 import ShinyText from '../effects/ShinyText'
 import { useTheme } from '../../contexts/ThemeContext'
 import TurnstileModal from '../modals/TurnstileModal'
+import { API_BASE_URL } from '../../config/api'
 
 function SignUp() {
   const [formData, setFormData] = useState({
@@ -71,7 +72,7 @@ function SignUp() {
 
     try {
       
-      const response = await fetch(`http://localhost:8080/api/auth/check-username/${encodeURIComponent(username)}`, {
+      const response = await fetch(`${API_BASE_URL}/auth/check-username/${encodeURIComponent(username)}`, {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
@@ -216,7 +217,7 @@ function SignUp() {
       }
       
       
-      const response = await fetch('http://localhost:8080/api/auth/register', {
+      const response = await fetch('${API_BASE_URL}/auth/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
