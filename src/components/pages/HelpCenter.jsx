@@ -2,11 +2,20 @@ import React, { useState, useEffect } from 'react'
 import styled from 'styled-components'
 import { useNavigate } from 'react-router-dom'
 import { Icon } from '@iconify/react'
+import { useTheme } from '../../contexts/ThemeContext'
+import ParticleBackground from '../effects/ParticleBackground'
 
 const HelpCenter = () => {
+  const { colors } = useTheme()
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
   const [filteredSections, setFilteredSections] = useState([])
+  const [isVisible, setIsVisible] = useState(false)
+
+  useEffect(() => {
+    setIsVisible(true)
+    window.scrollTo(0, 0)
+  }, [])
 
   // Help sections organized by categories
   const helpSections = {
@@ -15,8 +24,8 @@ const HelpCenter = () => {
         id: 'getting-started',
         title: 'Getting Started with gotchu.lol',
         description: 'Learn the basics of creating and setting up your profile',
-        icon: 'heroicons:rocket-launch',
-        color: '#58A4B0',
+        icon: 'mdi:rocket-launch',
+        color: colors.accent,
         articles: [
           'Creating your first profile',
           'Profile customization basics', 
@@ -242,34 +251,94 @@ const HelpCenter = () => {
   }
 
   return (
-    <HelpContainer>
-      <BackButton onClick={() => navigate('/dashboard')}>
-        <Icon icon="heroicons:arrow-left" width={20} height={20} />
+    <HelpContainer style={{
+      background: `linear-gradient(135deg, ${colors.background} 0%, ${colors.surface} 50%, ${colors.background} 100%)`,
+      color: colors.text,
+      minHeight: '100vh',
+      position: 'relative',
+      overflow: 'hidden'
+    }}>
+      <ParticleBackground />
+      
+      <ContentWrapper style={{
+        padding: '120px 24px 80px',
+        position: 'relative',
+        zIndex: 2,
+        maxWidth: '1200px',
+        margin: '0 auto',
+        opacity: isVisible ? 1 : 0,
+        transform: isVisible ? 'translateY(0)' : 'translateY(20px)',
+        transition: 'all 0.8s ease'
+      }}>
+      
+      <BackButton onClick={() => navigate('/dashboard')} style={{
+        background: colors.surface,
+        border: `1px solid ${colors.border}`,
+        color: colors.text
+      }}>
+        <Icon icon="mdi:arrow-left" width={20} height={20} />
         <span>Back to Dashboard</span>
       </BackButton>
 
-      <Header>
-        <HeaderIcon>
-          <Icon icon="heroicons:question-mark-circle" width={40} height={40} />
-        </HeaderIcon>
-        <Title>gotchu.lol Help Center</Title>
-        <Subtitle>How can we help you?</Subtitle>
-        <Description>
+      <Header style={{ textAlign: 'center', marginBottom: '48px' }}>
+        <HeaderBadge style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: `${colors.accent}20`,
+          border: `1px solid ${colors.accent}40`,
+          borderRadius: '50px',
+          padding: '8px 16px',
+          marginBottom: '24px',
+          fontSize: '14px',
+          color: colors.accent
+        }}>
+          <Icon icon="mdi:help-circle" style={{ fontSize: '18px' }} />
+          Help Center
+        </HeaderBadge>
+        
+        <Title style={{
+          fontSize: '3rem',
+          fontWeight: '800',
+          margin: '0 0 16px 0',
+          background: `linear-gradient(135deg, ${colors.accent}, ${colors.text})`,
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+          lineHeight: '1.2'
+        }}>
+          How can we help you?
+        </Title>
+        
+        <Description style={{
+          fontSize: '1.1rem',
+          color: colors.muted,
+          margin: '0 auto',
+          maxWidth: '600px',
+          lineHeight: '1.6'
+        }}>
           Need help? Start by searching for answers to common questions. Whether you're setting up your profile,
           adding social media links, or exploring premium features, we've got you covered.
         </Description>
       </Header>
 
-      <SearchSection>
+      <SearchSection style={{ marginBottom: '48px' }}>
         <SearchContainer>
-          <SearchIcon>
-            <Icon icon="heroicons:magnifying-glass" width={20} height={20} />
+          <SearchIcon style={{ color: colors.muted }}>
+            <Icon icon="mdi:magnify" width={20} height={20} />
           </SearchIcon>
           <SearchInput
             type="text"
             placeholder="Search documentation..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              background: colors.surface,
+              border: `2px solid ${colors.border}`,
+              color: colors.text,
+              borderRadius: '16px',
+              padding: '16px 16px 16px 48px'
+            }}
           />
         </SearchContainer>
       </SearchSection>
@@ -283,8 +352,13 @@ const HelpCenter = () => {
                 {filteredSections.map((section) => (
                   <SectionCard 
                     key={section.id} 
-                    color={section.color}
                     onClick={() => handleSectionClick(section.id)}
+                    style={{
+                      background: colors.surface,
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '16px',
+                      padding: '24px'
+                    }}
                   >
                     <SectionIcon color={section.color}>
                       <Icon icon={section.icon} width={24} height={24} />
@@ -388,179 +462,54 @@ const HelpCenter = () => {
           </SidebarSection>
         </Sidebar>
       </ContentWrapper>
+      </ContentWrapper>
     </HelpContainer>
   )
 }
 
-// Styled Components
-const HelpContainer = styled.div`
-  min-height: 100vh;
-  background: linear-gradient(135deg, #0F0F23 0%, #1A1A2E 100%);
-  color: #ffffff;
-  padding: 2rem;
-  
-  @media (max-width: 768px) {
-    padding: 1rem;
-  }
-`
-
-const BackButton = styled.button`
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #ffffff;
-  padding: 0.75rem 1.5rem;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  margin-bottom: 2rem;
-  font-size: 0.9rem;
-  font-weight: 500;
-  
-  &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-  }
-  
-  svg {
-    width: 1.2rem;
-    height: 1.2rem;
-  }
-`
-
-const Header = styled.div`
-  text-align: center;
-  max-width: 800px;
-  margin: 0 auto 4rem auto;
-`
-
-const HeaderIcon = styled.div`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 80px;
-  height: 80px;
-  background: linear-gradient(135deg, #58A4B0, #4A8C96);
-  border-radius: 20px;
-  margin-bottom: 1.5rem;
-  box-shadow: 0 8px 32px rgba(88, 164, 176, 0.3);
-  
-  svg {
-    width: 2.5rem;
-    height: 2.5rem;
-    color: #ffffff;
-  }
-`
-
-const Title = styled.h1`
-  font-size: 3rem;
-  font-weight: 700;
-  color: #ffffff;
-  margin-bottom: 1rem;
-  background: linear-gradient(135deg, #ffffff, #58A4B0);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  
-  @media (max-width: 768px) {
-    font-size: 2.5rem;
-  }
-`
-
-const Subtitle = styled.h2`
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #58A4B0;
-  margin-bottom: 1rem;
-  
-  @media (max-width: 768px) {
-    font-size: 1.25rem;
-  }
-`
-
-const Description = styled.p`
-  font-size: 1.1rem;
-  color: rgba(255, 255, 255, 0.8);
-  line-height: 1.6;
-  max-width: 600px;
-  margin: 0 auto;
-`
-
+// Simple styled components for structure
+const HelpContainer = styled.div``
+const ContentWrapper = styled.div``
+const Header = styled.div``
+const HeaderBadge = styled.div``
+const Title = styled.h1``
+const Description = styled.p``
 const SearchSection = styled.div`
   display: flex;
   justify-content: center;
-  margin-bottom: 4rem;
 `
-
 const SearchContainer = styled.div`
   position: relative;
   width: 100%;
   max-width: 600px;
 `
-
 const SearchIcon = styled.div`
   position: absolute;
-  left: 1rem;
+  left: 16px;
   top: 50%;
   transform: translateY(-50%);
-  color: rgba(255, 255, 255, 0.5);
   z-index: 2;
-  
-  svg {
-    width: 1.25rem;
-    height: 1.25rem;
-  }
 `
-
 const SearchInput = styled.input`
   width: 100%;
-  padding: 1rem 1rem 1rem 3rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  color: #ffffff;
-  font-size: 1rem;
-  transition: all 0.3s ease;
-  
   &::placeholder {
-    color: rgba(255, 255, 255, 0.5);
+    color: ${props => props.colors?.muted || '#a0a0a0'};
   }
-  
   &:focus {
     outline: none;
-    border-color: #58A4B0;
-    background: rgba(255, 255, 255, 0.08);
-    box-shadow: 0 0 0 4px rgba(88, 164, 176, 0.1);
+    border-color: ${props => props.colors?.accent || '#58A4B0'};
+    box-shadow: 0 0 0 4px ${props => props.colors?.accent || '#58A4B0'}20;
   }
 `
-
-const ContentWrapper = styled.div`
-  display: flex;
-  gap: 2rem;
-  max-width: 1400px;
-  margin: 0 auto;
-  
-  @media (max-width: 1024px) {
-    flex-direction: column;
-    gap: 3rem;
-  }
-`
-
 const MainContent = styled.div`
   flex: 1;
 `
-
 const CategorySection = styled.div`
-  margin-bottom: 4rem;
+  margin-bottom: 3rem;
 `
-
 const SectionTitle = styled.h3`
   font-size: 1.75rem;
   font-weight: 700;
-  color: #ffffff;
   margin-bottom: 1.5rem;
   display: flex;
   align-items: center;
@@ -570,11 +519,10 @@ const SectionTitle = styled.h3`
     content: '';
     width: 4px;
     height: 2rem;
-    background: linear-gradient(135deg, #58A4B0, #4A8C96);
+    background: ${props => props.colors?.accent || '#58A4B0'};
     border-radius: 2px;
   }
 `
-
 const SectionGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
@@ -585,46 +533,18 @@ const SectionGrid = styled.div`
     gap: 1rem;
   }
 `
-
 const SectionCard = styled.div`
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  padding: 1.5rem;
   cursor: pointer;
   transition: all 0.3s ease;
-  backdrop-filter: blur(10px);
-  position: relative;
-  overflow: hidden;
-  
-  &:before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: ${props => props.color || '#58A4B0'};
-    opacity: 0;
-    transition: opacity 0.3s ease;
-  }
-  
-  &:hover {
-    transform: translateY(-4px);
-    background: rgba(255, 255, 255, 0.06);
-    border-color: ${props => props.color || '#58A4B0'};
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-    
-    &:before {
-      opacity: 1;
-    }
-  }
-  
   display: flex;
   align-items: flex-start;
   gap: 1rem;
+  
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+  }
 `
-
 const SectionIcon = styled.div`
   display: flex;
   align-items: center;
@@ -641,73 +561,53 @@ const SectionIcon = styled.div`
     color: ${props => props.color || '#58A4B0'};
   }
 `
-
 const SectionContent = styled.div`
   flex: 1;
 `
-
 const SectionCardTitle = styled.h4`
   font-size: 1.1rem;
   font-weight: 600;
-  color: #ffffff;
   margin-bottom: 0.5rem;
 `
-
 const SectionCardDescription = styled.p`
   font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.7);
   line-height: 1.5;
   margin-bottom: 0.75rem;
 `
-
 const CategoryTag = styled.span`
   display: inline-block;
-  background: rgba(88, 164, 176, 0.2);
-  color: #58A4B0;
+  background: ${props => `${props.colors?.accent || '#58A4B0'}20`};
+  color: ${props => props.colors?.accent || '#58A4B0'};
   padding: 0.25rem 0.75rem;
   border-radius: 20px;
   font-size: 0.75rem;
   font-weight: 500;
 `
-
 const SearchResults = styled.div`
   margin-bottom: 2rem;
 `
-
 const NoResults = styled.div`
   text-align: center;
   padding: 4rem 2rem;
 `
-
 const NoResultsIcon = styled.div`
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 80px;
   height: 80px;
-  background: rgba(255, 255, 255, 0.05);
+  background: ${props => props.colors?.surface || 'rgba(255, 255, 255, 0.05)'};
   border-radius: 20px;
   margin-bottom: 1.5rem;
-  
-  svg {
-    width: 2rem;
-    height: 2rem;
-    color: rgba(255, 255, 255, 0.5);
-  }
 `
-
 const NoResultsTitle = styled.h3`
   font-size: 1.5rem;
   font-weight: 600;
-  color: #ffffff;
   margin-bottom: 0.75rem;
 `
-
 const NoResultsDescription = styled.p`
   font-size: 1rem;
-  color: rgba(255, 255, 255, 0.7);
 `
-
 const Sidebar = styled.div`
   width: 300px;
   
@@ -715,31 +615,24 @@ const Sidebar = styled.div`
     width: 100%;
   }
 `
-
 const SidebarSection = styled.div`
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: ${props => props.colors?.surface || 'rgba(255, 255, 255, 0.03)'};
+  border: 1px solid ${props => props.colors?.border || 'rgba(255, 255, 255, 0.08)'};
   border-radius: 16px;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
-  backdrop-filter: blur(10px);
 `
-
 const SidebarTitle = styled.h4`
   font-size: 1.1rem;
   font-weight: 600;
-  color: #ffffff;
   margin-bottom: 1rem;
 `
-
 const SidebarLinks = styled.div`
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 `
-
 const SidebarLink = styled.a`
-  color: rgba(255, 255, 255, 0.7);
   font-size: 0.9rem;
   text-decoration: none;
   padding: 0.5rem;
@@ -747,55 +640,41 @@ const SidebarLink = styled.a`
   transition: all 0.3s ease;
   
   &:hover {
-    color: #58A4B0;
-    background: rgba(88, 164, 176, 0.1);
+    color: ${props => props.colors?.accent || '#58A4B0'};
+    background: ${props => `${props.colors?.accent || '#58A4B0'}10`};
   }
 `
-
 const ContactCard = styled.div`
   display: flex;
   gap: 1rem;
   align-items: flex-start;
 `
-
 const ContactIcon = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
   width: 40px;
   height: 40px;
-  background: rgba(88, 164, 176, 0.2);
+  background: ${props => `${props.colors?.accent || '#58A4B0'}20`};
   border-radius: 10px;
   flex-shrink: 0;
-  
-  svg {
-    width: 1.25rem;
-    height: 1.25rem;
-    color: #58A4B0;
-  }
 `
-
 const ContactContent = styled.div`
   flex: 1;
 `
-
 const ContactTitle = styled.h5`
   font-size: 1rem;
   font-weight: 600;
-  color: #ffffff;
   margin-bottom: 0.5rem;
 `
-
 const ContactDescription = styled.p`
   font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.7);
   line-height: 1.4;
   margin-bottom: 1rem;
 `
-
 const ContactButton = styled.button`
-  background: linear-gradient(135deg, #58A4B0, #4A8C96);
-  color: #ffffff;
+  background: ${props => props.colors?.accent || '#58A4B0'};
+  color: white;
   border: none;
   padding: 0.5rem 1rem;
   border-radius: 8px;
@@ -806,7 +685,24 @@ const ContactButton = styled.button`
   
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(88, 164, 176, 0.3);
+    box-shadow: 0 4px 15px ${props => `${props.colors?.accent || '#58A4B0'}30`};
+  }
+`
+const BackButton = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-bottom: 2rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
   }
 `
 

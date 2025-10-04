@@ -11,16 +11,13 @@
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    },
-    {
       "src": "/(.*)",
       "dest": "/index.html"
     }
   ],
   "env": {
-    "NODE_VERSION": "18"
+    "NODE_VERSION": "18",
+    "VITE_API_URL": "https://gotchu-backend.onrender.com"
   },
   "functions": {
     "app": {

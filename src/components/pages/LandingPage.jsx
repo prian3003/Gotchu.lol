@@ -73,7 +73,7 @@ const LandingPage = () => {
     if (isAuthenticated) {
       navigate('/dashboard')
     } else {
-      navigate('/auth')
+      navigate('/signup')
     }
   }
 

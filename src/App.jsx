@@ -80,6 +80,16 @@ const PremiumPage = createLazyRoute(
   { chunkName: 'pricing', fallbackType: 'default' }
 )
 
+const PrivacyPolicy = createLazyRoute(
+  () => import('./components/pages/PrivacyPolicy'),
+  { chunkName: 'privacy', fallbackType: 'default' }
+)
+
+const TermsOfService = createLazyRoute(
+  () => import('./components/pages/TermsOfService'),
+  { chunkName: 'terms', fallbackType: 'default' }
+)
+
 const Templates = createLazyRoute(
   () => import('./components/pages/Templates'),
   { chunkName: 'templates', fallbackType: 'default' }
@@ -196,6 +206,8 @@ const App = () => {
               
               {/* Public info pages */}
               <Route path='/pricing' element={<PremiumPage />}/>
+              <Route path='/privacy' element={<PrivacyPolicy />}/>
+              <Route path='/terms' element={<TermsOfService />}/>
               <Route path='/about' element={"About"}/>
               <Route path='/project' element={"Project"}/>
               <Route path='/contact' element={"Contact"}/>

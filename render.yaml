@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: gotchu-backend
+    env: go
+    region: frankfurt  # Choose closest to your users
+    plan: free
+    buildCommand: cd backend && go build -o main .
+    startCommand: cd backend && ./main
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gotchu-database
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: gotchu-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://gotchu.vercel.app,http://localhost:5173
+      - key: ENVIRONMENT
+        value: production
+
+databases:
+  - name: gotchu-database
+    databaseName: gotchu
+    user: gotchu_user
+    plan: free
+    region: frankfurt
+
+  - name: gotchu-redis
+    plan: free
+    region: frankfurt

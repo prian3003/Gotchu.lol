@@ -86,6 +86,23 @@ const CustomizationPage = ({ onBack }) => {
   const [activeTab, setActiveTab] = useState('appearance') // Temporarily restored for syntax
   const [showAudioModal, setShowAudioModal] = useState(false)
   const [showFontModal, setShowFontModal] = useState(false)
+  const [tooltip, setTooltip] = useState({ show: false, text: '', x: 0, y: 0 })
+  
+  // Tooltip handlers
+  const showTooltip = (e, text) => {
+    const rect = e.target.getBoundingClientRect()
+    setTooltip({
+      show: true,
+      text,
+      x: rect.left + rect.width / 2,
+      y: rect.top - 10
+    })
+  }
+  
+  const hideTooltip = () => {
+    setTooltip({ show: false, text: '', x: 0, y: 0 })
+  }
+  
   const [tempSelectedFont, setTempSelectedFont] = useState('')
   const [showUsernameEffectsModal, setShowUsernameEffectsModal] = useState(false)
   const [tempSelectedUsernameEffect, setTempSelectedUsernameEffect] = useState('')
@@ -2055,7 +2072,11 @@ const CustomizationPage = ({ onBack }) => {
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <span style={{ color: '#ffffff', fontSize: '0.95rem' }}>Monochrome Icons</span>
-                  <HiInformationCircle style={{ color: '#888', fontSize: '1rem' }} />
+                  <HiInformationCircle 
+                    style={{ color: '#888', fontSize: '1rem', cursor: 'help' }}
+                    onMouseEnter={(e) => showTooltip(e, 'This feature allows you to display all social icons in a single color.')}
+                    onMouseLeave={hideTooltip}
+                  />
                 </div>
                 <div
                   style={{
@@ -2136,7 +2157,11 @@ const CustomizationPage = ({ onBack }) => {
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <span style={{ color: '#ffffff', fontSize: '0.95rem' }}>Swap Box Colors</span>
-                  <HiInformationCircle style={{ color: '#888', fontSize: '1rem' }} />
+                  <HiInformationCircle 
+                    style={{ color: '#888', fontSize: '1rem', cursor: 'help' }}
+                    onMouseEnter={(e) => showTooltip(e, 'Applies the accent color as the background for widgets, such as the Discord presence, instead of the default text color.')}
+                    onMouseLeave={hideTooltip}
+                  />
                 </div>
                 <div
                   style={{
@@ -3039,6 +3064,45 @@ const CustomizationPage = ({ onBack }) => {
           </SaveSnackbarContent>
         </SaveSnackbar>,
         document.body
+      )}
+
+      {/* Tooltip */}
+      {tooltip.show && (
+        <div
+          style={{
+            position: 'fixed',
+            top: tooltip.y,
+            left: tooltip.x,
+            transform: 'translateX(-50%) translateY(-100%)',
+            background: 'rgba(0, 0, 0, 0.9)',
+            color: '#ffffff',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            fontSize: '13px',
+            maxWidth: '250px',
+            zIndex: 10000,
+            pointerEvents: 'none',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+            backdropFilter: 'blur(10px)',
+            lineHeight: '1.4'
+          }}
+        >
+          {tooltip.text}
+          <div
+            style={{
+              position: 'absolute',
+              top: '100%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 0,
+              height: 0,
+              borderLeft: '6px solid transparent',
+              borderRight: '6px solid transparent',
+              borderTop: '6px solid rgba(0, 0, 0, 0.9)'
+            }}
+          />
+        </div>
       )}
     </>
   )
