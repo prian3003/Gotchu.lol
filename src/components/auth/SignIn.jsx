@@ -58,7 +58,7 @@ function SignIn() {
     
     try {
       // Send the 2FA code along with the stored login credentials
-      const response = await fetch('${API_BASE_URL}/auth/login/2fa', {
+      const response = await fetch(`${API_BASE_URL}/auth/login/2fa`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -193,7 +193,7 @@ function SignIn() {
         turnstile_token: turnstileToken
       }
       
-      const response = await fetch('${API_BASE_URL}/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
