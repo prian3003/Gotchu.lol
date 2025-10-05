@@ -31,46 +31,16 @@ export default defineConfig(({ mode }) => {
           'query-vendor': ['@tanstack/react-query'],
           'styled-vendor': ['styled-components'],
           'icons-vendor': ['react-icons', '@iconify/react'],
-          'flags-vendor': ['flag-icons'],
-          
-          // App chunks
-          'auth': [
-            './src/components/auth/SignIn.jsx',
-            './src/components/auth/SignUp.jsx',
-            './src/components/auth/EmailVerification.jsx',
-            './src/components/auth/VerifyEmail.jsx'
-          ],
-          'dashboard': [
-            './src/components/pages/Dashboard.jsx',
-            './src/components/dashboard/ProfileSection.jsx',
-            './src/components/dashboard/LinksSection.jsx',
-            './src/components/dashboard/AnalyticsSection.jsx',
-            './src/components/dashboard/CustomizationSection.jsx',
-            './src/components/dashboard/QuickActionsSection.jsx'
-          ],
-          'ui-components': [
-            './src/components/ui/Button.jsx',
-            './src/components/ui/Input.jsx',
-            './src/components/ui/Form.jsx',
-            './src/components/ui/Card.jsx',
-            './src/components/ui/Modal.jsx',
-            './src/components/ui/Toast.jsx',
-            './src/components/ui/Loading.jsx'
-          ]
+          'flags-vendor': ['flag-icons']
         },
-        // Ensure chunks are optimally sized
-        chunkFileNames: (chunkInfo) => {
-          const facadeModuleId = chunkInfo.facadeModuleId
-          if (facadeModuleId) {
-            const fileName = facadeModuleId.split('/').pop().replace('.jsx', '').replace('.js', '')
-            return `js/${fileName}-[hash].js`
-          }
-          return 'js/[name]-[hash].js'
-        }
+        // Ensure chunks are optimally sized and have correct file extensions
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]'
       }
     },
     // Set chunk size warnings
-    chunkSizeWarningLimit: 500, // Smaller chunks for better loading
+    chunkSizeWarningLimit: 500,
     // Target modern browsers for better optimization
     target: 'esnext',
     // Minify for production

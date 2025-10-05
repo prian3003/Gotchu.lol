@@ -21,9 +21,15 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ORIGINS
-        value: https://gotchu.vercel.app,http://localhost:5173
+        value: https://gotchu.lol,https://www.gotchu.lol,http://localhost:3000,http://localhost:5173
       - key: ENVIRONMENT
         value: production
+      - key: SITE_URL
+        value: https://gotchu.lol
+      - key: FRONTEND_URL
+        value: https://gotchu.lol
+      - key: BASE_URL
+        value: https://gotchu-lol.onrender.com
 
 databases:
   - name: gotchu-database
