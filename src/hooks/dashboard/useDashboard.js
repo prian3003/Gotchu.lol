@@ -48,7 +48,7 @@ export const useDashboard = (defaultSection = 'profile') => {
   // Define fetchLinks with useCallback to avoid dependency issues
   const fetchLinks = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/links', {
+      const response = await fetch(`${API_BASE_URL}/links`, {
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
           'Content-Type': 'application/json'
@@ -85,7 +85,7 @@ export const useDashboard = (defaultSection = 'profile') => {
       setError(null)
 
       // Fetch real dashboard data from backend API using cookies
-      const response = await fetch(`${API_BASE_URL}/dashboard', {
+      const response = await fetch(`${API_BASE_URL}/dashboard`, {
         method: 'GET',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -171,7 +171,7 @@ export const useDashboard = (defaultSection = 'profile') => {
   // Handle account logout
   const handleLogout = useCallback(async () => {
     try {
-      await fetch(`${API_BASE_URL}/auth/logout', {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -268,7 +268,7 @@ export const useDashboard = (defaultSection = 'profile') => {
     
     try {
       const method = editingLink ? 'PUT' : 'POST'
-      const url = editingLink ? `${API_BASE_URL}/links/${editingLink.id}` : `${API_BASE_URL}/links'
+      const url = editingLink ? `${API_BASE_URL}/links/${editingLink.id}` : `${API_BASE_URL}/links`
       
       const response = await fetch(url, {
         method,
@@ -321,7 +321,7 @@ export const useDashboard = (defaultSection = 'profile') => {
     formData.append('file', file)
     
     try {
-      const response = await fetch(`${API_BASE_URL}/upload/icon', {
+      const response = await fetch(`${API_BASE_URL}/upload/icon`, {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         body: formData
