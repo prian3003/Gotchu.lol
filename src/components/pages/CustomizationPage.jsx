@@ -10,6 +10,7 @@ import { deleteAsset, getAssetFilePath, getAssetTypeFromUrl } from '../../utils/
 import { SimpleIconComponent } from '../../utils/simpleIconsHelper.jsx'
 import { useDiscord } from '../../hooks/useDiscord'
 import { useAuth } from '../../contexts/AuthContext'
+import { API_BASE_URL } from '../../config/api'
 import {
   HiUser,
   HiCog,
@@ -289,7 +290,7 @@ const CustomizationPage = ({ onBack }) => {
 
   const loadSettings = async () => {
     try {
-      const response = await fetch('http://localhost:8080/api/customization/settings', {
+      const response = await fetch('${API_BASE_URL}/customization/settings', {
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
           'Content-Type': 'application/json'
@@ -381,7 +382,7 @@ const CustomizationPage = ({ onBack }) => {
 
       logger.info('Attempting to save settings...')
 
-      const response = await fetch('http://localhost:8080/api/customization/settings', {
+      const response = await fetch('${API_BASE_URL}/customization/settings', {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -486,7 +487,7 @@ const CustomizationPage = ({ onBack }) => {
   // Direct save function for audio settings - bypasses unsaved changes dialog
   const saveAudioSettings = async (silent = false) => {
     try {
-      const response = await fetch('http://localhost:8080/api/customization/settings', {
+      const response = await fetch('${API_BASE_URL}/customization/settings', {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -743,7 +744,7 @@ const CustomizationPage = ({ onBack }) => {
   const fetchUserId = async () => {
     try {
 
-      const response = await fetch('http://localhost:8080/api/dashboard', {
+      const response = await fetch('${API_BASE_URL}/dashboard', {
         method: 'GET',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -927,7 +928,7 @@ const CustomizationPage = ({ onBack }) => {
       formData.append('file', file)
       formData.append('type', type)
 
-      const response = await fetch('http://localhost:8080/api/upload/asset', {
+      const response = await fetch('${API_BASE_URL}/upload/asset', {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         body: formData

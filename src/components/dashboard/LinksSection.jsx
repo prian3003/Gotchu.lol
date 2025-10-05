@@ -3,6 +3,7 @@ import logger from '../../utils/logger'
 import styled from 'styled-components'
 import { HiLink, HiPlus, HiPencil, HiTrash, HiEye, HiCursorArrowRays, HiXMark, HiArrowsPointingOut } from 'react-icons/hi2'
 import { SimpleIconComponent } from '../../utils/simpleIconsHelper.jsx'
+import { API_BASE_URL } from '../../config/api'
 
 // Social Media Icons Data - Using Simple Icons names (colors are now pulled from Simple Icons)
 const socialMediaPlatforms = [
@@ -101,7 +102,7 @@ const LinksSection = ({
 
   const updateLink = async (linkId, updatedData) => {
     try {
-      const response = await fetch(`http://localhost:8080/api/links/${linkId}`, {
+      const response = await fetch(`${API_BASE_URL}/links/${linkId}`, {
         method: 'PUT',
         credentials: 'include', // Include httpOnly cookies for auth
         headers: {
@@ -143,7 +144,7 @@ const LinksSection = ({
       // Show deletion alert
       showAlert(`Deleting ${linkToDelete?.title || 'link'}...`, 'info', 2000)
       
-      const response = await fetch(`http://localhost:8080/api/links/${linkId}`, {
+      const response = await fetch(`${API_BASE_URL}/links/${linkId}`, {
         method: 'DELETE',
         credentials: 'include', // Include httpOnly cookies for auth
         headers: {
@@ -240,7 +241,7 @@ const LinksSection = ({
       }
       
       
-      const response = await fetch('http://localhost:8080/api/links', {
+      const response = await fetch('${API_BASE_URL}/links', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -274,7 +275,7 @@ const LinksSection = ({
     if (!linkData.text.trim()) return
 
     try {
-      const response = await fetch('http://localhost:8080/api/links', {
+      const response = await fetch('${API_BASE_URL}/links', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -376,7 +377,7 @@ const LinksSection = ({
         order: index + 1
       }))
 
-      const response = await fetch('http://localhost:8080/api/links/reorder', {
+      const response = await fetch('${API_BASE_URL}/links/reorder', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'

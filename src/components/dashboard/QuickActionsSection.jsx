@@ -1,6 +1,7 @@
 import React from 'react'
 import logger from '../../utils/logger'
 import styled from 'styled-components'
+import { API_BASE_URL } from '../../config/api'
 import { 
   HiRocketLaunch, 
   HiShare, 
@@ -52,7 +53,7 @@ const QuickActionsSection = ({ user, onNavigate }) => {
 
   const handleExportData = async () => {
     try {
-      const response = await fetch('http://localhost:8080/api/user/export', {
+      const response = await fetch('${API_BASE_URL}/user/export', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json'

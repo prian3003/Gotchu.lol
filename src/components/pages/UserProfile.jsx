@@ -15,6 +15,7 @@ import DiscordBadges from '../discord/DiscordBadges'
 import ProfileSplashScreen from '../profile/ProfileSplashScreen'
 import { backgroundCache } from '../../utils/backgroundCache'
 import useSplashScreen from '../../hooks/useSplashScreen'
+import { API_BASE_URL } from '../../config/api'
 
 // Custom Tooltip Component
 const CustomTooltip = ({ children, content, customization }) => {
@@ -420,7 +421,7 @@ const UserProfile = () => {
       
       while (attempts < maxAttempts) {
         try {
-          const response = await fetch(`http://localhost:8080/api/users/${username}`, {
+          const response = await fetch(`${API_BASE_URL}/users/${username}`, {
             // No credentials for public endpoints
             headers: {
               'Content-Type': 'application/json'
@@ -898,7 +899,7 @@ const UserProfile = () => {
   const fetchFreshUserData = async () => {
     try {
       // Fetch user data from public endpoint (includes full customization data)
-      const response = await fetch(`http://localhost:8080/api/users/${username}`, {
+      const response = await fetch(`${API_BASE_URL}/users/${username}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -1087,7 +1088,7 @@ const UserProfile = () => {
     
     try {
       // STRATEGY 1: Try showcased badges endpoint (public)
-      let response = await fetch(`http://localhost:8080/api/users/${username}/badges/showcased`, {
+      let response = await fetch(`${API_BASE_URL}/users/${username}/badges/showcased`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -1120,7 +1121,7 @@ const UserProfile = () => {
       }
 
       // STRATEGY 2: Try all earned badges endpoint (public)
-      response = await fetch(`http://localhost:8080/api/users/${username}/badges`, {
+      response = await fetch(`${API_BASE_URL}/users/${username}/badges`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -1158,9 +1159,9 @@ const UserProfile = () => {
 
       // STRATEGY 3: Try legacy/alternative endpoints with error handling
       const alternativeEndpoints = [
-        `http://localhost:8080/api/badges/user/${username}`,
-        `http://localhost:8080/api/user/${username}/badges`,
-        `http://localhost:8080/api/v1/users/${username}/badges`
+        `${API_BASE_URL}/badges/user/${username}`,
+        `${API_BASE_URL}/user/${username}/badges`,
+        `${API_BASE_URL}/v1/users/${username}/badges`
       ]
 
       for (const endpoint of alternativeEndpoints) {

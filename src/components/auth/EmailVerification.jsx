@@ -4,6 +4,7 @@ import styled from 'styled-components'
 import ParticleBackground from '../effects/ParticleBackground'
 import ShinyText from '../effects/ShinyText'
 import { useTheme } from '../../contexts/ThemeContext'
+import { API_BASE_URL } from '../../config/api'
 
 function EmailVerification() {
   const [isResending, setIsResending] = useState(false)
@@ -33,7 +34,7 @@ function EmailVerification() {
     setResendMessage('')
 
     try {
-      const response = await fetch('http://localhost:8080/api/auth/resend-verification', {
+      const response = await fetch('${API_BASE_URL}/auth/resend-verification', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

@@ -2,6 +2,7 @@ import React, { useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import Loader from '../ui/Loader'
+import { API_BASE_URL } from '../../config/api'
 
 function OAuthCallback() {
   const [searchParams] = useSearchParams()
@@ -39,7 +40,7 @@ function OAuthCallback() {
       // OAuth success - session cookie should already be set by backend
       try {
         // Get user info using httpOnly cookie (no tokens in URL)
-        const response = await fetch('http://localhost:8080/api/auth/me', {
+        const response = await fetch('${API_BASE_URL}/auth/me', {
           credentials: 'include',
           headers: {
             'Content-Type': 'application/json'

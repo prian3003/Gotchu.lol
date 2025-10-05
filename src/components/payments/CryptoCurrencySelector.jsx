@@ -3,6 +3,7 @@ import styled from 'styled-components'
 import { useTheme } from '../../contexts/ThemeContext'
 import { HiChevronDown, HiMagnifyingGlass } from 'react-icons/hi2'
 import { FaSpinner } from 'react-icons/fa'
+import { API_BASE_URL } from '../../config/api'
 
 const CryptoCurrencySelector = ({ 
   selectedCurrency, 
@@ -27,7 +28,7 @@ const CryptoCurrencySelector = ({
   const fetchCurrencies = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch('http://localhost:8080/api/payments/currencies', {
+      const response = await fetch('${API_BASE_URL}/payments/currencies', {
         credentials: 'include'
       })
       

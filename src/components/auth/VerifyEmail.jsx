@@ -5,6 +5,7 @@ import ParticleBackground from '../effects/ParticleBackground'
 import ShinyText from '../effects/ShinyText'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useAuth } from '../../contexts/AuthContext'
+import { API_BASE_URL } from '../../config/api'
 
 function VerifyEmail() {
   const [searchParams] = useSearchParams()
@@ -44,7 +45,7 @@ function VerifyEmail() {
 
   const verifyEmail = async (verificationToken) => {
     try {
-      const response = await fetch(`http://localhost:8080/api/auth/verify-email?token=${encodeURIComponent(verificationToken)}`, {
+      const response = await fetch(`${API_BASE_URL}/auth/verify-email?token=${encodeURIComponent(verificationToken)}`, {
         method: 'GET',
         headers: {
           'Accept': 'application/json'
@@ -81,7 +82,7 @@ function VerifyEmail() {
     }
 
     try {
-      const response = await fetch('http://localhost:8080/api/auth/resend-verification', {
+      const response = await fetch('${API_BASE_URL}/auth/resend-verification', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

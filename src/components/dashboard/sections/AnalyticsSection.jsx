@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { API_BASE_URL } from '../../../config/api'
 import { 
   HiChartBar, 
   HiEye, 
@@ -153,7 +154,7 @@ const AnalyticsSection = ({ user }) => {
         const days = getDaysFromTimeRange(timeRange)
         
         // Fetch current period data
-        const response = await fetch(`http://localhost:8080/api/dashboard/analytics?days=${days}`, {
+        const response = await fetch(`${API_BASE_URL}/dashboard/analytics?days=${days}`, {
           method: 'GET',
           credentials: 'include', // Use httpOnly cookies for auth
           headers: {
@@ -172,7 +173,7 @@ const AnalyticsSection = ({ user }) => {
           
           // Fetch previous period data for growth calculation
           try {
-            const prevResponse = await fetch(`http://localhost:8080/api/dashboard/analytics?days=${days}&offset=${days}`, {
+            const prevResponse = await fetch(`${API_BASE_URL}/dashboard/analytics?days=${days}&offset=${days}`, {
               method: 'GET',
               credentials: 'include', // Use httpOnly cookies for auth
               headers: {

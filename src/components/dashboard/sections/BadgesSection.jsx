@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Icon } from '@iconify/react'
 import { useTheme } from '../../../contexts/ThemeContext'
+import { API_BASE_URL } from '../../../config/api'
 import {
   DndContext,
   closestCenter,
@@ -363,7 +364,7 @@ const BadgesSection = ({ user, onOpenPremiumModal }) => {
         throw new Error('User information not available')
       }
       
-      const response = await fetch(`http://localhost:8080/api/users/${user.username}/badges`, {
+      const response = await fetch(`${API_BASE_URL}/users/${user.username}/badges`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -465,7 +466,7 @@ const BadgesSection = ({ user, onOpenPremiumModal }) => {
       const badge = earnedBadges.find(b => b.id === badgeId)
       if (!badge) return
       
-      const response = await fetch('http://localhost:8080/api/badges/order', {
+      const response = await fetch('${API_BASE_URL}/badges/order', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -497,7 +498,7 @@ const BadgesSection = ({ user, onOpenPremiumModal }) => {
     try {
       setIsCheckingBadges(true)
       
-      const response = await fetch('http://localhost:8080/api/badges/check', {
+      const response = await fetch('${API_BASE_URL}/badges/check', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -528,7 +529,7 @@ const BadgesSection = ({ user, onOpenPremiumModal }) => {
   // Claim a badge
   const claimBadge = async (badgeId) => {
     try {
-      const response = await fetch(`http://localhost:8080/api/badges/claim/${badgeId}`, {
+      const response = await fetch(`${API_BASE_URL}/badges/claim/${badgeId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -663,7 +664,7 @@ const BadgesSection = ({ user, onOpenPremiumModal }) => {
         is_showcased: true
       }))
       
-      const response = await fetch('http://localhost:8080/api/badges/order', {
+      const response = await fetch('${API_BASE_URL}/badges/order', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

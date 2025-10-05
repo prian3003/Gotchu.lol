@@ -6,6 +6,7 @@ import { useToast } from '../ui/Toast'
 import ParticleBackground from '../effects/ParticleBackground'
 import ShinyText from '../effects/ShinyText'
 import { useTheme } from '../../contexts/ThemeContext'
+import { API_BASE_URL } from '../../config/api'
 import { 
   HiUser, 
   HiSparkles,
@@ -37,7 +38,7 @@ function OAuthOnboarding() {
 
   const checkUsernameAvailability = async (username) => {
     try {
-      const response = await fetch(`http://localhost:8080/api/auth/check-username/${username}`)
+      const response = await fetch(`${API_BASE_URL}/auth/check-username/${username}`)
       const data = await response.json()
       return data.available
     } catch (error) {
@@ -78,7 +79,7 @@ function OAuthOnboarding() {
     setIsLoading(true)
     
     try {
-      const response = await fetch('http://localhost:8080/api/auth/complete-oauth-setup', {
+      const response = await fetch('${API_BASE_URL}/auth/complete-oauth-setup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import styled from 'styled-components'
 import logger from '../../utils/logger'
 import { SimpleIconComponent } from '../../utils/simpleIconsHelper.jsx'
+import { API_BASE_URL } from '../../config/api'
 
 // Memoized helper component to render icon - supports Simple Icons and emojis as fallback
 const RenderIcon = React.memo(({ icon, useMonochrome = false }) => {
@@ -29,7 +30,7 @@ const UserLinks = React.memo(({ username, monochromeIcons = false }) => {
   const fetchUserLinks = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`http://localhost:8080/api/users/${username}/links`)
+      const response = await fetch(`${API_BASE_URL}/users/${username}/links`)
       
       if (response.ok) {
         const data = await response.json()
@@ -86,7 +87,7 @@ const UserLinks = React.memo(({ username, monochromeIcons = false }) => {
     }
     
     // Track click in background (fire and forget)
-    fetch(`http://localhost:8080/api/links/${link.id}/click`, {
+    fetch(`${API_BASE_URL}/links/${link.id}/click`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

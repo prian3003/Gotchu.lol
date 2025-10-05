@@ -1,7 +1,9 @@
+import { API_BASE_URL } from '../config/api'
+
 // Discord Presence service for real-time Discord status tracking
 class DiscordPresenceService {
   constructor() {
-    this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api'
+    this.baseURL = API_BASE_URL
   }
 
   // Get authorization headers for httpOnly cookie authentication

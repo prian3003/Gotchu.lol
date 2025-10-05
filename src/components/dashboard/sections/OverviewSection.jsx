@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { API_BASE_URL } from '../../../config/api'
 import { 
   HiUser, 
   HiStar, 
@@ -64,7 +65,7 @@ const OverviewSection = ({ user, setUser, userLinks = [] }) => {
       
       try {
         // Fetch only current 7-day period views for faster response
-        const response = await fetch('http://localhost:8080/api/dashboard/analytics?days=7', {
+        const response = await fetch('${API_BASE_URL}/dashboard/analytics?days=7', {
           method: 'GET',
           credentials: 'include',
           headers: {

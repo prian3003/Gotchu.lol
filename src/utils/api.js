@@ -1,15 +1,7 @@
-// API configuration utility
-const getBaseURL = () => {
-  // In development, use localhost
-  if (import.meta.env.DEV) {
-    return 'http://localhost:8080'
-  }
-  
-  // In production, use the same domain (relative URLs)
-  return ''
-}
+import { API_BASE_URL as BASE_URL } from '../config/api'
 
-export const API_BASE_URL = getBaseURL()
+// Re-export for backward compatibility
+export const API_BASE_URL = BASE_URL.replace('/api', '')
 
 // Helper function for API calls
 export const apiCall = async (endpoint, options = {}) => {
