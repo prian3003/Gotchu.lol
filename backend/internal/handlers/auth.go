@@ -2215,14 +2215,19 @@ func (h *AuthHandler) CompleteOAuthSetup(c *gin.Context) {
 
 // setSecureCookie sets a session cookie with proper security settings
 func (h *AuthHandler) setSecureCookie(c *gin.Context, name, value string, maxAge int) {
-	// Determine security settings based on environment
-	secure := h.config.GinMode == "release" // Secure only in production
-	sameSite := http.SameSiteStrictMode
+	// For production cross-domain cookies, always use SameSite=None with Secure
+	secure := h.config.GinMode == "release"
+	sameSite := http.SameSiteLaxMode
 	domain := ""
-	
-	if h.config.GinMode == "debug" {
+
+	if h.config.GinMode == "release" {
+		// Production: Use SameSite=None for cross-domain cookies
+		sameSite = http.SameSiteNoneMode
+		secure = true
+	} else {
+		// Development: Use Lax for localhost
 		sameSite = http.SameSiteLaxMode
-		domain = "localhost" // Allow cross-port in development
+		domain = "localhost"
 	}
 
 	c.SetCookie(
@@ -2234,8 +2239,8 @@ func (h *AuthHandler) setSecureCookie(c *gin.Context, name, value string, maxAge
 		secure,     // secure
 		true,       // httpOnly
 	)
-	
-	// Additional security header
+
+	// Additional security header for cross-domain compatibility
 	c.Header("Set-Cookie", fmt.Sprintf("%s=%s; Path=/; HttpOnly; SameSite=%s%s%s",
 		name, value,
 		map[http.SameSite]string{
