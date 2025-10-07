@@ -1,8 +1,9 @@
 // Utility functions for asset management
+import { API_BASE_URL } from '../config/api'
 
 export const deleteAsset = async (assetType, filePath) => {
   try {
-    const response = await fetch('/api/assets/delete', {
+    const response = await fetch(`${API_BASE_URL}/assets/delete`, {
       method: 'DELETE',
       credentials: 'include',
       headers: {

@@ -99,7 +99,7 @@ const OverviewSection = ({ user, setUser, userLinks = [] }) => {
   // Handle username change
   const handleUsernameChange = async (newUsername) => {
     try {
-      const response = await fetch('/api/auth/update-username', {
+      const response = await fetch(`${API_BASE_URL}/auth/update-username`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -133,7 +133,7 @@ const OverviewSection = ({ user, setUser, userLinks = [] }) => {
   // Handle display name change
   const handleDisplayNameChange = async (newDisplayName) => {
     try {
-      const response = await fetch('/api/auth/update-display-name', {
+      const response = await fetch(`${API_BASE_URL}/auth/update-display-name`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -167,7 +167,7 @@ const OverviewSection = ({ user, setUser, userLinks = [] }) => {
   // Handle alias change (Premium only)
   const handleAliasChange = async (newAlias) => {
     try {
-      const response = await fetch('/api/auth/update-alias', {
+      const response = await fetch(`${API_BASE_URL}/auth/update-alias`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

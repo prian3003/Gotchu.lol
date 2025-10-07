@@ -3,6 +3,7 @@ import QRCode from 'react-qr-code'
 import ChangePasswordModal from '../../modals/ChangePasswordModal'
 import Disable2FAModal from '../../modals/Disable2FAModal'
 import { useToast } from '../../ui/Toast'
+import { API_BASE_URL } from '../../../config/api'
 import { 
   HiAdjustmentsHorizontal,
   HiUser,
@@ -44,7 +45,7 @@ const SettingsSection = ({ user, onUserUpdate }) => {
       setFetchingFreshData(true)
       // Use a timestamp to bypass any potential caching
       const timestamp = Date.now()
-      const response = await fetch(`/api/dashboard?t=${timestamp}`, {
+      const response = await fetch(`${API_BASE_URL}/dashboard?t=${timestamp}`, {
         method: 'GET',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -180,8 +181,8 @@ const SettingsSection = ({ user, onUserUpdate }) => {
   const handleSave = async () => {
     try {
       setIsSaving(true)
-      
-      const response = await fetch('/api/dashboard/settings', {
+
+      const response = await fetch(`${API_BASE_URL}/dashboard/settings`, {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -232,10 +233,10 @@ const SettingsSection = ({ user, onUserUpdate }) => {
       setShow2FAModal(true)
       setTwoFAStep(1)
       setIsLoading(true)
-      
+
       // API call to generate 2FA secret from backend using cookies
-      
-      const response = await fetch('/api/auth/2fa/generate', {
+
+      const response = await fetch(`${API_BASE_URL}/auth/2fa/generate`, {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: { 
@@ -284,11 +285,12 @@ const SettingsSection = ({ user, onUserUpdate }) => {
         showAlert('Invalid Code', 'Please enter a 6-digit verification code from your authenticator app.')
         return
       }
-      
+
+
       setIsLoading(true)
-      
+
       // API call to verify and enable 2FA using cookies
-      const response = await fetch('/api/auth/2fa/verify', {
+      const response = await fetch(`${API_BASE_URL}/auth/2fa/verify`, {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: { 
@@ -353,7 +355,7 @@ const SettingsSection = ({ user, onUserUpdate }) => {
   const handleDisable2FASubmit = async (password) => {
     try {
       setIsLoading(true)
-      const response = await fetch('/api/auth/2fa/disable', {
+      const response = await fetch(`${API_BASE_URL}/auth/2fa/disable`, {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: { 
@@ -385,7 +387,7 @@ const SettingsSection = ({ user, onUserUpdate }) => {
 
 
   const handlePasswordChange = async (passwordData) => {
-    const response = await fetch('/api/auth/change-password', {
+    const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
       method: 'POST',
       credentials: 'include', // Use httpOnly cookies for auth
       headers: { 
