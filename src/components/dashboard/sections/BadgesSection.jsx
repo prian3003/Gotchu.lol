@@ -465,8 +465,8 @@ const BadgesSection = ({ user, onOpenPremiumModal }) => {
       // Find the badge to get its current order
       const badge = earnedBadges.find(b => b.id === badgeId)
       if (!badge) return
-      
-      const response = await fetch('${API_BASE_URL}/badges/order', {
+
+      const response = await fetch(`${API_BASE_URL}/badges/order`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -497,8 +497,8 @@ const BadgesSection = ({ user, onOpenPremiumModal }) => {
   const checkBadges = async () => {
     try {
       setIsCheckingBadges(true)
-      
-      const response = await fetch('${API_BASE_URL}/badges/check', {
+
+      const response = await fetch(`${API_BASE_URL}/badges/check`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -663,8 +663,8 @@ const BadgesSection = ({ user, onOpenPremiumModal }) => {
         showcase_order: index + 1,
         is_showcased: true
       }))
-      
-      const response = await fetch('${API_BASE_URL}/badges/order', {
+
+      const response = await fetch(`${API_BASE_URL}/badges/order`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

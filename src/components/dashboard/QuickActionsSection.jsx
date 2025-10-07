@@ -53,7 +53,7 @@ const QuickActionsSection = ({ user, onNavigate }) => {
 
   const handleExportData = async () => {
     try {
-      const response = await fetch('${API_BASE_URL}/user/export', {
+      const response = await fetch(`${API_BASE_URL}/user/export`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json'

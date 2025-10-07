@@ -240,8 +240,8 @@ const LinksSection = ({
         type: 'DEFAULT'
       }
       
-      
-      const response = await fetch('${API_BASE_URL}/links', {
+
+      const response = await fetch(`${API_BASE_URL}/links`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -275,7 +275,7 @@ const LinksSection = ({
     if (!linkData.text.trim()) return
 
     try {
-      const response = await fetch('${API_BASE_URL}/links', {
+      const response = await fetch(`${API_BASE_URL}/links`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -377,7 +377,7 @@ const LinksSection = ({
         order: index + 1
       }))
 
-      const response = await fetch('${API_BASE_URL}/links/reorder', {
+      const response = await fetch(`${API_BASE_URL}/links/reorder`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
