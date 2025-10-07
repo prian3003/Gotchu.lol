@@ -17,7 +17,6 @@ import (
 	"gotchu-backend/pkg/auth"
 	"gotchu-backend/pkg/email"
 	"gotchu-backend/pkg/redis"
-	"gotchu-backend/pkg/security"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pquerna/otp/totp"
@@ -147,16 +146,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	// Normalize input
 	req.Username = strings.ToLower(strings.TrimSpace(req.Username))
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
-
-	// Validate Turnstile token first
-	clientIP := security.GetClientIP(c.Request)
-	if err := security.ValidateTurnstileToken(req.TurnstileToken, clientIP); err != nil {
-		c.JSON(http.StatusBadRequest, AuthResponse{
-			Success: false,
-			Message: err.Error(),
-		})
-		return
-	}
 
 	// Validate input
 	if err := h.authService.ValidateUsername(req.Username); err != nil {
@@ -354,16 +343,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, AuthResponse{
 			Success: false,
 			Message: "Invalid request data: " + err.Error(),
-		})
-		return
-	}
-
-	// Validate Turnstile token first
-	clientIP := security.GetClientIP(c.Request)
-	if err := security.ValidateTurnstileToken(req.TurnstileToken, clientIP); err != nil {
-		c.JSON(http.StatusBadRequest, AuthResponse{
-			Success: false,
-			Message: err.Error(),
 		})
 		return
 	}

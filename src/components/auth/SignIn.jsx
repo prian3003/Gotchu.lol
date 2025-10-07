@@ -1,13 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import styled from 'styled-components'
 import ShinyText from '../effects/ShinyText'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useAuth } from '../../contexts/AuthContext'
-import TurnstileModal from '../modals/TurnstileModal'
 import { API_BASE_URL } from '../../config/api'
-import { 
-  HiFingerPrint,
+import {
   HiShieldCheck
 } from 'react-icons/hi2'
 
@@ -22,21 +20,10 @@ function SignIn() {
   const [show2FA, setShow2FA] = useState(false)
   const [twoFACode, setTwoFACode] = useState('')
   const [tempLoginData, setTempLoginData] = useState(null)
-  const [showTurnstileModal, setShowTurnstileModal] = useState(false)
-  const [turnstileToken, setTurnstileToken] = useState('')
-  const [hasAttemptedLogin, setHasAttemptedLogin] = useState(false)
   const { colors, isDarkMode } = useTheme()
   const { login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-
-  // Auto-perform login when turnstile token is received
-  useEffect(() => {
-    if (turnstileToken && formData.identifier && formData.password && !hasAttemptedLogin) {
-      setHasAttemptedLogin(true)
-      performLogin()
-    }
-  }, [turnstileToken])
 
   const handleChange = (e) => {
     setFormData({
@@ -99,17 +86,10 @@ function SignIn() {
     setShow2FA(false)
     setTwoFACode('')
     setTempLoginData(null)
-    
+
     // Reset form state
     setErrors({})
     setIsLoading(false)
-    
-    // Reset Turnstile verification
-    setTurnstileToken('')
-    setShowTurnstileModal(false)
-    
-    // Optionally reset form data to prevent confusion
-    // setFormData({ identifier: '', password: '' })
   }
 
   const handleSocialLogin = async (provider) => {
@@ -156,41 +136,22 @@ function SignIn() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
+
     if (!validateForm()) {
       return
     }
 
-    // If no Turnstile token yet, show the modal first
-    if (!turnstileToken) {
-      setShowTurnstileModal(true)
-      setHasAttemptedLogin(false) // Reset flag
-      return
-    }
-
-    // Proceed with actual login if we have a token
-    if (!hasAttemptedLogin) {
-      setHasAttemptedLogin(true)
-      await performLogin()
-    }
-  }
-
-  const handleTurnstileVerified = (token) => {
-    setTurnstileToken(token)
-    setShowTurnstileModal(false)
-    setHasAttemptedLogin(false) // Reset flag for new attempt
-    // Note: performLogin will be called when turnstileToken state updates
+    await performLogin()
   }
 
   const performLogin = async () => {
     setIsLoading(true)
     setErrors({}) // Clear previous errors
-    
+
     try {
       const loginData = {
         identifier: formData.identifier.toLowerCase(),
-        password: formData.password,
-        turnstile_token: turnstileToken
+        password: formData.password
       }
       
       const response = await fetch(`${API_BASE_URL}/auth/login`, {
@@ -237,13 +198,11 @@ function SignIn() {
         }
       } else {
         setErrors({ general: data.message || 'Invalid username/email or password' })
-        setHasAttemptedLogin(false) // Reset flag on failure to allow retry
       }
-      
+
     } catch (error) {
       console.error('Sign in error:', error)
       setErrors({ general: 'Network error. Please try again.' })
-      setHasAttemptedLogin(false) // Reset flag on error to allow retry
     } finally {
       setIsLoading(false)
     }
@@ -455,15 +414,6 @@ function SignIn() {
           )}
         </div>
       </div>
-
-      {/* Turnstile Security Modal */}
-      <TurnstileModal
-        isOpen={showTurnstileModal}
-        onClose={() => setShowTurnstileModal(false)}
-        onVerified={handleTurnstileVerified}
-        title="Security Verification"
-        description="Please complete the security verification to sign in"
-      />
     </PageWrapper>
   )
 }

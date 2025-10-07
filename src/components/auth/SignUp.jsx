@@ -3,7 +3,6 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import styled from 'styled-components'
 import ShinyText from '../effects/ShinyText'
 import { useTheme } from '../../contexts/ThemeContext'
-import TurnstileModal from '../modals/TurnstileModal'
 import { API_BASE_URL } from '../../config/api'
 
 function SignUp() {
@@ -25,20 +24,9 @@ function SignUp() {
   const { colors, isDarkMode } = useTheme()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const [showTurnstileModal, setShowTurnstileModal] = useState(false)
-  const [turnstileToken, setTurnstileToken] = useState('')
-  const [hasAttemptedRegistration, setHasAttemptedRegistration] = useState(false)
 
   // Debounce timer for username checking
   const [usernameCheckTimer, setUsernameCheckTimer] = useState(null)
-
-  // Auto-perform registration when turnstile token is received
-  useEffect(() => {
-    if (turnstileToken && formData.username && formData.email && formData.password && !hasAttemptedRegistration) {
-      setHasAttemptedRegistration(true)
-      performRegistration()
-    }
-  }, [turnstileToken])
 
   // Initialize username from URL parameter
   useEffect(() => {
@@ -179,41 +167,22 @@ function SignUp() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
+
     if (!validateForm()) {
       return
     }
 
-    // If no Turnstile token yet, show the modal first
-    if (!turnstileToken) {
-      setShowTurnstileModal(true)
-      setHasAttemptedRegistration(false) // Reset flag
-      return
-    }
-
-    // Proceed with actual registration if we have a token
-    if (!hasAttemptedRegistration) {
-      setHasAttemptedRegistration(true)
-      await performRegistration()
-    }
-  }
-
-  const handleTurnstileVerified = (token) => {
-    setTurnstileToken(token)
-    setShowTurnstileModal(false)
-    setHasAttemptedRegistration(false) // Reset flag for new attempt
-    // Note: performRegistration will be called when turnstileToken state updates
+    await performRegistration()
   }
 
   const performRegistration = async () => {
     setIsLoading(true)
-    
+
     try {
       const userData = {
         username: formData.username.toLowerCase(),
         email: formData.email.toLowerCase(),
-        password: formData.password,
-        turnstile_token: turnstileToken
+        password: formData.password
       }
       
       
@@ -263,7 +232,6 @@ function SignUp() {
       } else {
         setErrors({ general: error.message || 'Failed to create account. Please try again.' })
       }
-      setHasAttemptedRegistration(false) // Reset flag on error to allow retry
     } finally {
       setIsLoading(false)
     }
@@ -455,15 +423,6 @@ function SignUp() {
           </form>
         </div>
       </div>
-
-      {/* Turnstile Security Modal */}
-      <TurnstileModal
-        isOpen={showTurnstileModal}
-        onClose={() => setShowTurnstileModal(false)}
-        onVerified={handleTurnstileVerified}
-        title="Security Verification"
-        description="Please complete the security verification to create your account"
-      />
     </PageWrapper>
   )
 }
