@@ -903,6 +903,15 @@ func (h *DashboardHandler) UploadAsset(c *gin.Context) {
 		return
 	}
 
+	// Check if storage is configured
+	if h.storage == nil {
+		c.JSON(http.StatusServiceUnavailable, DashboardResponse{
+			Success: false,
+			Message: "File storage is not configured on the server. Please contact the administrator.",
+		})
+		return
+	}
+
 	// Validate file size
 	maxSize := int64(5 << 20) // 5MB default
 	if assetType == "audio" {
@@ -1206,6 +1215,15 @@ func (h *DashboardHandler) DeleteUserAsset(c *gin.Context) {
 			c.JSON(http.StatusForbidden, DashboardResponse{
 				Success: false,
 				Message: "Access denied: file does not belong to user",
+			})
+			return
+		}
+
+		// Check if storage is configured
+		if h.storage == nil {
+			c.JSON(http.StatusServiceUnavailable, DashboardResponse{
+				Success: false,
+				Message: "File storage is not configured on the server",
 			})
 			return
 		}
