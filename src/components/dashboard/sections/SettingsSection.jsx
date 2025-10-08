@@ -49,9 +49,7 @@ const SettingsSection = ({ user, onUserUpdate }) => {
         method: 'GET',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
+          'Content-Type': 'application/json'
         },
       })
 
