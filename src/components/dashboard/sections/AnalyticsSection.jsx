@@ -58,6 +58,7 @@ const renderCountryFlag = (countryName) => {
     'Japan': 'jp',
     'China': 'cn',
     'India': 'in',
+    'Indonesia': 'id',
     'Brazil': 'br',
     'Mexico': 'mx',
     'Russia': 'ru',
