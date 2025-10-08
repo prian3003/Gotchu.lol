@@ -80,9 +80,14 @@ const AudioManager = ({
       }
 
       const data = await response.json()
-      
-      if (data.success && data.data && data.data.files) {
-        setAudioFiles(data.data.files)
+
+      if (data.success && data.data) {
+        // Handle empty array or missing files property
+        const files = data.data.files || []
+        setAudioFiles(files)
+        if (files.length === 0) {
+          console.log('No audio files found for this user')
+        }
       } else {
         console.error('Failed to load audio files:', data.message || 'Unknown error')
       }

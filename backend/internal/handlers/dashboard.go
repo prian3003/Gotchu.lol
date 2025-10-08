@@ -1105,6 +1105,18 @@ func (h *DashboardHandler) ListUserAudioFiles(c *gin.Context) {
 
 	userID := sessionData.UserID
 
+	// Check if storage is configured
+	if h.storage == nil {
+		c.JSON(http.StatusOK, DashboardResponse{
+			Success: true,
+			Message: "Audio files retrieved successfully",
+			Data: gin.H{
+				"files": []gin.H{}, // Empty array when storage not configured
+			},
+		})
+		return
+	}
+
 	// Create folder path for user
 	folderPath := fmt.Sprintf("user_%d", userID)
 
