@@ -82,7 +82,7 @@ const loadGoogleFont = (fontFamily) => {
 
 const CustomizationPage = ({ onBack }) => {
   const { colors, isDarkMode } = useTheme()
-  const { user } = useAuth()
+  const { user, refreshAuth } = useAuth()
   const toast = useToast()
   const [activeTab, setActiveTab] = useState('appearance') // Temporarily restored for syntax
   const [showAudioModal, setShowAudioModal] = useState(false)
@@ -290,7 +290,7 @@ const CustomizationPage = ({ onBack }) => {
 
   const loadSettings = async () => {
     try {
-      const response = await fetch('${API_BASE_URL}/customization/settings', {
+      const response = await fetch(`${API_BASE_URL}/customization/settings`, {
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
           'Content-Type': 'application/json'
@@ -382,7 +382,7 @@ const CustomizationPage = ({ onBack }) => {
 
       logger.info('Attempting to save settings...')
 
-      const response = await fetch('${API_BASE_URL}/customization/settings', {
+      const response = await fetch(`${API_BASE_URL}/customization/settings`, {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -487,7 +487,7 @@ const CustomizationPage = ({ onBack }) => {
   // Direct save function for audio settings - bypasses unsaved changes dialog
   const saveAudioSettings = async (silent = false) => {
     try {
-      const response = await fetch('${API_BASE_URL}/customization/settings', {
+      const response = await fetch(`${API_BASE_URL}/customization/settings`, {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -744,7 +744,7 @@ const CustomizationPage = ({ onBack }) => {
   const fetchUserId = async () => {
     try {
 
-      const response = await fetch('${API_BASE_URL}/dashboard', {
+      const response = await fetch(`${API_BASE_URL}/dashboard`, {
         method: 'GET',
         credentials: 'include', // Use httpOnly cookies for auth
         headers: {
@@ -928,15 +928,49 @@ const CustomizationPage = ({ onBack }) => {
       formData.append('file', file)
       formData.append('type', type)
 
-      const response = await fetch('${API_BASE_URL}/upload/asset', {
+      const response = await fetch(`${API_BASE_URL}/upload/asset`, {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies for auth
         body: formData
       })
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Upload failed' }))
-        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+        let errorMessage = `Upload failed (${response.status})`
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.message || errorData.error || errorMessage
+
+          // Log detailed error for debugging
+          logger.error('Upload failed:', {
+            status: response.status,
+            statusText: response.statusText,
+            error: errorData,
+            fileType: file.type,
+            fileSize: file.size,
+            uploadType: type
+          })
+        } catch (parseError) {
+          logger.error('Upload failed (unable to parse error response):', {
+            status: response.status,
+            statusText: response.statusText,
+            fileType: file.type,
+            fileSize: file.size,
+            uploadType: type
+          })
+        }
+
+        // Provide helpful error messages based on status
+        if (response.status === 401) {
+          errorMessage = 'Please log in again to upload files'
+        } else if (response.status === 413) {
+          errorMessage = 'File is too large for the server'
+        } else if (response.status === 415) {
+          errorMessage = 'File type not supported by server'
+        } else if (response.status === 500) {
+          errorMessage = 'Server error during upload. Please try again or contact support'
+        }
+
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
@@ -951,9 +985,15 @@ const CustomizationPage = ({ onBack }) => {
 
         // Update settings
         setSettings(prev => ({ ...prev, [settingKey]: data.data.url }))
-        
+
         // Backend now handles old asset cleanup automatically
-        
+        logger.upload(file?.name || 'unknown', file?.size || 0, true)
+
+        // Refresh auth context to update sidebar avatar
+        if (type === 'avatar') {
+          refreshAuth()
+        }
+
         // Auto-save immediately for audio uploads
         if (type === 'audio') {
           setTimeout(() => saveAudioSettings(), 200)
@@ -962,6 +1002,9 @@ const CustomizationPage = ({ onBack }) => {
         throw new Error(data.message || 'Upload failed')
       }
     } catch (error) {
+      if (error.name !== 'Error') {
+        logger.error('Upload exception:', error)
+      }
       logger.upload(file?.name || 'unknown', file?.size || 0, false, error)
       setSaveErrorMessage(error.message || 'Failed to upload file. Please try again.')
       setShowSaveError(true)
