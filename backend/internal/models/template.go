@@ -61,10 +61,10 @@ type Template struct {
 	ReviewedBy      *User              `json:"reviewed_by,omitempty" gorm:"foreignKey:ReviewedByID"`
 	ParentTemplate  *Template          `json:"parent_template,omitempty" gorm:"foreignKey:ParentTemplateID"`
 	Variations      []Template         `json:"variations,omitempty" gorm:"foreignKey:ParentTemplateID"`
-	TemplateAssets  []TemplateAsset    `json:"template_assets,omitempty" gorm:"foreignKey:TemplateID"`
-	TemplateLinks   []TemplateLink     `json:"template_links,omitempty" gorm:"foreignKey:TemplateID"`
-	TemplateLikes   []TemplateLike     `json:"template_likes,omitempty" gorm:"foreignKey:TemplateID"`
-	TemplateReports []TemplateReport   `json:"template_reports,omitempty" gorm:"foreignKey:TemplateID"`
+	TemplateAssets  []TemplateAsset    `json:"template_assets,omitempty" gorm:"foreignKey:TemplateID;constraint:OnDelete:CASCADE"`
+	TemplateLinks   []TemplateLink     `json:"template_links,omitempty" gorm:"foreignKey:TemplateID;constraint:OnDelete:CASCADE"`
+	TemplateLikes   []TemplateLike     `json:"template_likes,omitempty" gorm:"foreignKey:TemplateID;constraint:OnDelete:CASCADE"`
+	TemplateReports []TemplateReport   `json:"template_reports,omitempty" gorm:"foreignKey:TemplateID;constraint:OnDelete:CASCADE"`
 }
 
 // TemplateCategory enum
@@ -111,7 +111,7 @@ type TemplateLink struct {
 	UpdatedAt     time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 
 	// Relationships
-	Template Template `json:"template,omitempty" gorm:"foreignKey:TemplateID"`
+	Template Template `json:"template,omitempty" gorm:"foreignKey:TemplateID;constraint:OnDelete:CASCADE"`
 }
 
 // TemplateAsset represents template assets
@@ -127,7 +127,7 @@ type TemplateAsset struct {
 	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime"`
 
 	// Relationships
-	Template Template `json:"template,omitempty" gorm:"foreignKey:TemplateID"`
+	Template Template `json:"template,omitempty" gorm:"foreignKey:TemplateID;constraint:OnDelete:CASCADE"`
 }
 
 // TemplateLike represents template likes
@@ -138,8 +138,8 @@ type TemplateLike struct {
 	CreatedAt  time.Time `json:"created_at" gorm:"autoCreateTime"`
 
 	// Relationships
-	User     User     `json:"user,omitempty" gorm:"foreignKey:UserID"`
-	Template Template `json:"template,omitempty" gorm:"foreignKey:TemplateID"`
+	User     User     `json:"user,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+	Template Template `json:"template,omitempty" gorm:"foreignKey:TemplateID;constraint:OnDelete:CASCADE"`
 }
 
 // TemplateReport represents template reports
@@ -153,8 +153,8 @@ type TemplateReport struct {
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
 
 	// Relationships
-	User     User     `json:"user,omitempty" gorm:"foreignKey:UserID"`
-	Template Template `json:"template,omitempty" gorm:"foreignKey:TemplateID"`
+	User     User     `json:"user,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+	Template Template `json:"template,omitempty" gorm:"foreignKey:TemplateID;constraint:OnDelete:CASCADE"`
 }
 
 // TableName specifies the table name for Template
