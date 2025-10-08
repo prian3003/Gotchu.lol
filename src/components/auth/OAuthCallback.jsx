@@ -40,7 +40,7 @@ function OAuthCallback() {
       // OAuth success - session cookie should already be set by backend
       try {
         // Get user info using httpOnly cookie (no tokens in URL)
-        const response = await fetch('${API_BASE_URL}/auth/me', {
+        const response = await fetch(`${API_BASE_URL}/auth/me`, {
           credentials: 'include',
           headers: {
             'Content-Type': 'application/json'

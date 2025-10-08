@@ -1,7 +1,6 @@
 // Centralized API configuration
-export const API_BASE_URL = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api`
-  : 'https://gotchu-lol.onrender.com/api'
+// VITE_API_URL should include /api at the end (e.g., https://gotchu-lol.onrender.com/api)
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://gotchu-lol.onrender.com/api'
 
 // Helper function for API calls
 export const apiCall = async (endpoint, options = {}) => {

@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
-import { 
-  HiRectangleStack, 
-  HiPlus, 
-  HiMagnifyingGlass, 
+import {
+  HiRectangleStack,
+  HiPlus,
+  HiMagnifyingGlass,
   HiChevronDown,
   HiStar,
   HiEye,
@@ -20,6 +20,7 @@ import {
 } from 'react-icons/hi2'
 import logger from '../../utils/logger'
 import { useDashboard } from '../../hooks/dashboard/useDashboard'
+import { API_BASE_URL } from '../../config/api'
 
 // Helper Functions
 const formatCategoryName = (category) => {
@@ -84,7 +85,7 @@ const TemplatesSection = () => {
         params.append('search', searchQuery)
       }
 
-      const response = await fetch(`/api/templates?${params}`)
+      const response = await fetch(`${API_BASE_URL}/templates?${params}`)
       const data = await response.json()
 
       if (data.success) {
@@ -103,7 +104,7 @@ const TemplatesSection = () => {
   const fetchLikedTemplates = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/templates/liked', {
+      const response = await fetch(`${API_BASE_URL}/templates/liked`, {
         credentials: 'include', // Use httpOnly cookies
         headers: {
           'Content-Type': 'application/json'
@@ -126,8 +127,8 @@ const TemplatesSection = () => {
   const fetchUserTemplates = async () => {
     try {
       setLoading(true)
-      
-      const response = await fetch('/api/templates/my-templates', {
+
+      const response = await fetch(`${API_BASE_URL}/templates/my-templates`, {
         credentials: 'include', // Use httpOnly cookies
         headers: {
           'Content-Type': 'application/json'
@@ -154,7 +155,7 @@ const TemplatesSection = () => {
 
   const fetchCategories = async () => {
     try {
-      const response = await fetch('/api/templates/categories')
+      const response = await fetch(`${API_BASE_URL}/templates/categories`)
       const data = await response.json()
 
       if (data.success) {
@@ -232,7 +233,7 @@ const TemplatesSection = () => {
       setTemplates(prev => updateTemplateLike(prev, willBeLiked, newLikeCount))
       setUserTemplates(prev => updateTemplateLike(prev, willBeLiked, newLikeCount))
 
-      const response = await fetch(`/api/templates/${templateId}/like`, {
+      const response = await fetch(`${API_BASE_URL}/templates/${templateId}/like`, {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies
         headers: {
@@ -297,7 +298,7 @@ const TemplatesSection = () => {
   const handleApplyTemplate = async (template) => {
     try {
       setApplyLoading(true)
-      const response = await fetch(`/api/templates/${template.id}/apply`, {
+      const response = await fetch(`${API_BASE_URL}/templates/${template.id}/apply`, {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies
         headers: {
@@ -378,7 +379,7 @@ const TemplatesSection = () => {
         formData.append('thumbnail', templateData.thumbnail)
       }
 
-      const response = await fetch('/api/templates/create', {
+      const response = await fetch(`${API_BASE_URL}/templates/create`, {
         method: 'POST',
         credentials: 'include', // Use httpOnly cookies
         body: formData

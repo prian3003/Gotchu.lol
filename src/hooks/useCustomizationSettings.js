@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import logger from '../utils/logger'
+import { API_BASE_URL } from '../config/api'
 
 const defaultSettings = {
   // Basic Theme
@@ -60,7 +61,7 @@ export const useCustomizationSettings = () => {
         throw new Error('No session found')
       }
 
-      const response = await fetch('/api/customization/settings', {
+      const response = await fetch(`${API_BASE_URL}/customization/settings`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -96,7 +97,7 @@ export const useCustomizationSettings = () => {
         throw new Error('No session found. Please log in again.')
       }
 
-      const response = await fetch('/api/customization/settings', {
+      const response = await fetch(`${API_BASE_URL}/customization/settings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -171,7 +172,7 @@ export const useCustomizationSettings = () => {
       const sessionId = localStorage.getItem('sessionId')
       if (!sessionId) return
 
-      const response = await fetch('/api/customization/settings', {
+      const response = await fetch(`${API_BASE_URL}/customization/settings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

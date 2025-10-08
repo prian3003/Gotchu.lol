@@ -738,9 +738,9 @@ const UserProfile = () => {
 
   const fetchTemplateData = async () => {
     try {
-      const response = await fetch(`/api/templates/${templateId}`)
+      const response = await fetch(`${API_BASE_URL}/templates/${templateId}`)
       const data = await response.json()
-      
+
       if (data.success) {
         setTemplateData(data.data.template)
         setIsTemplatePreview(true)
@@ -1301,7 +1301,7 @@ const UserProfile = () => {
   const handleLinkClick = async (link) => {
     try {
       // Track click analytics (fire and forget - TODO: implement backend endpoint)
-      fetch(`/api/links/${link.id}/click`, {
+      fetch(`${API_BASE_URL}/links/${link.id}/click`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

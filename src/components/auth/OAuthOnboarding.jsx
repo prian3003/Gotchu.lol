@@ -79,7 +79,7 @@ function OAuthOnboarding() {
     setIsLoading(true)
     
     try {
-      const response = await fetch('${API_BASE_URL}/auth/complete-oauth-setup', {
+      const response = await fetch(`${API_BASE_URL}/auth/complete-oauth-setup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

@@ -28,7 +28,7 @@ const CryptoCurrencySelector = ({
   const fetchCurrencies = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch('${API_BASE_URL}/payments/currencies', {
+      const response = await fetch(`${API_BASE_URL}/payments/currencies`, {
         credentials: 'include'
       })
       

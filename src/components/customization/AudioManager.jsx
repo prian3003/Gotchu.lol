@@ -11,6 +11,7 @@ import {
   HiCheck
 } from 'react-icons/hi2'
 import { STORAGE_BUCKETS } from '../../lib/supabase'
+import { API_BASE_URL } from '../../config/api'
 
 const AudioManager = ({ 
   showAudioModal,
@@ -34,7 +35,7 @@ const AudioManager = ({
   // Get user ID from dashboard API
   const fetchUserId = async () => {
     try {
-      const response = await fetch('/api/dashboard', {
+      const response = await fetch(`${API_BASE_URL}/dashboard`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json'
@@ -64,8 +65,8 @@ const AudioManager = ({
   const loadAudioFiles = async () => {
     setLoading(true)
     try {
-      
-      const response = await fetch('/api/audio/list', {
+
+      const response = await fetch(`${API_BASE_URL}/audio/list`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json'
@@ -116,7 +117,7 @@ const AudioManager = ({
       const sessionId = localStorage.getItem('sessionId')
       if (!sessionId) return
 
-      const response = await fetch('/api/customization/settings', {
+      const response = await fetch(`${API_BASE_URL}/customization/settings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -181,7 +182,7 @@ const AudioManager = ({
       const sessionId = localStorage.getItem('sessionId')
       if (!sessionId) return
 
-      const response = await fetch('/api/customization/settings', {
+      const response = await fetch(`${API_BASE_URL}/customization/settings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -241,7 +242,7 @@ const AudioManager = ({
   const handleDeleteAudio = async (audioFile) => {
     setDeleteLoading(true)
     try {
-      const response = await fetch('/api/assets/delete', {
+      const response = await fetch(`${API_BASE_URL}/assets/delete`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json'

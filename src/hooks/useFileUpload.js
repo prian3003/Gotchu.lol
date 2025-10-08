@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import logger from '../utils/logger'
+import { API_BASE_URL } from '../config/api'
 
 export const useFileUpload = (setSettings, saveAudioSettings) => {
   const [uploading, setUploading] = useState({
@@ -43,7 +44,7 @@ export const useFileUpload = (setSettings, saveAudioSettings) => {
         throw new Error('No session found. Please log in again.')
       }
 
-      const response = await fetch('/api/upload/asset', {
+      const response = await fetch(`${API_BASE_URL}/upload/asset`, {
         method: 'POST',
         headers: {
           'X-Session-ID': sessionId
