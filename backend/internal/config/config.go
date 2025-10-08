@@ -57,6 +57,7 @@ type Config struct {
 	// Google OAuth (optional)
 	GoogleClientID     string
 	GoogleClientSecret string
+	GoogleRedirectURI  string
 
 	// Email (optional)
 	ResendAPIKey string
@@ -132,6 +133,7 @@ func Load() *Config {
 		// Google OAuth
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
+		GoogleRedirectURI:  getEnv("GOOGLE_REDIRECT_URI", ""),
 
 		// Email
 		ResendAPIKey: getEnv("RESEND_API_KEY", ""),

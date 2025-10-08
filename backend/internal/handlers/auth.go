@@ -50,12 +50,18 @@ func NewAuthHandler(db *gorm.DB, authService *auth.Service, redisClient *redis.C
 }
 
 // InitOAuthConfig initializes OAuth configurations with values from config
-func InitOAuthConfig(googleClientID, googleClientSecret, discordClientID, discordClientSecret string) {
+func InitOAuthConfig(googleClientID, googleClientSecret, googleRedirectURI, discordClientID, discordClientSecret, discordRedirectURI string) {
 	googleOAuthConfig.ClientID = googleClientID
 	googleOAuthConfig.ClientSecret = googleClientSecret
-	
+	if googleRedirectURI != "" {
+		googleOAuthConfig.RedirectURL = googleRedirectURI
+	}
+
 	discordOAuthConfig.ClientID = discordClientID
 	discordOAuthConfig.ClientSecret = discordClientSecret
+	if discordRedirectURI != "" {
+		discordOAuthConfig.RedirectURL = discordRedirectURI
+	}
 }
 
 // RegisterRequest represents registration request

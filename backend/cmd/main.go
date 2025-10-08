@@ -157,7 +157,14 @@ func main() {
 	}
 
 	// Initialize OAuth configurations
-	handlers.InitOAuthConfig(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.DiscordClientID, cfg.DiscordClientSecret)
+	handlers.InitOAuthConfig(
+		cfg.GoogleClientID,
+		cfg.GoogleClientSecret,
+		cfg.GoogleRedirectURI,
+		cfg.DiscordClientID,
+		cfg.DiscordClientSecret,
+		cfg.DiscordRedirectURI,
+	)
 	
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, authService, redisClient, authMiddleware, emailService, cfg.SiteURL, cfg)
