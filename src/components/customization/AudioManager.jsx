@@ -83,7 +83,24 @@ const AudioManager = ({
 
       if (data.success && data.data) {
         // Handle empty array or missing files property
-        const files = data.data.files || []
+        let files = data.data.files || []
+
+        // If current audio URL exists but not in the files list (e.g., from template), add it
+        if (settings.audioUrl && !files.find(f => f.url === settings.audioUrl)) {
+          const currentAudioFileName = settings.audioUrl.split('/').pop()
+          files = [
+            {
+              name: currentAudioFileName || 'Currently Selected Audio',
+              url: settings.audioUrl,
+              filePath: 'template', // Mark as from template
+              fileName: currentAudioFileName,
+              size: 0,
+              isTemplate: true
+            },
+            ...files
+          ]
+        }
+
         setAudioFiles(files)
         if (files.length === 0) {
           console.log('No audio files found for this user')
@@ -349,7 +366,12 @@ const AudioManager = ({
                 {audioFiles.map((audioFile, index) => (
                   <AudioFileCard key={index} $isSelected={settings.audioUrl === audioFile.url}>
                     <AudioFileHeader>
-                      <AudioFileName>{audioFile.name}</AudioFileName>
+                      <AudioFileName>
+                        {audioFile.name}
+                        {audioFile.isTemplate && (
+                          <TemplateBadge>From Template</TemplateBadge>
+                        )}
+                      </AudioFileName>
                       <AudioFileActions>
                         <AudioActionButton
                           onClick={(e) => {
@@ -360,15 +382,17 @@ const AudioManager = ({
                         >
                           {playingAudio === audioFile.url ? <HiPause /> : <HiPlay />}
                         </AudioActionButton>
-                        <AudioActionButton
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setShowDeleteConfirm(audioFile)
-                          }}
-                          $variant="delete"
-                        >
-                          <HiTrash />
-                        </AudioActionButton>
+                        {!audioFile.isTemplate && (
+                          <AudioActionButton
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setShowDeleteConfirm(audioFile)
+                            }}
+                            $variant="delete"
+                          >
+                            <HiTrash />
+                          </AudioActionButton>
+                        )}
                       </AudioFileActions>
                     </AudioFileHeader>
                     
@@ -710,6 +734,18 @@ const AudioFileName = styled.div`
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+`
+
+const TemplateBadge = styled.span`
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.2rem 0.5rem;
+  background: rgba(88, 164, 176, 0.2);
+  border: 1px solid rgba(88, 164, 176, 0.4);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  color: #58A4B0;
+  font-weight: 600;
 `
 
 const AudioFileActions = styled.div`
