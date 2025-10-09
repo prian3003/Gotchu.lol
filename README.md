@@ -1,81 +1,77 @@
-# Gotchu.lol 🔗
+# Gotchu.lol
 
-> Your personal link-in-bio platform with superpowers
+A modern link-in-bio platform for creators and professionals.
 
-[![Live Preview](https://img.shields.io/badge/Live%20Preview-gotchu.lol-58A4B0?style=for-the-badge&logo=vercel)](https://gotchu.lol)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
+**Live site:** https://gotchu.lol
 
-**Gotchu.lol** is a modern, feature-rich link-in-bio platform that lets you create a stunning personal page to showcase all your links, social profiles, and content in one place. Think Linktree, but way cooler.
+Gotchu is a customizable personal page builder where you can showcase all your links, social profiles, and content in one place. Built with React and Go for performance and scalability.
 
-## ✨ Features
+## Features
 
-### 🎨 Customization
-- **Themes & Colors**: Choose from pre-made themes or create your own with custom accent colors
-- **Visual Effects**: Particles, rain, snow, and other background effects
-- **Username Effects**: Glowing text, rainbow animations, and more
-- **Audio**: Add background music to your profile (because why not?)
-- **Custom Cursor**: Upload your own cursor image
-- **Templates**: Browse and apply professionally designed templates
-- **Video Backgrounds**: Support for video backgrounds alongside images
+### Customization
+- Custom themes and color schemes
+- Visual effects (particles, rain, snow)
+- Background music support
+- Video and image backgrounds
+- Custom cursors
+- Template marketplace
+- Username text effects
 
-### 🔗 Link Management
-- **Unlimited Links**: Add as many links as you want
-- **Custom Icons**: 200+ icons from Simple Icons library
-- **Link Styling**: Individual link customization with colors and effects
-- **Drag & Drop**: Reorder links with drag-and-drop
-- **Link Analytics**: Track clicks and views on your links
+### Link Management
+- Unlimited links with custom icons
+- Drag and drop reordering
+- Individual link styling
+- 200+ icon options from Simple Icons
+- Click tracking per link
 
-### 📊 Analytics
-- **Real-time Stats**: Views, clicks, and visitor metrics
-- **Geographic Data**: See where your visitors are from
-- **Time-based Analytics**: Track performance over time (Today, Week, Month, Year)
-- **Top Links**: Identify your best-performing content
-- **Device & Browser Stats**: Know your audience
+### Analytics
+- Real-time views and clicks
+- Geographic visitor data
+- Time-based metrics (daily, weekly, monthly, yearly)
+- Top performing links
+- Device and browser stats
 
-### 🔐 Authentication
-- **Email/Password**: Traditional sign-up with email verification
-- **OAuth**: Sign in with Discord or Google
-- **2FA**: Two-factor authentication for enhanced security
-- **Session Management**: Secure session handling with Redis
+### Authentication
+- Email/password signup with verification
+- OAuth (Discord and Google)
+- Two-factor authentication
+- Secure session management
 
-### 💎 Premium Features
-- **Crypto Payments**: Pay with cryptocurrency via OxaPay
-- **Premium Badge**: Show off your premium status
-- **Early Access**: Get new features first
-- **Priority Support**: Faster response times
+### Premium
+- Cryptocurrency payments via OxaPay
+- Premium badge
+- Early access to new features
 
-### 🎮 Discord Integration
-- **Rich Presence**: Show your Discord status on your profile
-- **Avatar Sync**: Use your Discord avatar and decoration
-- **Server Badges**: Display your Discord server roles
+### Discord Integration
+- Live Discord presence status
+- Avatar and decoration sync
+- Server role badges
 
-## 🚀 Tech Stack
+## Tech Stack
 
 ### Frontend
-- **React 18** - UI framework
-- **Vite** - Build tool & dev server
-- **Styled Components** - CSS-in-JS styling
-- **React Router** - Client-side routing
-- **Framer Motion** - Animations
-- **React Beautiful DnD** - Drag and drop functionality
+- React 18
+- Vite
+- Styled Components
+- React Router
+- Framer Motion
+- React Beautiful DnD
 
 ### Backend
-- **Go (Golang)** - High-performance API server
-- **Gin** - Web framework
-- **GORM** - ORM for database operations
-- **PostgreSQL** - Primary database (via Supabase)
-- **Redis** - Session storage & caching (Upstash)
-- **Supabase** - File storage for avatars, backgrounds, and audio
+- Go (Golang)
+- Gin web framework
+- GORM
+- PostgreSQL (Supabase)
+- Redis (Upstash)
 
 ### Infrastructure
-- **Vercel** - Frontend hosting
-- **Render** - Backend hosting
-- **Supabase** - Database & storage
-- **Upstash Redis** - Managed Redis
-- **OxaPay** - Crypto payment processing
-- **Resend** - Transactional emails
+- Vercel (frontend hosting)
+- Render (backend hosting)
+- Supabase (database and file storage)
+- OxaPay (payments)
+- Resend (emails)
 
-## 📦 Project Structure
+## Project Structure
 
 ```
 gotchuv2/
@@ -108,13 +104,13 @@ gotchuv2/
 └── public/                      # Static assets
 ```
 
-## 🛠️ Setup & Installation
+## Setup & Installation
 
 ### Prerequisites
-- **Node.js** 18+ and npm/yarn
-- **Go** 1.21+
-- **PostgreSQL** 14+ (or Supabase account)
-- **Redis** (or Upstash account)
+- Node.js 18+ and npm/yarn
+- Go 1.21+
+- PostgreSQL 14+ (or Supabase account)
+- Redis (or Upstash account)
 
 ### Frontend Setup
 
@@ -158,7 +154,7 @@ go run cmd/main.go
 go run cmd/main.go
 ```
 
-## 🔑 Environment Variables
+## Environment Variables
 
 ### Frontend (.env)
 
@@ -219,7 +215,7 @@ OXAPAY_API_KEY=your-api-key
 CLOUDFLARE_SECRET_KEY=your-secret-key
 ```
 
-## 🚢 Deployment
+## Deployment
 
 ### Frontend (Vercel)
 
@@ -243,7 +239,7 @@ CLOUDFLARE_SECRET_KEY=your-secret-key
 2. Copy database URL and storage keys
 3. Run migrations using the Supabase SQL editor or GORM auto-migrate
 
-## 📝 API Documentation
+## API Documentation
 
 ### Authentication Endpoints
 - `POST /api/auth/register` - Register new user
@@ -277,7 +273,7 @@ CLOUDFLARE_SECRET_KEY=your-secret-key
 - `POST /api/templates/:id/apply` - Apply template
 - `POST /api/templates/:id/like` - Like/unlike template
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please follow these steps:
 
@@ -287,28 +283,24 @@ Contributions are welcome! Please follow these steps:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
+## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.
 
-## 🙏 Acknowledgments
+## Credits
 
-- [Simple Icons](https://simpleicons.org/) - Icon library
-- [flag-icons](https://github.com/lipis/flag-icons) - Country flags
-- [Supabase](https://supabase.com/) - Database & storage
-- [Vercel](https://vercel.com/) - Frontend hosting
-- [Render](https://render.com/) - Backend hosting
+- [Simple Icons](https://simpleicons.org/) for the icon library
+- [flag-icons](https://github.com/lipis/flag-icons) for country flags
+- [Supabase](https://supabase.com/) for database and storage
+- [Vercel](https://vercel.com/) and [Render](https://render.com/) for hosting
 
-## 💬 Support
+## Support
 
-Need help? Have questions?
-
-- 📧 Email: support@gotchu.lol
-- 🐛 Issues: [GitHub Issues](https://github.com/yourusername/gotchu.lol/issues)
-- 💬 Discord: [Join our server](https://discord.gg/yourinvite)
+- GitHub Issues: Report bugs or request features
+- Email: support@gotchu.lol
 
 ---
 
-**Made with ❤️ by the Gotchu team**
+Made by the Gotchu team
 
-[Visit Gotchu.lol](https://gotchu.lol) • [Documentation](https://docs.gotchu.lol) • [Discord](https://discord.gg/yourinvite)
+[Visit gotchu.lol](https://gotchu.lol)
