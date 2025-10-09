@@ -74,27 +74,57 @@ class BackgroundCache {
     return preloadPromise
   }
 
-  // Preload image
+  // Preload image with optimization
   preloadImage(url) {
     return new Promise((resolve, reject) => {
       const img = new Image()
+      // Add priority hints for faster loading
+      img.fetchPriority = 'high'
+      img.decoding = 'async'
+
       img.onload = () => resolve(img)
       img.onerror = reject
+
+      // Timeout after 5 seconds to prevent blocking
+      const timeout = setTimeout(() => {
+        resolve(img) // Resolve anyway to not block splash screen
+      }, 5000)
+
       img.src = url
+
+      img.onload = () => {
+        clearTimeout(timeout)
+        resolve(img)
+      }
+      img.onerror = () => {
+        clearTimeout(timeout)
+        reject(new Error('Failed to load image'))
+      }
     })
   }
 
-  // Preload video (load metadata for first frame)
+  // Preload video (load metadata only for faster initial load)
   preloadVideo(url) {
     return new Promise((resolve, reject) => {
       const video = document.createElement('video')
-      video.preload = 'metadata'
+      video.preload = 'metadata' // Only load metadata, not full video
       video.muted = true
       video.playsInline = true
-      
-      video.onloadedmetadata = () => resolve(video)
-      video.onerror = reject
-      
+
+      // Timeout after 3 seconds for videos
+      const timeout = setTimeout(() => {
+        resolve(video) // Resolve anyway to not block splash screen
+      }, 3000)
+
+      video.onloadedmetadata = () => {
+        clearTimeout(timeout)
+        resolve(video)
+      }
+      video.onerror = () => {
+        clearTimeout(timeout)
+        reject(new Error('Failed to load video'))
+      }
+
       video.src = url
     })
   }
@@ -120,6 +150,20 @@ class BackgroundCache {
   clearAll() {
     this.cache.clear()
     this.preloadPromises.clear()
+  }
+
+  // Generate placeholder gradient based on user's color scheme
+  generatePlaceholderGradient(customization) {
+    if (!customization) {
+      return 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #000000 100%)'
+    }
+
+    const bgColor = customization.backgroundColor || '#0a0a0a'
+    const accentColor = customization.accentColor || '#58A4B0'
+    const primaryColor = customization.primaryColor || '#16213e'
+
+    // Create smooth gradient using user's color scheme
+    return `linear-gradient(135deg, ${bgColor} 0%, ${primaryColor} 40%, ${accentColor}30 70%, ${bgColor} 100%)`
   }
 
   // Get cache stats

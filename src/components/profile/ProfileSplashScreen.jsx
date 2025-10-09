@@ -453,19 +453,20 @@ const ProfileSplashScreen = ({
            userBackgroundUrl.toLowerCase().includes('video/')
   }
 
-  // Calculate splash screen background
+  // Calculate splash screen background with placeholder gradient
   const getSplashBackground = () => {
     if (!splashBackgroundVisible) {
       return 'transparent'
     }
-    
+
     if (splashTransparent) {
       // When transparent, show user's background if available
       const userBackgroundUrl = customization?.backgroundUrl
       if (userBackgroundUrl && userBackgroundUrl.trim() !== '') {
         // For video backgrounds, we'll use a video element instead of CSS background
         if (isUserBackgroundVideo()) {
-          return 'transparent' // Let the video element handle the background
+          // Use placeholder gradient while video loads
+          return backgroundCache.generatePlaceholderGradient(customization)
         } else {
           // For image backgrounds, show with subtle overlay for text readability
           return `linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)), url('${userBackgroundUrl}')`
@@ -474,9 +475,9 @@ const ProfileSplashScreen = ({
       // If no user background, use light overlay
       return 'rgba(0, 0, 0, 0.1)'
     }
-    
-    // Use custom splash background color or fallback to dark gradient
-    return splashBackgroundColor || 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 25%, #16213e 50%, #0f0f23 75%, #000000 100%)'
+
+    // Use custom splash background color or fallback to user's color scheme gradient
+    return splashBackgroundColor || backgroundCache.generatePlaceholderGradient(customization)
   }
   
   // Use customization text color or fallback to white
@@ -684,6 +685,10 @@ const ProfileSplashScreen = ({
             muted
             playsInline
             preload="metadata"
+            loading="lazy"
+            style={{
+              background: backgroundCache.generatePlaceholderGradient(customization)
+            }}
           />
           <VideoOverlay />
         </BackgroundVideoContainer>
