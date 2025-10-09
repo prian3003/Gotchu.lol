@@ -301,6 +301,6 @@ This project is licensed under the MIT License.
 
 ---
 
-Made by the Gotchu team
 
 [Visit gotchu.lol](https://gotchu.lol)
+
