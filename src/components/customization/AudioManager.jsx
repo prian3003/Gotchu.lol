@@ -133,18 +133,15 @@ const AudioManager = ({
   // Handle audio selection
   const handleSelectAudio = async (audioFile) => {
     setSelectedAudio(audioFile.url)
-    
+
     // Save directly to backend without triggering settings state change
     try {
-      const sessionId = localStorage.getItem('sessionId')
-      if (!sessionId) return
-
       const response = await fetch(`${API_BASE_URL}/customization/settings`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'X-Session-ID': sessionId
+          'Content-Type': 'application/json'
         },
+        credentials: 'include', // Use httpOnly cookies for auth
         body: JSON.stringify({
           // Only update audio URL, keep other settings unchanged
           audio_url: audioFile.url,
@@ -198,18 +195,15 @@ const AudioManager = ({
   // Handle removing audio selection
   const handleRemoveAudio = async () => {
     setSelectedAudio(null)
-    
+
     // Save directly to backend without triggering settings state change
     try {
-      const sessionId = localStorage.getItem('sessionId')
-      if (!sessionId) return
-
       const response = await fetch(`${API_BASE_URL}/customization/settings`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'X-Session-ID': sessionId
+          'Content-Type': 'application/json'
         },
+        credentials: 'include', // Use httpOnly cookies for auth
         body: JSON.stringify({
           // Remove audio URL, keep other settings unchanged
           audio_url: '',
